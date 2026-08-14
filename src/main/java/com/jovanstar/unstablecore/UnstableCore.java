@@ -269,6 +269,9 @@ public final class UnstableCore extends JavaPlugin {
         if (arenaListener != null) {
             arenaListener.reloadSettings();
         }
+        if (duelArenaManager != null) {
+            duelArenaManager.reload();
+        }
 
     }
 

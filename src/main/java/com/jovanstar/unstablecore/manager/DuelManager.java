@@ -353,26 +353,43 @@ public final class DuelManager {
         return duel;
     }
 
+    /**
+     * Sends the clickable accept/deny block exactly once (no more re-sending the whole message
+     * every few seconds and burying the buttons in chat), then keeps the "expires in Ns" promise
+     * from DUELS.md alive via a cheap per-second actionbar tick to both sides instead - one short
+     * Component with no click/hover events, versus rebuilding and re-sending the full multi-line
+     * block repeatedly.
+     */
     private void sendRequestPrompt(Duel duel) {
         Player target = Bukkit.getPlayer(duel.getTarget());
         if (target != null && target.isOnline()) {
             target.sendMessage(buildRequestComponent(duel));
         }
-        long refreshMs = Math.max(1000L, cfg().getLong("request.chat-refresh-seconds", 5) * 1000L);
         BukkitTask task = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             if (duel.getState() != DuelState.REQUESTED) {
-                BukkitTask self = duel.getChatRefreshTask();
+                BukkitTask self = duel.getRequestTickerTask();
                 if (self != null) {
                     self.cancel();
                 }
                 return;
             }
+            long secondsLeft = duel.millisUntilExpiry() / 1000L;
             Player t = Bukkit.getPlayer(duel.getTarget());
             if (t != null && t.isOnline()) {
-                t.sendMessage(buildRequestComponent(duel));
+                MessageUtil.actionBar(t, MessageUtil.apply(
+                        cfg().getString("messages.request-actionbar-target", "&d⚔ &fDuel request from &f{challenger} &8- &e{seconds}s &7to respond"),
+                        Map.of("challenger", nameOf(duel.getChallenger()), "seconds", String.valueOf(secondsLeft))
+                ));
             }
-        }, refreshMs / 50L, refreshMs / 50L);
-        duel.setChatRefreshTask(task);
+            Player c = Bukkit.getPlayer(duel.getChallenger());
+            if (c != null && c.isOnline()) {
+                MessageUtil.actionBar(c, MessageUtil.apply(
+                        cfg().getString("messages.request-actionbar-challenger", "&7Waiting on &f{target} &8- &e{seconds}s"),
+                        Map.of("target", nameOf(duel.getTarget()), "seconds", String.valueOf(secondsLeft))
+                ));
+            }
+        }, 0L, 20L);
+        duel.setRequestTickerTask(task);
     }
 
     private Component buildRequestComponent(Duel duel) {

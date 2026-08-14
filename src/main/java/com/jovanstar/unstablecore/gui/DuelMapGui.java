@@ -26,10 +26,17 @@ import java.util.UUID;
 
 /**
  * Kit is a fixed v1 default (no picker needed yet), so the duel request flow starts here: pick
- * a duel-eligible arena (with live availability), then proceed to the wager chat prompt. Mirrors
- * {@link VoteGui}'s icon-grid style, scoped to the dedicated duel arena pool.
+ * a duel-eligible arena (with live availability), then proceed to the wager chat prompt. Same
+ * border/content-grid visual language as BountyBoardGui, for consistency across the plugin.
  */
 public final class DuelMapGui implements InventoryHolder {
+
+    private static final int[] CONTENT = {
+            10, 11, 12, 13, 14, 15, 16,
+            19, 20, 21, 22, 23, 24, 25,
+            28, 29, 30, 31, 32, 33, 34,
+            37, 38, 39, 40, 41, 42, 43
+    };
 
     private final UnstableCore plugin;
     private final Player viewer;
@@ -46,11 +53,11 @@ public final class DuelMapGui implements InventoryHolder {
         this.targetName = target.getName();
 
         ConfigurationSection gui = section();
-        int size = Math.max(9, Math.min(54, gui.getInt("size", 27)));
+        int size = Math.max(27, Math.min(54, gui.getInt("size", 54)));
         if (size % 9 != 0) {
-            size = 27;
+            size = 54;
         }
-        Component title = MessageUtil.parse(gui.getString("map-title", "&8» &dDuel: Select Map &8«"));
+        Component title = MessageUtil.parse(gui.getString("map-title", "&8» &d&lChoose a Duel Arena &8«"));
         this.inventory = Bukkit.createInventory(this, size, title);
         fill();
     }
@@ -68,10 +75,17 @@ public final class DuelMapGui implements InventoryHolder {
         ConfigurationSection gui = section();
         arenaSlots.clear();
 
-        Material fillerMat = material(gui.getString("filler"), Material.GRAY_STAINED_GLASS_PANE);
-        ItemStack filler = new ItemBuilder(fillerMat).name(" ").hideAttributes().build();
+        Material borderMat = material(gui.getString("border"), Material.MAGENTA_STAINED_GLASS_PANE);
+        Material emptyMat = material(gui.getString("filler"), Material.GRAY_STAINED_GLASS_PANE);
+        ItemStack border = pane(borderMat);
+        ItemStack empty = pane(emptyMat);
         for (int i = 0; i < inventory.getSize(); i++) {
-            inventory.setItem(i, filler);
+            inventory.setItem(i, border);
+        }
+        for (int slot : CONTENT) {
+            if (slot < inventory.getSize()) {
+                inventory.setItem(slot, empty);
+            }
         }
 
         int targetSlot = gui.getInt("target-slot", 4);
@@ -81,21 +95,26 @@ public final class DuelMapGui implements InventoryHolder {
 
         DuelArenaManager arenaManager = plugin.getDuelManager().getDuelArenaManager();
         List<Arena> arenas = arenaManager.eligibleArenas();
-        int[] positions = layoutPositions(arenas.size(), inventory.getSize());
-        for (int i = 0; i < arenas.size() && i < positions.length; i++) {
+        if (arenas.isEmpty()) {
+            inventory.setItem(CONTENT[CONTENT.length / 2], new ItemBuilder(Material.BARRIER)
+                    .name("&cNo duel arenas configured")
+                    .lore(List.of("&7Ask an admin to add one to", "&7duels.yml's arenas list."))
+                    .hideAttributes().build());
+        }
+        for (int i = 0; i < arenas.size() && i < CONTENT.length; i++) {
             Arena arena = arenas.get(i);
-            DuelArenaManager.Availability availability = arenaManager.availability(arena.getId());
-            inventory.setItem(positions[i], buildArenaIcon(gui, arena, availability));
+            DuelArenaManager.Availability availability = arenaManager.availability(arena);
+            inventory.setItem(CONTENT[i], buildArenaIcon(gui, arena, availability));
             if (availability == DuelArenaManager.Availability.AVAILABLE) {
-                arenaSlots.put(positions[i], arena.getId());
+                arenaSlots.put(CONTENT[i], arena.getId());
             }
         }
 
-        cancelSlot = gui.getInt("cancel-slot", inventory.getSize() - 5);
+        cancelSlot = gui.getInt("cancel-slot", 49);
         if (cancelSlot >= 0 && cancelSlot < inventory.getSize()) {
-            Material cancelMat = material("BARRIER", Material.BARRIER);
-            inventory.setItem(cancelSlot, new ItemBuilder(cancelMat)
-                    .name(gui.getString("cancel-name", "&cCancel"))
+            inventory.setItem(cancelSlot, new ItemBuilder(material(gui.getString("cancel-material"), Material.BARRIER))
+                    .name(gui.getString("cancel-name", "&c&lCancel"))
+                    .lore(gui.getStringList("cancel-lore"))
                     .hideAttributes().build());
         }
     }
@@ -112,7 +131,7 @@ public final class DuelMapGui implements InventoryHolder {
                 // so the live profile already carries resolved textures - no Mojang lookup needed.
                 meta.setPlayerProfile(target.getPlayerProfile());
             }
-            meta.displayName(noItalic(MessageUtil.parse((online ? "&f" : "&7") + targetName)));
+            meta.displayName(noItalic(MessageUtil.parse((online ? "&f&l" : "&7&l") + targetName)));
             List<String> loreLines = online
                     ? gui.getStringList("target-online-lore")
                     : gui.getStringList("target-offline-lore");
@@ -127,14 +146,14 @@ public final class DuelMapGui implements InventoryHolder {
     }
 
     private ItemStack buildArenaIcon(ConfigurationSection gui, Arena arena, DuelArenaManager.Availability availability) {
-        Material mat = material(gui.getString("map-material"), Material.MAP);
+        boolean available = availability == DuelArenaManager.Availability.AVAILABLE;
+        Material mat = available ? material(gui.getString("map-material"), Material.FILLED_MAP) : Material.BARRIER;
         String name = MessageUtil.apply(gui.getString("map-name", "&d&l{map}"), Map.of(
                 "map", arena.getDisplayName(), "id", arena.getId()
         ));
-        List<String> loreTemplate = availability == DuelArenaManager.Availability.AVAILABLE
+        List<String> loreTemplate = available
                 ? gui.getStringList("map-lore-available")
                 : gui.getStringList("map-lore-unavailable");
-        List<String> lore = new ArrayList<>();
         String reason = switch (availability) {
             case RESERVED -> "In use";
             case GRACE_PERIOD -> "Cooling down";
@@ -142,11 +161,11 @@ public final class DuelMapGui implements InventoryHolder {
             case MISSING -> "Unavailable";
             case AVAILABLE -> "";
         };
+        List<String> lore = new ArrayList<>();
         for (String line : loreTemplate) {
             lore.add(MessageUtil.apply(line, Map.of("reason", reason)));
         }
-        Material effectiveMat = availability == DuelArenaManager.Availability.AVAILABLE ? mat : Material.BARRIER;
-        return new ItemBuilder(effectiveMat).name(name).lore(lore).hideAttributes().build();
+        return new ItemBuilder(mat).name(name).lore(lore).hideAttributes().build();
     }
 
     public void handleClick(Player player, int slot) {
@@ -178,20 +197,8 @@ public final class DuelMapGui implements InventoryHolder {
         challenger.openInventory(new DuelMapGui(plugin, challenger, target).getInventory());
     }
 
-    private static int[] layoutPositions(int count, int size) {
-        List<Integer> slots = new ArrayList<>();
-        int[] rows = size >= 27 ? new int[]{10, 11, 12, 13, 14, 15, 16, 19, 20, 21, 22, 23, 24, 25} : new int[]{2, 3, 4, 5, 6};
-        for (int slot : rows) {
-            if (slots.size() >= count) {
-                break;
-            }
-            slots.add(slot);
-        }
-        int[] out = new int[slots.size()];
-        for (int i = 0; i < out.length; i++) {
-            out[i] = slots.get(i);
-        }
-        return out;
+    private static ItemStack pane(Material material) {
+        return new ItemBuilder(material).name(" ").hideAttributes().build();
     }
 
     private static Material material(String name, Material def) {

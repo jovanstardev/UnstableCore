@@ -56,7 +56,7 @@ public final class Duel {
     private final Set<UUID> leftGrace = ConcurrentHashMap.newKeySet();
 
     private volatile BukkitTask expiryTask;
-    private volatile BukkitTask chatRefreshTask;
+    private volatile BukkitTask requestTickerTask;
     private volatile BukkitTask countdownTask;
     private volatile BukkitTask maxDurationTask;
     private volatile BukkitTask graceTask;
@@ -302,12 +302,13 @@ public final class Duel {
         this.expiryTask = expiryTask;
     }
 
-    public BukkitTask getChatRefreshTask() {
-        return chatRefreshTask;
+    /** Live actionbar countdown ticker shown to both sides while a request is pending. */
+    public BukkitTask getRequestTickerTask() {
+        return requestTickerTask;
     }
 
-    public void setChatRefreshTask(BukkitTask chatRefreshTask) {
-        this.chatRefreshTask = chatRefreshTask;
+    public void setRequestTickerTask(BukkitTask requestTickerTask) {
+        this.requestTickerTask = requestTickerTask;
     }
 
     public BukkitTask getCountdownTask() {
@@ -337,12 +338,12 @@ public final class Duel {
     /** Cancels every scheduled task tied to this duel. Safe to call more than once. */
     public void cancelAllTasks() {
         cancelQuietly(expiryTask);
-        cancelQuietly(chatRefreshTask);
+        cancelQuietly(requestTickerTask);
         cancelQuietly(countdownTask);
         cancelQuietly(maxDurationTask);
         cancelQuietly(graceTask);
         expiryTask = null;
-        chatRefreshTask = null;
+        requestTickerTask = null;
         countdownTask = null;
         maxDurationTask = null;
         graceTask = null;
