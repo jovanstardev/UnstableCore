@@ -48,6 +48,9 @@ public final class TagsGui implements InventoryHolder {
 
         if (mode == Mode.MAIN) {
             for (TagCategory category : tags.getCategories().values()) {
+                if (!validSlot(category.getSlot())) {
+                    continue;
+                }
                 inventory.setItem(category.getSlot(), new ItemBuilder(category.getMaterial())
                         .name(category.getName())
                         .lore(category.getLore())
@@ -59,6 +62,9 @@ public final class TagsGui implements InventoryHolder {
             TagCategory category = tags.getCategory(categoryId);
             if (category != null) {
                 for (TagEntry entry : category.getTags()) {
+                    if (!validSlot(entry.getSlot())) {
+                        continue;
+                    }
                     inventory.setItem(entry.getSlot(), new ItemBuilder(entry.getMaterial())
                             .name(entry.getName())
                             .lore("&7Click to equip")
@@ -76,15 +82,21 @@ public final class TagsGui implements InventoryHolder {
             }
         }
 
-        inventory.setItem(tags.getClearSlot(), new ItemBuilder(tags.getClearMaterial())
-                .name(tags.getClearName())
-                .lore(tags.getClearLore())
-                .hideAttributes()
-                .build());
-        actions.put(tags.getClearSlot(), () -> {
-            player.closeInventory();
-            tags.clear(player);
-        });
+        if (validSlot(tags.getClearSlot())) {
+            inventory.setItem(tags.getClearSlot(), new ItemBuilder(tags.getClearMaterial())
+                    .name(tags.getClearName())
+                    .lore(tags.getClearLore())
+                    .hideAttributes()
+                    .build());
+            actions.put(tags.getClearSlot(), () -> {
+                player.closeInventory();
+                tags.clear(player);
+            });
+        }
+    }
+
+    private boolean validSlot(int slot) {
+        return slot >= 0 && slot < inventory.getSize();
     }
 
     public void handleClick(Player player, int slot) {

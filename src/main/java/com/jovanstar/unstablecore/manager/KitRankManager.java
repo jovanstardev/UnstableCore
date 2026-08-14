@@ -100,12 +100,12 @@ public final class KitRankManager {
         if (plugin == null || kit == null || hidesKitRank(plugin, player)) {
             return 0;
         }
+        if (plugin.getKitManager() == null) {
+            return 2;
+        }
         int max = Math.max(2, Math.min(99, plugin.getConfig().getInt("kit-rank.tab-weight-max", 49)));
         if (usesMemberPrefix(plugin, kit) || plugin.getKitManager().isStarter(kit)) {
             return 1;
-        }
-        if (plugin.getKitManager() == null) {
-            return 2;
         }
         List<Kit> paid = new ArrayList<>();
         for (Kit other : plugin.getKitManager().getKits().values()) {

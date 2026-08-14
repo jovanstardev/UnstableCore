@@ -258,17 +258,16 @@ public final class LeaderboardManager {
             return;
         }
         long gen = nextOpenGeneration(player.getUniqueId());
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            if (gen != openGeneration.getOrDefault(player.getUniqueId(), -1L)) {
-                return;
-            }
-            List<LeaderboardEntry> entries = list(category);
-            int pages = Math.max(1, (int) Math.ceil(entries.size() / (double) pageSize()));
-            int safePage = Math.max(0, Math.min(page, pages - 1));
-            Bukkit.getScheduler().runTask(plugin, () -> openGuiSafely(player, gen, () ->
-                    player.openInventory(new LeaderboardCategoryGui(
-                            plugin, player, category, safePage, entries).getInventory())));
-        });
+        // list()/compute() reads Bukkit.getOnlinePlayers() and the Vault economy provider, which
+        // must stay on the main thread - every caller here (commands, GUI clicks) already runs on
+        // the main thread, so this is computed synchronously rather than hopping to an async task.
+        // The GUI-open itself still defers to the next tick, matching openMenu()'s behavior.
+        List<LeaderboardEntry> entries = list(category);
+        int pages = Math.max(1, (int) Math.ceil(entries.size() / (double) pageSize()));
+        int safePage = Math.max(0, Math.min(page, pages - 1));
+        Bukkit.getScheduler().runTask(plugin, () -> openGuiSafely(player, gen, () ->
+                player.openInventory(new LeaderboardCategoryGui(
+                        plugin, player, category, safePage, entries).getInventory())));
     }
 
     public void refreshCategory(Player player, LeaderboardCategory category, int page) {

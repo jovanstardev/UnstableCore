@@ -43,18 +43,6 @@ public final class HeldShulkerListener implements Listener {
         this.plugin = plugin;
     }
 
-    public void clearPlayer(UUID uuid) {
-        if (uuid == null) {
-            return;
-        }
-        Player player = Bukkit.getPlayer(uuid);
-        if (player != null) {
-            closeAndSave(player, true);
-        } else {
-            sessions.remove(uuid);
-        }
-    }
-
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onInteract(PlayerInteractEvent event) {
         if (!plugin.getConfig().getBoolean("held-shulker.enabled", true)) {

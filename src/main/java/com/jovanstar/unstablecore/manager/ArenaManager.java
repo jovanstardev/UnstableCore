@@ -24,6 +24,7 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -35,7 +36,9 @@ import java.util.concurrent.ThreadLocalRandom;
 public final class ArenaManager {
 
     private final UnstableCore plugin;
-    private final Map<String, Arena> arenas = new HashMap<>();
+    // LinkedHashMap so config/rotation logic that iterates arenas.values() (e.g. the nomace-limit
+    // enforcement below) is deterministic and follows arenas.yml's declared order.
+    private final Map<String, Arena> arenas = new LinkedHashMap<>();
 
     private final Map<String, List<Arena>> arenasByWorld = new HashMap<>();
 
@@ -194,9 +197,18 @@ public final class ArenaManager {
     }
 
     public void shutdownSaveDataOnly() {
-        if (placedDirty) {
-            savePlacedBlocks();
+        // Invoked from an async periodic task (see UnstableCore's autosave timer). The actual
+        // FileConfiguration mutation/save must happen on the main thread since the same
+        // data.yml-backed config object is also read/written synchronously elsewhere
+        // (e.g. EventManager's timers), and FileConfiguration is not thread-safe.
+        if (!placedDirty) {
+            return;
         }
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            if (placedDirty) {
+                savePlacedBlocks();
+            }
+        });
     }
 
     public void save() {
@@ -405,7 +417,7 @@ public final class ArenaManager {
         }
         if (rotatable.isEmpty()) {
             for (Arena arena : arenas.values()) {
-                if (!arena.hasCenter()) {
+                if (arena.isPermanent() || !arena.hasCenter()) {
                     continue;
                 }
                 if (maceOnly && arena.getType() == ArenaType.NOMACE) {
@@ -927,28 +939,6 @@ public final class ArenaManager {
             }
         }
         return null;
-    }
-
-    public int countPlayersInArena(String arenaId) {
-        if (arenaId == null || arenaId.isBlank()) {
-            return 0;
-        }
-        String key = arenaId.toLowerCase(Locale.ROOT);
-        int count = 0;
-        for (Player online : Bukkit.getOnlinePlayers()) {
-            String tracked = playerArena.get(online.getUniqueId());
-            if (tracked != null) {
-                if (tracked.equalsIgnoreCase(key) || ("newbie".equalsIgnoreCase(key) && "newbie".equalsIgnoreCase(tracked))) {
-                    count++;
-                }
-                continue;
-            }
-            Arena resolved = resolveArenaAt(online.getLocation());
-            if (resolved != null && resolved.getId().equalsIgnoreCase(key)) {
-                count++;
-            }
-        }
-        return count;
     }
 
     public int countTrackedPlayersInArena(String arenaId) {

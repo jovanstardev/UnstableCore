@@ -82,6 +82,9 @@ public final class SwordGui implements InventoryHolder {
         lastJoinable = joinable;
 
         int slot = gui.getInt("join-slot", 13);
+        if (slot < 0 || slot >= inventory.getSize()) {
+            return;
+        }
         Material mat = material(gui.getString("join-material"), Material.LIME_DYE);
         String name = gui.getString("join-name", "&a&lᴊᴏɪɴ ꜱᴡᴏʀᴅ ꜰꜰᴀ");
         List<String> lore = new ArrayList<>();
