@@ -66,17 +66,14 @@ public final class DuelListener implements Listener {
         if (!mgr.isInDuel(victim.getUniqueId())) {
             return;
         }
-        // Duel win/loss messaging replaces the vanilla death message; kit-item drops are left
-        // alone on purpose - the post-duel grace period exists specifically so the loser can
-        // collect them, while their original pre-duel inventory is restored separately.
         event.deathMessage(null);
+        event.getDrops().clear();
+        event.setDroppedExp(0);
         mgr.handleDeath(victim);
     }
 
     /**
-     * After the loser respawns, teleport them back to their pre-duel location.
-     * The DuelManager marks the loser as having left grace immediately upon NORMAL_WIN,
-     * so we just need to find their snapshot and teleport them there.
+     * After the loser respawns, redirect to spawn and restore their pre-duel inventory (or kit loadout).
      */
     @EventHandler(priority = EventPriority.HIGH)
     public void onRespawn(PlayerRespawnEvent event) {
@@ -85,9 +82,6 @@ public final class DuelListener implements Listener {
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
 
-        // The loser was already marked as "left grace" but may still be referenced in a grace duel
-        // that only the winner is using. We need their snapshot to teleport them back.
-        // We store the pending respawn-teleport in a small helper on DuelManager.
         Location loc = mgr.consumePendingRespawnLocation(uuid);
         if (loc == null && mgr.isInDuel(uuid)) {
             loc = mgr.resolveJoinSpawn();
@@ -95,6 +89,13 @@ public final class DuelListener implements Listener {
         if (loc != null && loc.getWorld() != null) {
             event.setRespawnLocation(loc);
         }
+
+        DuelInventorySnapshot snapshot = mgr.consumePendingRespawnSnapshot(uuid);
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            if (player.isOnline()) {
+                mgr.restorePlayerPostDuel(player, snapshot);
+            }
+        });
     }
 
     /** No damage is permitted before FIGHT, even though both players are already teleported in. */

@@ -67,6 +67,7 @@ public final class DuelManager {
     private final Map<UUID, DuelInventorySnapshot> pendingCrashRestores = new ConcurrentHashMap<>();
     /** Loser's pre-duel location queued until their respawn event fires, so we can set the respawn location. */
     private final Map<UUID, Location> pendingRespawnLocations = new ConcurrentHashMap<>();
+    private final Map<UUID, DuelInventorySnapshot> pendingRespawnSnapshots = new ConcurrentHashMap<>();
     private BukkitTask boundaryTask;
 
     public DuelManager(UnstableCore plugin, DuelArenaManager duelArenaManager, DuelStatsManager duelStatsManager) {
@@ -1147,11 +1148,6 @@ public final class DuelManager {
             plugin.getCombatListener().clearPlayer(duel.getTarget());
         }
 
-        if (duel.markInventoryRestored()) {
-            restoreIfOnline(duel.getChallenger(), duel.getChallengerSnapshot());
-            restoreIfOnline(duel.getTarget(), duel.getTargetSnapshot());
-        }
-
         double payoutAmount = 0;
         if (duel.markPayoutDone()) {
             PayoutResult pr = resolvePayout(duel, winner, result);
@@ -1190,29 +1186,36 @@ public final class DuelManager {
         playerDuel.remove(duel.getChallenger());
         playerDuel.remove(duel.getTarget());
 
-        // Teleport participants back to server spawn
+        // Teleport participants back to server spawn and restore inventory
         if (winner != null) {
             UUID loserUuid = duel.opponentOf(winner);
             Location spawn = resolveJoinSpawn();
             if (result == DuelResult.NORMAL_WIN) {
-                // Queue the spawn location so DuelListener.onRespawn redirects them directly to spawn.
+                // Queue spawn location and snapshot so onRespawn teleports and restores loser
                 if (spawn != null) {
                     pendingRespawnLocations.put(loserUuid, spawn);
+                }
+                DuelInventorySnapshot loserSnapshot = duel.snapshotFor(loserUuid);
+                if (loserSnapshot != null) {
+                    pendingRespawnSnapshots.put(loserUuid, loserSnapshot);
                 }
             } else {
                 Player lp = Bukkit.getPlayer(loserUuid);
                 if (lp != null && lp.isOnline() && !lp.isDead()) {
                     teleportToSpawn(lp);
+                    restorePlayerPostDuel(lp, duel.snapshotFor(loserUuid));
                 }
             }
 
-            // Winner celebration: teleport to spawn after 3 seconds (60 ticks)
+            // Winner celebration: teleport to spawn after 3 seconds (60 ticks) and restore inventory
             Player wp = Bukkit.getPlayer(winner);
             if (wp != null && wp.isOnline()) {
                 wp.playSound(wp.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, SoundCategory.PLAYERS, 1.0f, 1.0f);
+                DuelInventorySnapshot winnerSnapshot = duel.snapshotFor(winner);
                 Bukkit.getScheduler().runTaskLater(plugin, () -> {
                     if (wp.isOnline()) {
                         teleportToSpawn(wp);
+                        restorePlayerPostDuel(wp, winnerSnapshot);
                     }
                 }, 60L);
             }
@@ -1220,8 +1223,14 @@ public final class DuelManager {
             // Draw / Timeout no contest
             Player c = Bukkit.getPlayer(duel.getChallenger());
             Player t = Bukkit.getPlayer(duel.getTarget());
-            if (c != null && c.isOnline() && !c.isDead()) teleportToSpawn(c);
-            if (t != null && t.isOnline() && !t.isDead()) teleportToSpawn(t);
+            if (c != null && c.isOnline() && !c.isDead()) {
+                teleportToSpawn(c);
+                restorePlayerPostDuel(c, duel.getChallengerSnapshot());
+            }
+            if (t != null && t.isOnline() && !t.isDead()) {
+                teleportToSpawn(t);
+                restorePlayerPostDuel(t, duel.getTargetSnapshot());
+            }
         }
 
         playerGrace.remove(duel.getChallenger());
@@ -1486,6 +1495,29 @@ public final class DuelManager {
 
     public Location consumePendingRespawnLocation(UUID uuid) {
         return uuid == null ? null : pendingRespawnLocations.remove(uuid);
+    }
+
+    public DuelInventorySnapshot consumePendingRespawnSnapshot(UUID uuid) {
+        return uuid == null ? null : pendingRespawnSnapshots.remove(uuid);
+    }
+
+    public void restorePlayerPostDuel(Player player, DuelInventorySnapshot snapshot) {
+        if (player == null || !player.isOnline()) {
+            return;
+        }
+        if (snapshot != null && !snapshot.isEmpty()) {
+            snapshot.restore(player);
+        } else {
+            // No snapshot or empty pre-duel inventory -> clear duel kit and apply default kit loadout
+            player.getInventory().clear();
+            player.getInventory().setArmorContents(null);
+            player.getInventory().setItemInOffHand(null);
+            if (plugin.getKitManager() != null) {
+                plugin.getKitManager().ensureDefaultKit(player);
+                plugin.getKitManager().applyLoadout(player);
+            }
+        }
+        player.updateInventory();
     }
 
     // ---------------------------------------------------------------------------------------

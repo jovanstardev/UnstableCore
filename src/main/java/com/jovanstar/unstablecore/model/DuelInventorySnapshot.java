@@ -66,6 +66,22 @@ public final class DuelInventorySnapshot {
         player.updateInventory();
     }
 
+    public boolean isEmpty() {
+        if (storage != null) {
+            for (ItemStack item : storage) {
+                if (item != null && !item.getType().isAir()) return false;
+            }
+        }
+        if (armor != null) {
+            for (ItemStack item : armor) {
+                if (item != null && !item.getType().isAir()) return false;
+            }
+        }
+        if (offHand != null && !offHand.getType().isAir()) return false;
+        if (cursor != null && !cursor.getType().isAir()) return false;
+        return true;
+    }
+
     public Location getLocation() {
         return location == null ? null : location.clone();
     }
