@@ -389,7 +389,9 @@ public final class DuelManager {
         Player target = Bukkit.getPlayer(duel.getTarget());
         if (target != null && target.isOnline()) {
             target.sendMessage(buildRequestComponent(duel));
+            target.playSound(target.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, SoundCategory.PLAYERS, 1.0f, 1.5f);
         }
+<<<<<<< HEAD
         BukkitTask task = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             if (duel.getState() != DuelState.REQUESTED) {
                 BukkitTask self = duel.getRequestTickerTask();
@@ -415,6 +417,8 @@ public final class DuelManager {
             }
         }, 0L, 20L);
         duel.setRequestTickerTask(task);
+=======
+>>>>>>> dedb341 (update)
     }
 
     private Component buildRequestComponent(Duel duel) {
@@ -447,10 +451,10 @@ public final class DuelManager {
             lines.add(MessageUtil.parse(MessageUtil.apply(line, placeholders)));
         }
 
-        Component accept = MessageUtil.parse(cfg().getString("messages.accept-button", "&a[ACCEPT]"))
+        Component accept = MessageUtil.parse(cfg().getString("messages.accept-button", "&a&l[ACCEPT]"))
                 .clickEvent(ClickEvent.runCommand("/duel accept " + duel.getId()))
                 .hoverEvent(HoverEvent.showText(MessageUtil.parse(cfg().getString("messages.accept-hover", ""))));
-        Component deny = MessageUtil.parse(cfg().getString("messages.deny-button", "&c[DENY]"))
+        Component deny = MessageUtil.parse(cfg().getString("messages.deny-button", "&c&l[DENY]"))
                 .clickEvent(ClickEvent.runCommand("/duel deny " + duel.getId()))
                 .hoverEvent(HoverEvent.showText(MessageUtil.parse(cfg().getString("messages.deny-hover", ""))));
         lines.add(Component.text("  ").append(accept).append(Component.text("   ")).append(deny));
@@ -865,6 +869,8 @@ public final class DuelManager {
                         Map.of("seconds", String.valueOf(remaining[0])));
                 MessageUtil.send(c, line);
                 MessageUtil.send(t, line);
+                c.playSound(c.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, SoundCategory.PLAYERS, 1.0f, 1.0f);
+                t.playSound(t.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, SoundCategory.PLAYERS, 1.0f, 1.0f);
                 remaining[0]--;
                 return;
             }
@@ -887,8 +893,14 @@ public final class DuelManager {
         Player c = Bukkit.getPlayer(duel.getChallenger());
         Player t = Bukkit.getPlayer(duel.getTarget());
         String fight = cfg().getString("messages.fight", "&a&lFIGHT!");
-        if (c != null) MessageUtil.send(c, fight);
-        if (t != null) MessageUtil.send(t, fight);
+        if (c != null) {
+            MessageUtil.send(c, fight);
+            c.playSound(c.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, SoundCategory.PLAYERS, 1.0f, 2.0f);
+        }
+        if (t != null) {
+            MessageUtil.send(t, fight);
+            t.playSound(t.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, SoundCategory.PLAYERS, 1.0f, 2.0f);
+        }
         // Action bar: show opponent win-rate message for 5 seconds
         sendFightActionBar(duel);
         // Visibility isolation: hide every other player from both duelists
@@ -1167,36 +1179,43 @@ public final class DuelManager {
         playerDuel.remove(duel.getChallenger());
         playerDuel.remove(duel.getTarget());
 
-        // On a normal kill, teleport the loser back immediately — they’re dead and can’t collect
-        // drops anyway. The winner still gets the grace window to pick up items.
-        if (result == DuelResult.NORMAL_WIN && winner != null) {
+        // Teleport participants back to server spawn
+        if (winner != null) {
             UUID loserUuid = duel.opponentOf(winner);
-            DuelInventorySnapshot loserSnap = duel.snapshotFor(loserUuid);
-            playerGrace.put(winner, duel.getId()); // winner gets grace
-            // Queue the loser's pre-duel location so DuelListener.onRespawn can redirect them.
-            if (loserSnap != null && loserSnap.getLocation() != null) {
-                pendingRespawnLocations.put(loserUuid, loserSnap.getLocation());
+            Location spawn = resolveJoinSpawn();
+            if (result == DuelResult.NORMAL_WIN) {
+                // Queue the spawn location so DuelListener.onRespawn redirects them directly to spawn.
+                if (spawn != null) {
+                    pendingRespawnLocations.put(loserUuid, spawn);
+                }
             } else {
-                Location fallback = resolveJoinSpawn();
-                if (fallback != null) pendingRespawnLocations.put(loserUuid, fallback);
+                Player lp = Bukkit.getPlayer(loserUuid);
+                if (lp != null && lp.isOnline() && !lp.isDead()) {
+                    teleportToSpawn(lp);
+                }
             }
-            duel.markLeftGrace(loserUuid); // loser skips grace
+
+            // Winner celebration: teleport to spawn after 3 seconds (60 ticks)
+            Player wp = Bukkit.getPlayer(winner);
+            if (wp != null && wp.isOnline()) {
+                wp.playSound(wp.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, SoundCategory.PLAYERS, 1.0f, 1.0f);
+                Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                    if (wp.isOnline()) {
+                        teleportToSpawn(wp);
+                    }
+                }, 60L);
+            }
         } else {
-            playerGrace.put(duel.getChallenger(), duel.getId());
-            playerGrace.put(duel.getTarget(), duel.getId());
+            // Draw / Timeout no contest
+            Player c = Bukkit.getPlayer(duel.getChallenger());
+            Player t = Bukkit.getPlayer(duel.getTarget());
+            if (c != null && c.isOnline() && !c.isDead()) teleportToSpawn(c);
+            if (t != null && t.isOnline() && !t.isDead()) teleportToSpawn(t);
         }
 
-        long graceMs = Math.max(0L, cfg().getLong("grace-period-seconds", 180) * 1000L);
-        duel.setGraceEndsAt(System.currentTimeMillis() + graceMs);
-        if (duel.getArenaId() != null) {
-            duelArenaManager.enterGrace(duel.getArenaId(), duel.getGraceEndsAt());
-        }
-        BukkitTask graceTask = Bukkit.getScheduler().runTaskLater(plugin, () -> endGrace(duel.getId()),
-                Math.max(1L, graceMs / 50L));
-        duel.setGraceTask(graceTask);
-
+        playerGrace.remove(duel.getChallenger());
+        playerGrace.remove(duel.getTarget());
         deleteDuelRowAsync(duel.getId());
-        sendGraceMessage(duel);
         sendRematchHint(duel);
 
         plugin.getLogger().info("[Duel " + duel.getId() + "] finished result=" + result
@@ -1328,8 +1347,30 @@ public final class DuelManager {
         }
         Player challenger = Bukkit.getPlayer(duel.getChallenger());
         Player target = Bukkit.getPlayer(duel.getTarget());
-        msg(challenger, "rematch-offered", Map.of("opponent", nameOf(duel.getTarget())));
-        msg(target, "rematch-offered", Map.of("opponent", nameOf(duel.getChallenger())));
+        String cName = nameOf(duel.getChallenger());
+        String tName = nameOf(duel.getTarget());
+
+        if (challenger != null && challenger.isOnline()) {
+            sendRematchMessage(challenger, tName);
+        }
+        if (target != null && target.isOnline()) {
+            sendRematchMessage(target, cName);
+        }
+    }
+
+    private void sendRematchMessage(Player player, String opponentName) {
+        String text = cfg().getString("rematch.text", "&eWant a rematch against &f{opponent}&e? ");
+        String buttonText = cfg().getString("rematch.button", "&6&l[REMATCH]");
+        String hoverText = cfg().getString("rematch.hover", "&eClick to challenge &f{opponent} &eto a rematch!");
+
+        Component button = MessageUtil.parse(MessageUtil.apply(buttonText, Map.of("opponent", opponentName)))
+                .clickEvent(ClickEvent.runCommand("/duel " + opponentName))
+                .hoverEvent(HoverEvent.showText(MessageUtil.parse(MessageUtil.apply(hoverText, Map.of("opponent", opponentName)))));
+
+        Component msg = MessageUtil.parse(MessageUtil.apply(text, Map.of("opponent", opponentName)))
+                .append(button);
+
+        player.sendMessage(msg);
     }
 
     private void restoreIfOnline(UUID uuid, DuelInventorySnapshot snapshot) {
@@ -1401,28 +1442,35 @@ public final class DuelManager {
         duels.remove(duel.getId());
     }
 
-    private void teleportBack(Player player, DuelInventorySnapshot snapshot) {
-        Location loc = snapshot == null ? null : snapshot.getLocation();
-        if (loc != null && loc.getWorld() != null) {
-            player.teleport(loc);
+    public void teleportToSpawn(Player player) {
+        if (player == null || !player.isOnline()) {
             return;
         }
-        Location fallback = resolveJoinSpawn();
-        if (fallback != null) {
-            player.teleport(fallback);
+        Location spawn = resolveJoinSpawn();
+        if (spawn != null && spawn.getWorld() != null) {
+            player.teleport(spawn);
         }
     }
 
-    private Location resolveJoinSpawn() {
+    private void teleportBack(Player player, DuelInventorySnapshot snapshot) {
+        teleportToSpawn(player);
+    }
+
+    public Location resolveJoinSpawn() {
         String worldName = plugin.getConfig().getString("join.spawn.world", "world");
         World world = Bukkit.getWorld(worldName);
+        if (world == null && !Bukkit.getWorlds().isEmpty()) {
+            world = Bukkit.getWorlds().get(0);
+        }
         if (world == null) {
             return null;
         }
         double x = plugin.getConfig().getDouble("join.spawn.x", 0.5);
         double y = plugin.getConfig().getDouble("join.spawn.y", 64.0);
         double z = plugin.getConfig().getDouble("join.spawn.z", 0.5);
-        return new Location(world, x, y, z);
+        float yaw = (float) plugin.getConfig().getDouble("join.spawn.yaw", 0.0);
+        float pitch = (float) plugin.getConfig().getDouble("join.spawn.pitch", 0.0);
+        return new Location(world, x, y, z, yaw, pitch);
     }
 
     public Location consumePendingRespawnLocation(UUID uuid) {

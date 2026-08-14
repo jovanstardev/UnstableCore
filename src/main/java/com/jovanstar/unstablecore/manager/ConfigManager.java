@@ -111,6 +111,10 @@ public final class ConfigManager {
         save(arenasConfig, arenasFile);
     }
 
+    public void saveDuels() {
+        save(duelsConfig, duelsFile);
+    }
+
     public void saveData() {
         save(dataConfig, dataFile);
     }

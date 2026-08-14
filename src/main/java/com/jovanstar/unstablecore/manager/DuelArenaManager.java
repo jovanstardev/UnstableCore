@@ -66,6 +66,37 @@ public final class DuelArenaManager {
         return new ArrayList<>(configuredIdSet());
     }
 
+    public boolean addArena(String arenaId) {
+        if (arenaId == null || arenaId.isBlank()) {
+            return false;
+        }
+        String key = arenaId.toLowerCase(Locale.ROOT);
+        List<String> list = new ArrayList<>(plugin.getConfigManager().getDuels().getStringList("arenas"));
+        for (String id : list) {
+            if (id.equalsIgnoreCase(key)) {
+                return false;
+            }
+        }
+        list.add(key);
+        plugin.getConfigManager().getDuels().set("arenas", list);
+        plugin.getConfigManager().saveDuels();
+        return true;
+    }
+
+    public boolean removeArena(String arenaId) {
+        if (arenaId == null || arenaId.isBlank()) {
+            return false;
+        }
+        String key = arenaId.toLowerCase(Locale.ROOT);
+        List<String> list = new ArrayList<>(plugin.getConfigManager().getDuels().getStringList("arenas"));
+        boolean removed = list.removeIf(id -> id.equalsIgnoreCase(key));
+        if (removed) {
+            plugin.getConfigManager().getDuels().set("arenas", list);
+            plugin.getConfigManager().saveDuels();
+        }
+        return removed;
+    }
+
     public Arena resolve(String arenaId) {
         if (arenaId == null || arenaId.isBlank()) {
             return null;

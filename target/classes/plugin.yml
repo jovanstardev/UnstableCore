@@ -104,9 +104,9 @@ commands:
     usage: /leave
   dueladmin:
     description: Staff duel inspection/cleanup tools
-    aliases: [duels]
+    aliases: [duels, duelarena, da]
     permission: unstablecore.duel.admin
-    usage: /dueladmin <list|inspect|forceend|arena>
+    usage: /dueladmin <list|inspect|forceend|arena|setspawn1|setspawn2|setcenter|spawns>
 
 permissions:
   unstablecore.admin:
