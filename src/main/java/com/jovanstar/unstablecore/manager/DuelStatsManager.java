@@ -25,6 +25,7 @@ public final class DuelStatsManager {
         double coinsWon;
         double coinsLost;
         int duelsPlayed;
+        int elo = 1000;
     }
 
     private final UnstableCore plugin;
@@ -52,6 +53,7 @@ public final class DuelStatsManager {
             m.coinsWon = row.coinsWon();
             m.coinsLost = row.coinsLost();
             m.duelsPlayed = row.duelsPlayed();
+            m.elo = row.elo() <= 0 ? 1000 : row.elo();
             stats.put(e.getKey(), m);
         }
     }
@@ -87,7 +89,8 @@ public final class DuelStatsManager {
         synchronized (m) {
             return new DatabaseManager.DuelStatsRow(
                     m.wins, m.losses, m.currentStreak, m.bestStreak,
-                    m.coinsWagered, m.coinsWon, m.coinsLost, m.duelsPlayed
+                    m.coinsWagered, m.coinsWon, m.coinsLost, m.duelsPlayed,
+                    m.elo <= 0 ? 1000 : m.elo
             );
         }
     }
@@ -142,6 +145,71 @@ public final class DuelStatsManager {
             return 0;
         }
         return (m.wins * 100.0) / m.duelsPlayed;
+    }
+
+    public int getElo(UUID uuid) {
+        if (uuid == null) {
+            return 1000;
+        }
+        Mutable m = stats.get(uuid);
+        return m == null || m.elo <= 0 ? 1000 : m.elo;
+    }
+
+    public String getRankTier(int elo) {
+        if (elo >= 2000) return "&d&lMaster";
+        if (elo >= 1750) return "&b&lDiamond";
+        if (elo >= 1500) return "&a&lPlatinum";
+        if (elo >= 1250) return "&e&lGold";
+        if (elo >= 1000) return "&f&lSilver";
+        return "&7&lBronze";
+    }
+
+    public record EloChange(int winnerOld, int winnerNew, int winnerDelta,
+                             int loserOld, int loserNew, int loserDelta) {
+    }
+
+    public EloChange recordRankedResult(UUID winner, UUID loser) {
+        if (winner == null || loser == null || winner.equals(loser)) {
+            return null;
+        }
+        Mutable mw = entry(winner);
+        Mutable ml = entry(loser);
+        int winnerOld, winnerNew, winnerDelta;
+        int loserOld, loserNew, loserDelta;
+
+        int kFactor = Math.max(1, plugin.getConfigManager().getDuels().getInt("ranked.k-factor", 32));
+
+        synchronized (mw) {
+            winnerOld = mw.elo <= 0 ? 1000 : mw.elo;
+        }
+        synchronized (ml) {
+            loserOld = ml.elo <= 0 ? 1000 : ml.elo;
+        }
+
+        // Standard Elo probability
+        double expectedWinner = 1.0 / (1.0 + Math.pow(10.0, (loserOld - winnerOld) / 400.0));
+        double expectedLoser = 1.0 / (1.0 + Math.pow(10.0, (winnerOld - loserOld) / 400.0));
+
+        winnerDelta = (int) Math.round(kFactor * (1.0 - expectedWinner));
+        loserDelta = (int) Math.round(kFactor * (0.0 - expectedLoser)); // negative
+
+        winnerDelta = Math.max(1, winnerDelta);
+        loserDelta = Math.min(-1, loserDelta);
+
+        winnerNew = Math.max(100, winnerOld + winnerDelta);
+        loserNew = Math.max(100, loserOld + loserDelta);
+
+        synchronized (mw) {
+            mw.elo = winnerNew;
+        }
+        synchronized (ml) {
+            ml.elo = loserNew;
+        }
+
+        persistAsync(winner, snapshot(mw));
+        persistAsync(loser, snapshot(ml));
+
+        return new EloChange(winnerOld, winnerNew, winnerDelta, loserOld, loserNew, loserDelta);
     }
 
     /** In-memory, resets on restart by design - used only for the "flag, don't block" daily-limit signal. */

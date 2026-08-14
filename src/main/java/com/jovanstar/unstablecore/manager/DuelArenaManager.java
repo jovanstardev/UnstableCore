@@ -108,16 +108,6 @@ public final class DuelArenaManager {
         if (arena == null || !arena.hasCenter()) {
             return Availability.MISSING;
         }
-        Long grace = graceEndsAt.get(key);
-        if (grace != null) {
-            if (grace > System.currentTimeMillis()) {
-                return Availability.GRACE_PERIOD;
-            }
-            graceEndsAt.remove(key);
-        }
-        if (reservedBy.containsKey(key)) {
-            return Availability.RESERVED;
-        }
         return Availability.AVAILABLE;
     }
 
@@ -125,16 +115,12 @@ public final class DuelArenaManager {
         return availability(arenaId) == Availability.AVAILABLE;
     }
 
-    /** Atomically claims the arena for a duel. Returns false if it was already unavailable. */
+    /** No exclusive lock needed: returns true if arena exists and is ready. */
     public boolean reserve(String arenaId, UUID duelId) {
-        if (arenaId == null || duelId == null || !isAvailable(arenaId)) {
-            return false;
-        }
-        String key = arenaId.toLowerCase(Locale.ROOT);
-        return reservedBy.putIfAbsent(key, duelId) == null;
+        return isAvailable(arenaId);
     }
 
-    /** Fully frees the arena immediately - used when setup fails before combat ever started. */
+    /** No-op for shared arenas. */
     public void release(String arenaId) {
         if (arenaId == null) {
             return;

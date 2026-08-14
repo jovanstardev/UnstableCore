@@ -21,6 +21,8 @@ import net.kyori.adventure.text.event.HoverEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
+import org.bukkit.Sound;
+import org.bukkit.SoundCategory;
 import org.bukkit.World;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
@@ -49,7 +51,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class DuelManager {
 
-    public record WagerPrompt(UUID target, String arenaId) {
+    public record WagerPrompt(UUID target, String arenaId, String kitId) {
     }
 
     private final UnstableCore plugin;
@@ -63,6 +65,9 @@ public final class DuelManager {
     private final Map<UUID, Long> lastRequestSentAt = new ConcurrentHashMap<>();
     private final Map<String, Long> pairCooldownUntil = new ConcurrentHashMap<>();
     private final Map<UUID, DuelInventorySnapshot> pendingCrashRestores = new ConcurrentHashMap<>();
+    /** Loser's pre-duel location queued until their respawn event fires, so we can set the respawn location. */
+    private final Map<UUID, Location> pendingRespawnLocations = new ConcurrentHashMap<>();
+    private BukkitTask boundaryTask;
 
     public DuelManager(UnstableCore plugin, DuelArenaManager duelArenaManager, DuelStatsManager duelStatsManager) {
         this.plugin = plugin;
@@ -76,10 +81,14 @@ public final class DuelManager {
 
     /** Called once from onEnable, after the economy/kit/arena managers are ready. */
     public void start() {
+        if (boundaryTask != null) {
+            boundaryTask.cancel();
+        }
         duelArenaManager.releaseAll();
         for (DatabaseManager.DuelRow row : plugin.getDatabaseManager().loadAllDuels()) {
             recoverRow(row);
         }
+        boundaryTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickBoundaryCheck, 20L, 20L);
     }
 
     private void recoverRow(DatabaseManager.DuelRow row) {
@@ -132,6 +141,10 @@ public final class DuelManager {
 
     /** Called from onDisable - graceful refund/restore for anything still in flight. */
     public void shutdown() {
+        if (boundaryTask != null) {
+            boundaryTask.cancel();
+            boundaryTask = null;
+        }
         for (Duel duel : new ArrayList<>(duels.values())) {
             duel.cancelAllTasks();
             DuelState state = duel.getState();
@@ -142,6 +155,7 @@ public final class DuelManager {
                 restoreIfOnline(duel.getChallenger(), duel.getChallengerSnapshot());
                 restoreIfOnline(duel.getTarget(), duel.getTargetSnapshot());
             }
+            removeDuelVisibility(duel);
             if (duel.isEscrowed() && duel.getWager() > 0 && duel.markPayoutDone()) {
                 depositOrWarn(duel, duel.getChallenger(), duel.getWager(), "shutdown-refund");
                 depositOrWarn(duel, duel.getTarget(), duel.getWager(), "shutdown-refund");
@@ -156,6 +170,7 @@ public final class DuelManager {
         playerDuel.clear();
         playerGrace.clear();
         wagerPrompts.clear();
+        pendingRespawnLocations.clear();
     }
 
     // ---------------------------------------------------------------------------------------
@@ -170,7 +185,7 @@ public final class DuelManager {
         return cfg().getBoolean("enabled", true);
     }
 
-    private String defaultKitId() {
+    public String defaultKitId() {
         return cfg().getString("default-kit", "law");
     }
 
@@ -289,8 +304,12 @@ public final class DuelManager {
         return plugin.getCombatListener() != null && plugin.getCombatListener().isCombatTagged(player.getUniqueId());
     }
 
-    /** Final validation + creation, called once the wager amount is known. Sends its own error messages. */
     public Duel createRequest(Player challenger, Player target, String arenaId, double rawWager) {
+        return createRequest(challenger, target, arenaId, defaultKitId(), rawWager);
+    }
+
+    /** Final validation + creation, called once the wager amount is known. Sends its own error messages. */
+    public Duel createRequest(Player challenger, Player target, String arenaId, String kitId, double rawWager) {
         String err = validateNewRequest(challenger.getUniqueId(), target.getUniqueId());
         if (err != null) {
             msg(challenger, err, Map.of("target", target.getName()));
@@ -333,14 +352,20 @@ public final class DuelManager {
             }
         }
 
+        String effectiveKit = (kitId != null && !kitId.isBlank()) ? kitId : defaultKitId();
         long timeoutMs = Math.max(5000L, cfg().getLong("request.timeout-seconds", 30) * 1000L);
-        Duel duel = new Duel(challenger.getUniqueId(), target.getUniqueId(), defaultKitId(), wager, false, timeoutMs);
+        Duel duel = new Duel(challenger.getUniqueId(), target.getUniqueId(), effectiveKit, wager, false, timeoutMs);
         duel.setArenaId(arenaId.toLowerCase(Locale.ROOT));
 
         duels.put(duel.getId(), duel);
         playerDuel.put(challenger.getUniqueId(), duel.getId());
         playerDuel.put(target.getUniqueId(), duel.getId());
         lastRequestSentAt.put(challenger.getUniqueId(), System.currentTimeMillis());
+
+        if (plugin.getDuelQueueManager() != null) {
+            plugin.getDuelQueueManager().removeSilent(challenger.getUniqueId());
+            plugin.getDuelQueueManager().removeSilent(target.getUniqueId());
+        }
 
         Bukkit.getPluginManager().callEvent(new DuelCreateEvent(duel));
 
@@ -567,7 +592,12 @@ public final class DuelManager {
     // ---------------------------------------------------------------------------------------
 
     public void beginWagerPrompt(Player challenger, Player target, String arenaId) {
-        wagerPrompts.put(challenger.getUniqueId(), new WagerPrompt(target.getUniqueId(), arenaId));
+        beginWagerPrompt(challenger, target, arenaId, defaultKitId());
+    }
+
+    public void beginWagerPrompt(Player challenger, Player target, String arenaId, String kitId) {
+        String effectiveKit = (kitId != null && !kitId.isBlank()) ? kitId : defaultKitId();
+        wagerPrompts.put(challenger.getUniqueId(), new WagerPrompt(target.getUniqueId(), arenaId, effectiveKit));
         double min = Math.max(0, cfg().getDouble("wager.min", 0));
         double max = Math.max(min, cfg().getDouble("wager.max", 1_000_000));
         msg(challenger, "wager-prompt", Map.of(
@@ -613,7 +643,7 @@ public final class DuelManager {
             msg(player, "target-offline", Map.of());
             return true;
         }
-        createRequest(player, target, prompt.arenaId(), amount);
+        createRequest(player, target, prompt.arenaId(), prompt.kitId(), amount);
         return true;
     }
 
@@ -636,6 +666,45 @@ public final class DuelManager {
             return false;
         }
         duel.cancelAllTasks();
+        duel.setAcceptedAt(System.currentTimeMillis());
+
+        if (plugin.getDuelQueueManager() != null) {
+            plugin.getDuelQueueManager().removeSilent(duel.getChallenger());
+            plugin.getDuelQueueManager().removeSilent(duel.getTarget());
+        }
+
+        Bukkit.getPluginManager().callEvent(new DuelAcceptEvent(duel));
+        return runSetupSequence(duel);
+    }
+
+    public boolean createQueueMatch(Player challenger, Player target, String arenaId, boolean ranked) {
+        return createQueueMatch(challenger, target, arenaId, defaultKitId(), ranked);
+    }
+
+    /**
+     * Starts an instant duel directly from the matchmaking queue (casual or ranked).
+     */
+    public boolean createQueueMatch(Player challenger, Player target, String arenaId, String kitId, boolean ranked) {
+        if (challenger == null || !challenger.isOnline() || target == null || !target.isOnline()) {
+            return false;
+        }
+        if (isInDuel(challenger.getUniqueId()) || isInDuel(target.getUniqueId())) {
+            return false;
+        }
+        String effectiveKit = (kitId != null && !kitId.isBlank()) ? kitId : defaultKitId();
+        Duel duel = new Duel(challenger.getUniqueId(), target.getUniqueId(), effectiveKit, 0.0, ranked, 0);
+        duel.setArenaId(arenaId.toLowerCase(Locale.ROOT));
+
+        duels.put(duel.getId(), duel);
+        playerDuel.put(challenger.getUniqueId(), duel.getId());
+        playerDuel.put(target.getUniqueId(), duel.getId());
+
+        if (!duel.transition(DuelState.REQUESTED, DuelState.ACCEPTED)) {
+            duels.remove(duel.getId());
+            playerDuel.remove(challenger.getUniqueId());
+            playerDuel.remove(target.getUniqueId());
+            return false;
+        }
         duel.setAcceptedAt(System.currentTimeMillis());
         Bukkit.getPluginManager().callEvent(new DuelAcceptEvent(duel));
         return runSetupSequence(duel);
@@ -671,8 +740,10 @@ public final class DuelManager {
             return false;
         }
 
-        Location spot1 = plugin.getArenaManager().findSafeSpot(arena);
-        Location spot2 = plugin.getArenaManager().findSafeSpot(arena);
+        Location spot1 = arena.hasSpawn1() ? arena.getSpawn1() : plugin.getArenaManager().findSafeSpot(arena);
+        Location spot2 = arena.hasSpawn2() ? arena.getSpawn2() : plugin.getArenaManager().findSafeSpot(arena);
+        if (spot1 == null) spot1 = arena.getCenter();
+        if (spot2 == null) spot2 = arena.randomSpot();
         for (int attempt = 0; attempt < 3 && spot1 != null && spot2 != null && sameBlock(spot1, spot2); attempt++) {
             spot2 = plugin.getArenaManager().findSafeSpot(arena);
         }
@@ -757,6 +828,7 @@ public final class DuelManager {
         if (ts != null && target != null && target.isOnline()) {
             ts.restore(target);
         }
+        removeDuelVisibility(duel);
         if (duel.getArenaId() != null) {
             duelArenaManager.release(duel.getArenaId());
         }
@@ -796,15 +868,7 @@ public final class DuelManager {
                 remaining[0]--;
                 return;
             }
-            if (duel.transition(DuelState.STARTING, DuelState.ACTIVE)) {
-                duel.setStartedAt(System.currentTimeMillis());
-                String fight = cfg().getString("messages.fight", "&a&lFIGHT!");
-                MessageUtil.send(c, fight);
-                MessageUtil.send(t, fight);
-                Bukkit.getPluginManager().callEvent(new DuelStartEvent(duel));
-                persistDuelRowAsync(duel);
-                scheduleMaxDuration(duel);
-            }
+            activateDuel(duel);
             BukkitTask self = duel.getCountdownTask();
             if (self != null) {
                 self.cancel();
@@ -812,6 +876,117 @@ public final class DuelManager {
             duel.setCountdownTask(null);
         }, 0L, 20L);
         duel.setCountdownTask(task);
+    }
+
+    // Transition to ACTIVE, send FIGHT message + action bar, apply visibility isolation
+    private void activateDuel(Duel duel) {
+        if (!duel.transition(DuelState.STARTING, DuelState.ACTIVE)) {
+            return;
+        }
+        duel.setStartedAt(System.currentTimeMillis());
+        Player c = Bukkit.getPlayer(duel.getChallenger());
+        Player t = Bukkit.getPlayer(duel.getTarget());
+        String fight = cfg().getString("messages.fight", "&a&lFIGHT!");
+        if (c != null) MessageUtil.send(c, fight);
+        if (t != null) MessageUtil.send(t, fight);
+        // Action bar: show opponent win-rate message for 5 seconds
+        sendFightActionBar(duel);
+        // Visibility isolation: hide every other player from both duelists
+        applyDuelVisibility(duel);
+        Bukkit.getPluginManager().callEvent(new DuelStartEvent(duel));
+        persistDuelRowAsync(duel);
+        scheduleMaxDuration(duel);
+    }
+
+
+    /**
+     * Sends the opponent win-rate action bar to both duelists and suppresses
+     * the normal action bar for 5 seconds so the message stays visible.
+     */
+    private void sendFightActionBar(Duel duel) {
+        ActionBarManager abMgr = plugin.getActionBarManager();
+        if (abMgr == null) return;
+        long suppressMs = Math.max(1000L, cfg().getLong("fight-action-bar-duration-ms", 5000L));
+        DuelStatsManager stats = plugin.getDuelManager().getDuelStatsManager();
+
+        sendFightBarTo(duel.getChallenger(), duel.getTarget(), suppressMs, stats, abMgr);
+        sendFightBarTo(duel.getTarget(), duel.getChallenger(), suppressMs, stats, abMgr);
+    }
+
+    private void sendFightBarTo(UUID recipientUuid, UUID opponentUuid,
+                                long suppressMs, DuelStatsManager stats,
+                                ActionBarManager abMgr) {
+        Player recipient = Bukkit.getPlayer(recipientUuid);
+        if (recipient == null || !recipient.isOnline()) return;
+        String opponentName = nameOf(opponentUuid);
+        double winRate = stats.getWinRate(opponentUuid);
+        String winRateStr = String.format("%.2f", winRate);
+        String template = cfg().getString(
+                "messages.fight-action-bar",
+                "&7Your opponent &b{opponent} &7has a &b{winrate}% &7winrate. Good luck!"
+        );
+        String bar = MessageUtil.apply(template, Map.of(
+                "opponent", opponentName,
+                "winrate", winRateStr
+        ));
+        // Suppress normal bar first, then send the duel bar on a repeating task for the duration
+        abMgr.suppress(recipientUuid, suppressMs);
+        // Send immediately and repeat every second so the action bar doesn't flicker away
+        int ticks = (int) Math.max(1L, suppressMs / 50L);
+        int[] sent = {0};
+        Bukkit.getScheduler().runTaskTimer(plugin, task -> {
+            Player p = Bukkit.getPlayer(recipientUuid);
+            if (p == null || sent[0] >= ticks) {
+                task.cancel();
+                return;
+            }
+            MessageUtil.actionBar(p, bar);
+            sent[0] += 20; // advance by one tick-period (20 ticks = 1 s)
+        }, 0L, 20L);
+    }
+
+    // ----------------------------------------------------------------------------------
+    // Visibility isolation — hide all non-participants from each other during the duel
+    // ----------------------------------------------------------------------------------
+
+    /**
+     * Hides every online player from each duelist (except their opponent),
+     * and hides both duelists from every third-party player.
+     */
+    private void applyDuelVisibility(Duel duel) {
+        Player c = Bukkit.getPlayer(duel.getChallenger());
+        Player t = Bukkit.getPlayer(duel.getTarget());
+        if (c == null || t == null) return;
+
+        for (Player other : Bukkit.getOnlinePlayers()) {
+            UUID uid = other.getUniqueId();
+            if (uid.equals(duel.getChallenger()) || uid.equals(duel.getTarget())) continue;
+            // Third-party players can't see either duelist
+            other.hidePlayer(plugin, c);
+            other.hidePlayer(plugin, t);
+            // Duelists can't see third-party players
+            c.hidePlayer(plugin, other);
+            t.hidePlayer(plugin, other);
+        }
+    }
+
+    /**
+     * Restores visibility after the duel ends: re-shows both duelists to everyone
+     * and re-shows everyone to both duelists.
+     */
+    private void removeDuelVisibility(Duel duel) {
+        Player c = Bukkit.getPlayer(duel.getChallenger());
+        Player t = Bukkit.getPlayer(duel.getTarget());
+
+        for (Player other : Bukkit.getOnlinePlayers()) {
+            UUID uid = other.getUniqueId();
+            // Re-show both duelists to everyone
+            if (c != null) other.showPlayer(plugin, c);
+            if (t != null) other.showPlayer(plugin, t);
+            // Re-show everyone to both duelists
+            if (c != null && !uid.equals(duel.getChallenger())) c.showPlayer(plugin, other);
+            if (t != null && !uid.equals(duel.getTarget())) t.showPlayer(plugin, other);
+        }
     }
 
     private void scheduleMaxDuration(Duel duel) {
@@ -869,11 +1044,16 @@ public final class DuelManager {
     public void handleDisconnect(Player player) {
         UUID uuid = player.getUniqueId();
         clearWagerPrompt(uuid);
+        pendingRespawnLocations.remove(uuid);
+        if (plugin.getDuelQueueManager() != null) {
+            plugin.getDuelQueueManager().removeSilent(uuid);
+        }
 
         UUID duelId = playerDuel.get(uuid);
         if (duelId != null) {
             Duel duel = duels.get(duelId);
             if (duel != null) {
+                removeDuelVisibility(duel);
                 handleDisconnectDuel(duel, uuid);
             }
         }
@@ -928,6 +1108,22 @@ public final class DuelManager {
         duel.setWinner(winner);
         duel.setResult(result);
 
+        // Restore visibility for all players before anything else
+        removeDuelVisibility(duel);
+
+        // Lift action-bar suppression immediately (normal bar can resume)
+        ActionBarManager abMgr = plugin.getActionBarManager();
+        if (abMgr != null) {
+            abMgr.unsuppress(duel.getChallenger());
+            abMgr.unsuppress(duel.getTarget());
+        }
+
+        // Clear any combat-tag for both participants
+        if (plugin.getCombatListener() != null) {
+            plugin.getCombatListener().clearPlayer(duel.getChallenger());
+            plugin.getCombatListener().clearPlayer(duel.getTarget());
+        }
+
         if (duel.markInventoryRestored()) {
             restoreIfOnline(duel.getChallenger(), duel.getChallengerSnapshot());
             restoreIfOnline(duel.getTarget(), duel.getTargetSnapshot());
@@ -943,6 +1139,20 @@ public final class DuelManager {
         if (duel.markStatsRecorded()) {
             recordStats(duel, winner, result, payoutAmount);
         }
+        if (duel.isRanked() && winner != null && result != DuelResult.TIMEOUT_NO_CONTEST) {
+            UUID loserUuid = duel.opponentOf(winner);
+            DuelStatsManager.EloChange change = duelStatsManager.recordRankedResult(winner, loserUuid);
+            if (change != null) {
+                Player wp = Bukkit.getPlayer(winner);
+                Player lp = Bukkit.getPlayer(loserUuid);
+                if (wp != null && wp.isOnline()) {
+                    MessageUtil.send(wp, "&a+" + change.winnerDelta() + " ELO &7(" + change.winnerNew() + " ELO)");
+                }
+                if (lp != null && lp.isOnline()) {
+                    MessageUtil.send(lp, "&c" + change.loserDelta() + " ELO &7(" + change.loserNew() + " ELO)");
+                }
+            }
+        }
         insertHistoryRow(duel, winner, result, payoutAmount);
         announceResult(duel, winner, result, payoutAmount);
 
@@ -956,8 +1166,25 @@ public final class DuelManager {
 
         playerDuel.remove(duel.getChallenger());
         playerDuel.remove(duel.getTarget());
-        playerGrace.put(duel.getChallenger(), duel.getId());
-        playerGrace.put(duel.getTarget(), duel.getId());
+
+        // On a normal kill, teleport the loser back immediately — they’re dead and can’t collect
+        // drops anyway. The winner still gets the grace window to pick up items.
+        if (result == DuelResult.NORMAL_WIN && winner != null) {
+            UUID loserUuid = duel.opponentOf(winner);
+            DuelInventorySnapshot loserSnap = duel.snapshotFor(loserUuid);
+            playerGrace.put(winner, duel.getId()); // winner gets grace
+            // Queue the loser's pre-duel location so DuelListener.onRespawn can redirect them.
+            if (loserSnap != null && loserSnap.getLocation() != null) {
+                pendingRespawnLocations.put(loserUuid, loserSnap.getLocation());
+            } else {
+                Location fallback = resolveJoinSpawn();
+                if (fallback != null) pendingRespawnLocations.put(loserUuid, fallback);
+            }
+            duel.markLeftGrace(loserUuid); // loser skips grace
+        } else {
+            playerGrace.put(duel.getChallenger(), duel.getId());
+            playerGrace.put(duel.getTarget(), duel.getId());
+        }
 
         long graceMs = Math.max(0L, cfg().getLong("grace-period-seconds", 180) * 1000L);
         duel.setGraceEndsAt(System.currentTimeMillis() + graceMs);
@@ -1198,6 +1425,10 @@ public final class DuelManager {
         return new Location(world, x, y, z);
     }
 
+    public Location consumePendingRespawnLocation(UUID uuid) {
+        return uuid == null ? null : pendingRespawnLocations.remove(uuid);
+    }
+
     // ---------------------------------------------------------------------------------------
     // Admin
     // ---------------------------------------------------------------------------------------
@@ -1259,5 +1490,52 @@ public final class DuelManager {
     private void deleteDuelRowAsync(UUID duelId) {
         String id = duelId.toString();
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> plugin.getDatabaseManager().deleteDuel(id));
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Arena boundary enforcement
+    // ---------------------------------------------------------------------------------------
+
+    private void tickBoundaryCheck() {
+        for (Duel duel : duels.values()) {
+            if (duel.getState() != DuelState.ACTIVE) {
+                continue;
+            }
+            Arena arena = duelArenaManager.resolve(duel.getArenaId());
+            if (arena == null || !arena.hasCenter()) {
+                continue;
+            }
+            checkPlayerBoundary(duel.getChallenger(), arena);
+            checkPlayerBoundary(duel.getTarget(), arena);
+        }
+    }
+
+    private void checkPlayerBoundary(UUID uuid, Arena arena) {
+        Player player = Bukkit.getPlayer(uuid);
+        if (player == null || !player.isOnline() || player.isDead()) {
+            return;
+        }
+        Location loc = player.getLocation();
+        if (loc.getWorld() == null) {
+            return;
+        }
+
+        boolean outside = false;
+        if (!loc.getWorld().getName().equalsIgnoreCase(arena.getWorldName())) {
+            outside = true;
+        } else {
+            double dx = loc.getX() - arena.getX();
+            double dz = loc.getZ() - arena.getZ();
+            double r = arena.getRadius();
+            if ((dx * dx + dz * dz) > (r * r)) {
+                outside = true;
+            }
+        }
+
+        if (outside) {
+            player.damage(2.0); // 1 heart of border damage
+            MessageUtil.actionBar(player, "&c&l⚠ OUTSIDE ARENA BOUNDARY! Return immediately! &4(-1❤/s)");
+            player.playSound(loc, Sound.BLOCK_NOTE_BLOCK_BASS, SoundCategory.PLAYERS, 1.0f, 0.5f);
+        }
     }
 }

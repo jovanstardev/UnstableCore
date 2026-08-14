@@ -24,6 +24,15 @@ house-cut-percent: 0
 rematch:
   enabled: true
 
+ranked:
+  enabled: true
+  default-elo: 1000
+  k-factor: 32
+
+queue:
+  enabled: true
+  match-interval-ticks: 20
+
 default-kit: law
 
 arenas:
@@ -47,9 +56,9 @@ restricted-commands:
   - tp
   - back
 
+fight-action-bar-duration-ms: 5000
+
 gui:
-  map-title: "&8» &d&lChoose a Duel Arena &8«"
-  size: 54
   border: MAGENTA_STAINED_GLASS_PANE
   filler: GRAY_STAINED_GLASS_PANE
   map-material: FILLED_MAP
@@ -57,22 +66,16 @@ gui:
   map-lore-available:
     - "&8&m                                "
     - "&a✔ &fAvailable"
-    - "&7Click to challenge here"
+    - "&7Click to select this arena"
   map-lore-unavailable:
     - "&8&m                                "
     - "&c✘ &f{reason}"
-  target-slot: 4
   target-online-lore:
     - "&8&m                                "
     - "&a● &fOnline &7- ready to duel"
   target-offline-lore:
     - "&8&m                                "
     - "&c● &fOffline &7- can't send a request"
-  cancel-slot: 49
-  cancel-material: BARRIER
-  cancel-name: "&c&lCancel"
-  cancel-lore:
-    - "&7Close without sending a request."
 
 messages:
   disabled: "&cDuels are currently disabled."
@@ -124,6 +127,7 @@ messages:
   accept-failed: "&cCouldn't start the duel &8({reason})&c - both players have been refunded."
   countdown: "&e&l{seconds}"
   fight: "&a&l⚔ FIGHT!"
+  fight-action-bar: "&7Your opponent &b{opponent} &7has a &b{winrate}% &7winrate. Good luck!"
   win-broadcast: "&d⚔ &f{winner} &7defeated &f{loser}&7!"
   win-wager: "&a✔ &7You won &6{pot} &7coins!"
   win-streak: "&e⚡ &e{streak} duel win streak!"

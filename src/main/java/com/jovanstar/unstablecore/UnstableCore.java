@@ -36,6 +36,7 @@ import com.jovanstar.unstablecore.manager.ConfigManager;
 import com.jovanstar.unstablecore.manager.DatabaseManager;
 import com.jovanstar.unstablecore.manager.DuelArenaManager;
 import com.jovanstar.unstablecore.manager.DuelManager;
+import com.jovanstar.unstablecore.manager.DuelQueueManager;
 import com.jovanstar.unstablecore.manager.DuelStatsManager;
 import com.jovanstar.unstablecore.manager.EconomyManager;
 import com.jovanstar.unstablecore.manager.EventManager;
@@ -87,6 +88,7 @@ public final class UnstableCore extends JavaPlugin {
     private DuelArenaManager duelArenaManager;
     private DuelStatsManager duelStatsManager;
     private DuelManager duelManager;
+    private DuelQueueManager duelQueueManager;
     private ArenaListener arenaListener;
     private CombatListener combatListener;
     private org.bukkit.scheduler.BukkitTask autosaveTask;
@@ -152,6 +154,9 @@ public final class UnstableCore extends JavaPlugin {
         this.duelManager = new DuelManager(this, duelArenaManager, duelStatsManager);
         this.duelManager.start();
 
+        this.duelQueueManager = new DuelQueueManager(this);
+        this.duelQueueManager.start();
+
         autosaveTask = Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
             killstreakManager.save();
             statsManager.save();
@@ -183,6 +188,9 @@ public final class UnstableCore extends JavaPlugin {
         }
         if (itemCleanupManager != null) {
             itemCleanupManager.stop();
+        }
+        if (duelQueueManager != null) {
+            duelQueueManager.stop();
         }
         if (duelManager != null) {
             duelManager.shutdown();
@@ -443,6 +451,14 @@ public final class UnstableCore extends JavaPlugin {
 
     public DuelManager getDuelManager() {
         return duelManager;
+    }
+
+    public DuelStatsManager getDuelStatsManager() {
+        return duelStatsManager;
+    }
+
+    public DuelQueueManager getDuelQueueManager() {
+        return duelQueueManager;
     }
 
     public ArenaListener getArenaListener() {

@@ -17,11 +17,28 @@ public final class ActionBarManager {
     private final Map<UUID, CachedBalance> balanceCache = new ConcurrentHashMap<>();
     private static final long BALANCE_TTL_MS = 1500L;
 
+    /** uuid → timestamp (ms) until which the normal action-bar is suppressed. */
+    private final Map<UUID, Long> suppressUntil = new ConcurrentHashMap<>();
+
     private record CachedBalance(double balance, long atMs) {
     }
 
     public ActionBarManager(UnstableCore plugin) {
         this.plugin = plugin;
+    }
+
+    /**
+     * Suppress the normal action-bar for {@code durationMs} milliseconds.
+     * Used by DuelManager to hold off the normal bar while the duel-start message is shown.
+     */
+    public void suppress(UUID uuid, long durationMs) {
+        if (uuid == null || durationMs <= 0) return;
+        suppressUntil.put(uuid, System.currentTimeMillis() + durationMs);
+    }
+
+    /** Immediately lift any active suppression for this player (called on duel end). */
+    public void unsuppress(UUID uuid) {
+        if (uuid != null) suppressUntil.remove(uuid);
     }
 
     public void start() {
@@ -39,6 +56,7 @@ public final class ActionBarManager {
             task = null;
         }
         balanceCache.clear();
+        suppressUntil.clear();
     }
 
     public void reload() {
@@ -67,6 +85,7 @@ public final class ActionBarManager {
                 "action-bar.format",
                 "&c⚔ {killstreak} &8| &6☠ {deaths} &8| &e⛃ {coins}"
         );
+        long now = System.currentTimeMillis();
         for (Player player : Bukkit.getOnlinePlayers()) {
             if (!player.isOnline()) {
                 continue;
@@ -74,6 +93,15 @@ public final class ActionBarManager {
 
             if (plugin.getAfkZoneManager() != null && plugin.getAfkZoneManager().isInZone(player)) {
                 continue;
+            }
+            // Suppress normal action-bar temporarily (e.g. while duel-start message is shown)
+            Long until = suppressUntil.get(player.getUniqueId());
+            if (until != null) {
+                if (now < until) {
+                    continue; // still suppressed — duel-start bar is being shown by DuelManager
+                } else {
+                    suppressUntil.remove(player.getUniqueId()); // expired, resume normal
+                }
             }
             String message = MessageUtil.apply(format, Map.of(
                     "killstreak", String.valueOf(plugin.getKillstreakManager().getStreak(player.getUniqueId())),

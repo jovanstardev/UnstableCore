@@ -2,7 +2,9 @@ package com.jovanstar.unstablecore.gui;
 
 import com.jovanstar.unstablecore.UnstableCore;
 import com.jovanstar.unstablecore.manager.DuelArenaManager;
+import com.jovanstar.unstablecore.manager.EconomyManager;
 import com.jovanstar.unstablecore.model.Arena;
+import com.jovanstar.unstablecore.model.Kit;
 import com.jovanstar.unstablecore.util.ItemBuilder;
 import com.jovanstar.unstablecore.util.MessageUtil;
 import net.kyori.adventure.text.Component;
@@ -25,26 +27,40 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Kit is a fixed v1 default (no picker needed yet), so the duel request flow starts here: pick
- * a duel-eligible arena (with live availability), then proceed to the wager chat prompt. Same
- * border/content-grid visual language as BountyBoardGui, for consistency across the plugin.
+ * Three-step duel request GUI:
+ * Step 1: Select an arena.
+ * Step 2: Select a kit (from challenger's unlocked kits).
+ * Step 3: Select the wager amount (No Wager, preset coins, or custom chat amount).
+ *
+ * <p>Every slot is always covered by a border/filler pane so nothing reads as an unfinished
+ * inventory - same visual language as BountyBoardGui/DuelHistoryGui (colored border ring, muted
+ * gray content background, divider lines and ✔/✘ icons in lore).
  */
 public final class DuelMapGui implements InventoryHolder {
 
-    private static final int[] CONTENT = {
-            10, 11, 12, 13, 14, 15, 16,
-            19, 20, 21, 22, 23, 24, 25,
-            28, 29, 30, 31, 32, 33, 34,
-            37, 38, 39, 40, 41, 42, 43
-    };
+    private static final int SIZE = 36;
+    private static final String DIVIDER = "&8&m                    ";
+
+    private enum Step { MAP, KIT, WAGER }
 
     private final UnstableCore plugin;
     private final Player viewer;
     private final UUID targetUuid;
     private final String targetName;
     private final Inventory inventory;
+
+    private Step step = Step.MAP;
+    private String selectedArenaId;
+    private String selectedKitId;
+
+    // Slot mappings
     private final Map<Integer, String> arenaSlots = new HashMap<>();
+    private final Map<Integer, String> kitSlots = new HashMap<>();
+    private final Map<Integer, Double> wagerSlots = new HashMap<>();
+
     private int cancelSlot;
+    private int backSlot;
+    private int customWagerSlot;
 
     private DuelMapGui(UnstableCore plugin, Player viewer, Player target) {
         this.plugin = plugin;
@@ -52,14 +68,9 @@ public final class DuelMapGui implements InventoryHolder {
         this.targetUuid = target.getUniqueId();
         this.targetName = target.getName();
 
-        ConfigurationSection gui = section();
-        int size = Math.max(27, Math.min(54, gui.getInt("size", 54)));
-        if (size % 9 != 0) {
-            size = 54;
-        }
-        Component title = MessageUtil.parse(gui.getString("map-title", "&8» &d&lChoose a Duel Arena &8«"));
-        this.inventory = Bukkit.createInventory(this, size, title);
-        fill();
+        Component title = MessageUtil.parse("&8» &d&lDuel Setup &8«");
+        this.inventory = Bukkit.createInventory(this, SIZE, title);
+        fillMap();
     }
 
     private ConfigurationSection section() {
@@ -68,56 +79,314 @@ public final class DuelMapGui implements InventoryHolder {
     }
 
     public void refreshLive() {
-        fill();
+        if (step == Step.MAP) {
+            fillMap();
+        } else if (step == Step.KIT) {
+            fillKit();
+        } else {
+            fillWager();
+        }
     }
 
-    private void fill() {
-        ConfigurationSection gui = section();
-        arenaSlots.clear();
-
-        Material borderMat = material(gui.getString("border"), Material.MAGENTA_STAINED_GLASS_PANE);
-        Material emptyMat = material(gui.getString("filler"), Material.GRAY_STAINED_GLASS_PANE);
+    /** Covers every slot with border/content panes so nothing is ever left as raw air. */
+    private void fillBackground() {
+        Material borderMat = material(section().getString("border"), Material.MAGENTA_STAINED_GLASS_PANE);
+        Material contentMat = material(section().getString("filler"), Material.GRAY_STAINED_GLASS_PANE);
         ItemStack border = pane(borderMat);
-        ItemStack empty = pane(emptyMat);
+        ItemStack content = pane(contentMat);
         for (int i = 0; i < inventory.getSize(); i++) {
-            inventory.setItem(i, border);
+            // Top row (0-8) and bottom row (27-35) frame the GUI; the two middle rows are the
+            // working content area.
+            boolean frameRow = i < 9 || i >= 27;
+            inventory.setItem(i, frameRow ? border : content);
         }
-        for (int slot : CONTENT) {
-            if (slot < inventory.getSize()) {
-                inventory.setItem(slot, empty);
-            }
-        }
+    }
 
-        int targetSlot = gui.getInt("target-slot", 4);
-        if (targetSlot >= 0 && targetSlot < inventory.getSize()) {
-            inventory.setItem(targetSlot, buildTargetHead(gui));
-        }
+    private ItemStack stepInfo(String label) {
+        return new ItemBuilder(Material.NETHER_STAR)
+                .name("&d&l" + label)
+                .lore(List.of(
+                        DIVIDER,
+                        "&7Step 1&8/&73",
+                        "&f1. Arena  &82. Kit  &83. Wager"
+                ))
+                .hideAttributes().build();
+    }
+
+    // ----------------------------------------------------------------------------------
+    // Step 1: Map selection
+    // ----------------------------------------------------------------------------------
+
+    private void fillMap() {
+        arenaSlots.clear();
+        fillBackground();
+        ConfigurationSection gui = section();
+
+        inventory.setItem(0, stepInfo("Choose an Arena"));
+        inventory.setItem(4, buildTargetHead(gui));
 
         DuelArenaManager arenaManager = plugin.getDuelManager().getDuelArenaManager();
         List<Arena> arenas = arenaManager.eligibleArenas();
+        int[] positions = layoutPositions(arenas.size());
         if (arenas.isEmpty()) {
-            inventory.setItem(CONTENT[CONTENT.length / 2], new ItemBuilder(Material.BARRIER)
+            inventory.setItem(positions.length > 0 ? positions[0] : 13, new ItemBuilder(Material.BARRIER)
                     .name("&cNo duel arenas configured")
-                    .lore(List.of("&7Ask an admin to add one to", "&7duels.yml's arenas list."))
+                    .lore(List.of(DIVIDER, "&7Ask an admin to add one to", "&7duels.yml's arenas list."))
                     .hideAttributes().build());
         }
-        for (int i = 0; i < arenas.size() && i < CONTENT.length; i++) {
+        for (int i = 0; i < arenas.size() && i < positions.length; i++) {
             Arena arena = arenas.get(i);
             DuelArenaManager.Availability availability = arenaManager.availability(arena);
-            inventory.setItem(CONTENT[i], buildArenaIcon(gui, arena, availability));
+            inventory.setItem(positions[i], buildArenaIcon(gui, arena, availability));
             if (availability == DuelArenaManager.Availability.AVAILABLE) {
-                arenaSlots.put(CONTENT[i], arena.getId());
+                arenaSlots.put(positions[i], arena.getId());
             }
         }
 
-        cancelSlot = gui.getInt("cancel-slot", 49);
-        if (cancelSlot >= 0 && cancelSlot < inventory.getSize()) {
-            inventory.setItem(cancelSlot, new ItemBuilder(material(gui.getString("cancel-material"), Material.BARRIER))
-                    .name(gui.getString("cancel-name", "&c&lCancel"))
-                    .lore(gui.getStringList("cancel-lore"))
+        cancelSlot = 8;
+        inventory.setItem(cancelSlot, cancelButton());
+    }
+
+    // ----------------------------------------------------------------------------------
+    // Step 2: Kit selection
+    // ----------------------------------------------------------------------------------
+
+    private void fillKit() {
+        kitSlots.clear();
+        fillBackground();
+        ConfigurationSection gui = section();
+
+        backSlot = 0;
+        inventory.setItem(backSlot, backButton("Arena Selection", 2));
+        inventory.setItem(4, buildTargetHead(gui));
+        cancelSlot = 8;
+        inventory.setItem(cancelSlot, cancelButton());
+
+        // Get kits unlocked by challenger (or all starter kits if none)
+        List<Kit> unlockedKits = plugin.getKitManager().getUnlockedKits(viewer);
+        if (unlockedKits.isEmpty()) {
+            for (Kit k : plugin.getKitManager().getKits().values()) {
+                if (plugin.getKitManager().isStarter(k)) {
+                    unlockedKits.add(k);
+                }
+            }
+        }
+        if (unlockedKits.isEmpty()) {
+            unlockedKits.addAll(plugin.getKitManager().getKits().values());
+        }
+
+        int[] positions = layoutPositions(unlockedKits.size());
+        for (int i = 0; i < unlockedKits.size() && i < positions.length; i++) {
+            Kit kit = unlockedKits.get(i);
+            List<String> lore = List.of(
+                    DIVIDER,
+                    "&7Tier: &f" + (kit.getTier() != null ? kit.getTier() : "Standard"),
+                    "&7Both players get this kit.",
+                    "&e▸ Click to select"
+            );
+            inventory.setItem(positions[i], new ItemBuilder(kit.getIcon() != null ? kit.getIcon() : Material.IRON_SWORD)
+                    .name("&e&l" + MessageUtil.strip(kit.getDisplayName()))
+                    .lore(lore)
                     .hideAttributes().build());
+            kitSlots.put(positions[i], kit.getId());
+        }
+
+        Arena arena = plugin.getDuelManager().getDuelArenaManager().resolve(selectedArenaId);
+        String arenaName = arena != null ? MessageUtil.strip(arena.getDisplayName()) : String.valueOf(selectedArenaId);
+        inventory.setItem(31, new ItemBuilder(Material.MAP)
+                .name("&d&lArena Selected")
+                .lore(List.of(DIVIDER, "&f" + arenaName, "&7Now pick a kit above"))
+                .hideAttributes().build());
+    }
+
+    // ----------------------------------------------------------------------------------
+    // Step 3: Wager selection
+    // ----------------------------------------------------------------------------------
+
+    private void fillWager() {
+        wagerSlots.clear();
+        fillBackground();
+
+        Arena arena = plugin.getDuelManager().getDuelArenaManager().resolve(selectedArenaId);
+        String arenaName = arena != null ? MessageUtil.strip(arena.getDisplayName()) : String.valueOf(selectedArenaId);
+        Kit kit = plugin.getKitManager().getKit(selectedKitId);
+        String kitName = kit != null ? MessageUtil.strip(kit.getDisplayName()) : String.valueOf(selectedKitId);
+
+        backSlot = 0;
+        inventory.setItem(backSlot, backButton("Kit Selection", 3));
+        inventory.setItem(4, buildTargetHead(section()));
+        cancelSlot = 8;
+        inventory.setItem(cancelSlot, cancelButton());
+
+        double min = Math.max(0, plugin.getConfigManager().getDuels().getDouble("wager.min", 0));
+        double max = Math.max(min, plugin.getConfigManager().getDuels().getDouble("wager.max", 1_000_000));
+
+        inventory.setItem(19, new ItemBuilder(Material.EMERALD)
+                .name("&a&lNo Wager")
+                .lore(List.of(
+                        DIVIDER,
+                        "&7Play for free without betting",
+                        "&7Winner gets the default reward",
+                        "&e▸ Click to send the challenge"
+                ))
+                .hideAttributes().build());
+        wagerSlots.put(19, 0.0);
+
+        double[] presets = {100, 500, 1000, 5000, 10000};
+        Material[] mats = {
+                Material.GOLD_NUGGET,
+                Material.GOLD_INGOT,
+                Material.GOLD_BLOCK,
+                Material.DIAMOND,
+                Material.DIAMOND_BLOCK
+        };
+        int[] slots = {20, 21, 22, 23, 24};
+        for (int i = 0; i < presets.length; i++) {
+            double amount = presets[i];
+            boolean valid = (min <= 0 || amount >= min) && amount <= max;
+            if (valid) {
+                inventory.setItem(slots[i], new ItemBuilder(mats[i])
+                        .name("&6&l" + EconomyManager.format(amount) + " coins")
+                        .lore(List.of(
+                                DIVIDER,
+                                "&7Wager &8» &6" + EconomyManager.format(amount) + " &7coins each",
+                                "&7Winner takes &8» &6" + EconomyManager.format(amount * 2) + " &7coins",
+                                "&e▸ Click to send the challenge"
+                        ))
+                        .hideAttributes().build());
+                wagerSlots.put(slots[i], amount);
+            }
+        }
+
+        customWagerSlot = 25;
+        inventory.setItem(customWagerSlot, new ItemBuilder(Material.NAME_TAG)
+                .name("&b&lCustom Amount")
+                .lore(List.of(
+                        DIVIDER,
+                        "&7Type your desired wager in chat",
+                        "&e▸ Click to enter an amount"
+                ))
+                .hideAttributes().build());
+
+        inventory.setItem(31, new ItemBuilder(Material.NETHER_STAR)
+                .name("&d&lDuel Summary")
+                .lore(List.of(
+                        DIVIDER,
+                        "&7Arena &8» &f" + arenaName,
+                        "&7Kit &8» &e" + kitName,
+                        "&a✔ &7Ready to send"
+                ))
+                .hideAttributes().build());
+    }
+
+    // ----------------------------------------------------------------------------------
+    // Click handling
+    // ----------------------------------------------------------------------------------
+
+    public void handleClick(Player player, int slot) {
+        if (step == Step.MAP) {
+            handleMapClick(player, slot);
+        } else if (step == Step.KIT) {
+            handleKitClick(player, slot);
+        } else {
+            handleWagerClick(player, slot);
         }
     }
+
+    private void handleMapClick(Player player, int slot) {
+        if (slot == cancelSlot) {
+            player.closeInventory();
+            return;
+        }
+        String arenaId = arenaSlots.get(slot);
+        if (arenaId == null) {
+            return;
+        }
+        Player target = Bukkit.getPlayer(targetUuid);
+        if (target == null || !target.isOnline()) {
+            MessageUtil.send(player, "&cThat player isn't online anymore.");
+            player.closeInventory();
+            return;
+        }
+        DuelArenaManager arenaManager = plugin.getDuelManager().getDuelArenaManager();
+        if (arenaManager.availability(arenaId) != DuelArenaManager.Availability.AVAILABLE) {
+            MessageUtil.send(player, "&cThat arena just became unavailable - pick another.");
+            fillMap();
+            return;
+        }
+        selectedArenaId = arenaId;
+        step = Step.KIT;
+        fillKit();
+    }
+
+    private void handleKitClick(Player player, int slot) {
+        if (slot == cancelSlot) {
+            player.closeInventory();
+            return;
+        }
+        if (slot == backSlot) {
+            step = Step.MAP;
+            selectedArenaId = null;
+            fillMap();
+            return;
+        }
+        String kitId = kitSlots.get(slot);
+        if (kitId == null) {
+            return;
+        }
+        selectedKitId = kitId;
+        step = Step.WAGER;
+        fillWager();
+    }
+
+    private void handleWagerClick(Player player, int slot) {
+        if (slot == cancelSlot) {
+            player.closeInventory();
+            return;
+        }
+        if (slot == backSlot) {
+            step = Step.KIT;
+            selectedKitId = null;
+            fillKit();
+            return;
+        }
+        if (slot == customWagerSlot) {
+            Player target = Bukkit.getPlayer(targetUuid);
+            if (target == null || !target.isOnline()) {
+                MessageUtil.send(player, "&cThat player isn't online anymore.");
+                player.closeInventory();
+                return;
+            }
+            player.closeInventory();
+            plugin.getDuelManager().beginWagerPrompt(player, target, selectedArenaId, selectedKitId);
+            return;
+        }
+        Double wager = wagerSlots.get(slot);
+        if (wager == null) {
+            return;
+        }
+        Player target = Bukkit.getPlayer(targetUuid);
+        if (target == null || !target.isOnline()) {
+            MessageUtil.send(player, "&cThat player isn't online anymore.");
+            player.closeInventory();
+            return;
+        }
+        DuelArenaManager arenaManager = plugin.getDuelManager().getDuelArenaManager();
+        if (arenaManager.availability(selectedArenaId) != DuelArenaManager.Availability.AVAILABLE) {
+            MessageUtil.send(player, "&cThat arena just became unavailable.");
+            step = Step.MAP;
+            selectedArenaId = null;
+            selectedKitId = null;
+            fillMap();
+            return;
+        }
+        player.closeInventory();
+        plugin.getDuelManager().createRequest(player, target, selectedArenaId, selectedKitId, wager);
+    }
+
+    // ----------------------------------------------------------------------------------
+    // Item builders
+    // ----------------------------------------------------------------------------------
 
     private ItemStack buildTargetHead(ConfigurationSection gui) {
         Player target = Bukkit.getPlayer(targetUuid);
@@ -168,33 +437,38 @@ public final class DuelMapGui implements InventoryHolder {
         return new ItemBuilder(mat).name(name).lore(lore).hideAttributes().build();
     }
 
-    public void handleClick(Player player, int slot) {
-        if (slot == cancelSlot) {
-            player.closeInventory();
-            return;
-        }
-        String arenaId = arenaSlots.get(slot);
-        if (arenaId == null) {
-            return;
-        }
-        Player target = Bukkit.getPlayer(targetUuid);
-        if (target == null || !target.isOnline()) {
-            MessageUtil.send(player, "&cThat player isn't online anymore.");
-            player.closeInventory();
-            return;
-        }
-        DuelArenaManager arenaManager = plugin.getDuelManager().getDuelArenaManager();
-        if (arenaManager.availability(arenaId) != DuelArenaManager.Availability.AVAILABLE) {
-            MessageUtil.send(player, "&cThat arena just became unavailable - pick another.");
-            fill();
-            return;
-        }
-        player.closeInventory();
-        plugin.getDuelManager().beginWagerPrompt(player, target, arenaId);
+    private ItemStack cancelButton() {
+        return new ItemBuilder(Material.BARRIER)
+                .name("&c&lCancel")
+                .lore(List.of(DIVIDER, "&7Close without sending a request."))
+                .hideAttributes().build();
     }
+
+    private ItemStack backButton(String backTo, int stepNum) {
+        return new ItemBuilder(Material.ARROW)
+                .name("&7« &eBack")
+                .lore(List.of(
+                        DIVIDER,
+                        "&7Step " + stepNum + "&8/&73",
+                        "&7Return to " + backTo
+                ))
+                .hideAttributes().build();
+    }
+
+    // ----------------------------------------------------------------------------------
+    // Static factory + helpers
+    // ----------------------------------------------------------------------------------
 
     public static void open(UnstableCore plugin, Player challenger, Player target) {
         challenger.openInventory(new DuelMapGui(plugin, challenger, target).getInventory());
+    }
+
+    private static int[] layoutPositions(int count) {
+        int[] rows = {10, 11, 12, 13, 14, 15, 16, 19, 20, 21, 22, 23, 24, 25};
+        int len = Math.min(count, rows.length);
+        int[] out = new int[len];
+        System.arraycopy(rows, 0, out, 0, len);
+        return out;
     }
 
     private static ItemStack pane(Material material) {

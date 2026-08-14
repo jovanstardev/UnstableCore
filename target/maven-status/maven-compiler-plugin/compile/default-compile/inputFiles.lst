@@ -29,6 +29,7 @@ E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstableco
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\gui\DisposalGui.java
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\gui\DuelHistoryGui.java
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\gui\DuelMapGui.java
+E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\gui\DuelQueueGui.java
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\gui\KitAdminEditGui.java
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\gui\KitEditGui.java
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\gui\KitPreviewGui.java
@@ -63,6 +64,7 @@ E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstableco
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\manager\DatabaseManager.java
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\manager\DuelArenaManager.java
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\manager\DuelManager.java
+E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\manager\DuelQueueManager.java
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\manager\DuelStatsManager.java
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\manager\EconomyManager.java
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\manager\EventManager.java
