@@ -84,6 +84,18 @@ public final class LeaderboardManager {
         nameCache.put(uuid, name);
     }
 
+    public UUID findUuidByName(String name) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        for (Map.Entry<UUID, String> e : nameCache.entrySet()) {
+            if (e.getValue() != null && e.getValue().equalsIgnoreCase(name)) {
+                return e.getKey();
+            }
+        }
+        return null;
+    }
+
     public void syncProfile(Player player) {
         if (player == null) {
             return;

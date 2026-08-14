@@ -268,7 +268,7 @@ public final class KitManager {
             if (saveTask != null) {
                 return;
             }
-            saveTask = Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            saveTask = Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> {
                 synchronized (saveLock) {
                     saveTask = null;
                     if (!saveDirty) {
@@ -288,35 +288,35 @@ public final class KitManager {
                 saveTask.cancel();
                 saveTask = null;
             }
-        }
-        dataConfig.set("players", null);
-        ConfigurationSection players = dataConfig.createSection("players");
-        Set<UUID> all = new HashSet<>();
-        all.addAll(selected.keySet());
-        all.addAll(unlocked.keySet());
-        all.addAll(layouts.keySet());
-        for (UUID uuid : all) {
-            ConfigurationSection p = players.createSection(uuid.toString());
-            String sel = selected.get(uuid);
-            if (sel != null) {
-                p.set("selected", sel);
-            }
-            Set<String> unlocks = unlocked.get(uuid);
-            if (unlocks != null && !unlocks.isEmpty()) {
-                p.set("unlocked", new ArrayList<>(unlocks));
-            }
-            Map<String, ItemStack[]> playerLayouts = layouts.get(uuid);
-            if (playerLayouts != null && !playerLayouts.isEmpty()) {
-                ConfigurationSection layoutsSec = p.createSection("layouts");
-                for (Map.Entry<String, ItemStack[]> e : playerLayouts.entrySet()) {
-                    writeContents(layoutsSec.createSection(e.getKey()), e.getValue());
+            dataConfig.set("players", null);
+            ConfigurationSection players = dataConfig.createSection("players");
+            Set<UUID> all = new HashSet<>();
+            all.addAll(selected.keySet());
+            all.addAll(unlocked.keySet());
+            all.addAll(layouts.keySet());
+            for (UUID uuid : all) {
+                ConfigurationSection p = players.createSection(uuid.toString());
+                String sel = selected.get(uuid);
+                if (sel != null) {
+                    p.set("selected", sel);
+                }
+                Set<String> unlocks = unlocked.get(uuid);
+                if (unlocks != null && !unlocks.isEmpty()) {
+                    p.set("unlocked", new ArrayList<>(unlocks));
+                }
+                Map<String, ItemStack[]> playerLayouts = layouts.get(uuid);
+                if (playerLayouts != null && !playerLayouts.isEmpty()) {
+                    ConfigurationSection layoutsSec = p.createSection("layouts");
+                    for (Map.Entry<String, ItemStack[]> e : playerLayouts.entrySet()) {
+                        writeContents(layoutsSec.createSection(e.getKey()), e.getValue());
+                    }
                 }
             }
-        }
-        try {
-            dataConfig.save(dataFile);
-        } catch (IOException e) {
-            plugin.getLogger().log(Level.SEVERE, "Could not save kit-data.yml", e);
+            try {
+                dataConfig.save(dataFile);
+            } catch (IOException e) {
+                plugin.getLogger().log(Level.SEVERE, "Could not save kit-data.yml", e);
+            }
         }
     }
 

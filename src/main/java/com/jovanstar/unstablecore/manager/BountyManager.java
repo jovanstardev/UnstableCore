@@ -151,7 +151,7 @@ public final class BountyManager {
         }
 
         double rounded = Math.floor(amount);
-        if (rounded < minAmount() || rounded > maxAmount()) {
+        if (!Double.isFinite(rounded) || rounded < minAmount() || rounded > maxAmount()) {
             msg(placer, "invalid-amount", Map.of(
                     "min", EconomyManager.format(minAmount()),
                     "max", EconomyManager.format(maxAmount())

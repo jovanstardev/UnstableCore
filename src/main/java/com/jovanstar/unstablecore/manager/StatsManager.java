@@ -149,6 +149,13 @@ public final class StatsManager {
         if (online != null) {
             return online;
         }
+        LeaderboardManager leaderboard = plugin.getLeaderboardManager();
+        if (leaderboard != null) {
+            UUID cached = leaderboard.findUuidByName(name);
+            if (cached != null) {
+                return Bukkit.getOfflinePlayer(cached);
+            }
+        }
         for (OfflinePlayer offline : Bukkit.getOfflinePlayers()) {
             if (offline.getName() != null && offline.getName().equalsIgnoreCase(name)) {
                 return offline;
