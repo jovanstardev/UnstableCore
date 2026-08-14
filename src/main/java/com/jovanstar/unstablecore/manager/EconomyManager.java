@@ -43,7 +43,7 @@ public final class EconomyManager {
     }
 
     public boolean deposit(OfflinePlayer player, double amount) {
-        if (!isReady() || amount <= 0) {
+        if (!isReady() || amount <= 0 || !Double.isFinite(amount)) {
             return false;
         }
         boolean ok = economy.depositPlayer(player, amount).transactionSuccess();
@@ -61,11 +61,11 @@ public final class EconomyManager {
     }
 
     public boolean has(OfflinePlayer player, double amount) {
-        return isReady() && amount >= 0 && economy.getBalance(player) >= amount;
+        return isReady() && amount >= 0 && Double.isFinite(amount) && economy.getBalance(player) >= amount;
     }
 
     public boolean withdraw(OfflinePlayer player, double amount) {
-        if (!isReady() || amount <= 0) {
+        if (!isReady() || amount <= 0 || !Double.isFinite(amount)) {
             return false;
         }
         if (economy.getBalance(player) < amount) {
@@ -80,7 +80,7 @@ public final class EconomyManager {
     }
 
     public boolean takeExact(OfflinePlayer player, double amount) {
-        if (!isReady() || amount <= 0 || player == null) {
+        if (!isReady() || amount <= 0 || player == null || !Double.isFinite(amount)) {
             return false;
         }
         boolean ok = economy.withdrawPlayer(player, amount).transactionSuccess();
@@ -101,7 +101,7 @@ public final class EconomyManager {
     }
 
     public boolean set(OfflinePlayer player, double amount) {
-        if (!isReady()) {
+        if (!isReady() || !Double.isFinite(amount) || amount < 0) {
             return false;
         }
         double bal = economy.getBalance(player);

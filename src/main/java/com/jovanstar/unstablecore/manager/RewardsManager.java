@@ -105,7 +105,13 @@ public final class RewardsManager {
         synchronized (lockFor(uuid)) {
             PlayerRewards data = cache.computeIfAbsent(uuid, this::load);
             if (registerLoginDay(data)) {
-                save(uuid, data);
+                DatabaseManager.RewardsRow snapshot = data.toRow();
+                Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+                    DatabaseManager db = plugin.getDatabaseManager();
+                    if (db != null && db.isConnected()) {
+                        db.saveRewards(uuid, snapshot);
+                    }
+                });
             }
         }
     }
