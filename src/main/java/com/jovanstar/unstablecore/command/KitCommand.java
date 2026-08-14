@@ -3,6 +3,7 @@ package com.jovanstar.unstablecore.command;
 import com.jovanstar.unstablecore.UnstableCore;
 import com.jovanstar.unstablecore.gui.KitAdminEditGui;
 import com.jovanstar.unstablecore.gui.KitPreviewGui;
+import com.jovanstar.unstablecore.gui.KitsGui;
 import com.jovanstar.unstablecore.manager.KitManager;
 import com.jovanstar.unstablecore.model.Kit;
 import com.jovanstar.unstablecore.util.MessageUtil;
@@ -36,6 +37,10 @@ public final class KitCommand implements CommandExecutor, TabCompleter {
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command,
                              @NotNull String label, @NotNull String[] args) {
         if (!sender.hasPermission("unstablecore.admin")) {
+            if (sender instanceof Player player) {
+                KitsGui.open(plugin, player);
+                return true;
+            }
             MessageUtil.sendConfig(sender, "no-permission", Map.of());
             return true;
         }

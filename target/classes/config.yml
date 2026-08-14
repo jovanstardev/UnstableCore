@@ -31,6 +31,10 @@ combat-sounds:
     volume: 1.0
     pitch: 1.0
 
+combat-tag:
+  enabled: true
+  seconds: 15
+
 killstreak:
   title-seconds: 2
   title-minimum: 2
@@ -501,6 +505,8 @@ messages:
   kit-cannot-afford: "&cYou need &e{price} coins &cto unlock &f{kit}&c."
   kit-purchased: "&aUnlocked &f{kit} &afor &e{price} coins&a!"
   kit-selected: "&aSelected kit &f{kit}&a."
+  kit-selected-inventory-not-empty: "&cEmpty your inventory first, then reselect the kit to auto-equip it. Or use &f/loadout&c."
+  arena-auto-kit: "&aYou arrived without a kit - equipped &f{kit}&a!"
   kit-not-found: "&cKit &f{kit} &cnot found."
   kit-layout-saved: "&aSaved loadout layout for &f{kit}&a."
   kit-layout-reset: "&aReset loadout layout for &f{kit} &ato kit defaults."

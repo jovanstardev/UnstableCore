@@ -2,7 +2,6 @@ package com.jovanstar.unstablecore.gui;
 
 import com.jovanstar.unstablecore.UnstableCore;
 import com.jovanstar.unstablecore.manager.EconomyManager;
-import com.jovanstar.unstablecore.manager.EventManager;
 import com.jovanstar.unstablecore.manager.KitManager;
 import com.jovanstar.unstablecore.manager.LoadoutManager;
 import com.jovanstar.unstablecore.model.Kit;
@@ -190,16 +189,24 @@ public final class KitsGui implements InventoryHolder {
         if (plugin.getKitManager().selectKit(player, kit.getId())) {
             pling(player);
             MessageUtil.sendConfig(player, "kit-selected", Map.of("kit", kit.getDisplayName()));
-            LoadoutManager loadouts = plugin.getLoadoutManager();
-            if (loadouts != null) {
-                long remain = loadouts.remainingMillis(player.getUniqueId());
-                if (remain > 0) {
-                    MessageUtil.sendConfig(player, "loadout-cooldown", Map.of(
-                            "time", EventManager.formatDurationMillis(remain)
-                    ));
-                }
-            }
+            autoEquipIfEmpty(player);
             fill(player);
+        }
+    }
+
+    /**
+     * Auto-applies the just-selected kit if the player's inventory is completely empty, so
+     * picking a kit from /kits doesn't require a separate /loadout. If they still have items,
+     * we refuse to silently wipe them and ask them to empty their inventory first instead.
+     */
+    private void autoEquipIfEmpty(Player player) {
+        if (!KitManager.isInventoryEmpty(player)) {
+            MessageUtil.sendConfig(player, "kit-selected-inventory-not-empty", Map.of());
+            return;
+        }
+        LoadoutManager loadouts = plugin.getLoadoutManager();
+        if (loadouts != null) {
+            loadouts.tryGive(player, true);
         }
     }
 
@@ -207,6 +214,7 @@ public final class KitsGui implements InventoryHolder {
         if (isStarter(kit)) {
             if (plugin.getKitManager().selectKit(player, kit.getId())) {
                 pling(player);
+                autoEquipIfEmpty(player);
             }
             fill(player);
             return;
@@ -239,15 +247,7 @@ public final class KitsGui implements InventoryHolder {
                 "kit", kit.getDisplayName(),
                 "price", EconomyManager.formatCommas(kit.getPrice())
         ));
-        LoadoutManager loadouts = plugin.getLoadoutManager();
-        if (loadouts != null) {
-            long remain = loadouts.remainingMillis(player.getUniqueId());
-            if (remain > 0) {
-                MessageUtil.sendConfig(player, "loadout-cooldown", Map.of(
-                        "time", EventManager.formatDurationMillis(remain)
-                ));
-            }
-        }
+        autoEquipIfEmpty(player);
         pling(player);
         fill(player);
     }

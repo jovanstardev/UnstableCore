@@ -93,4 +93,5 @@ com\jovanstar\unstablecore\model\Kit.class
 com\jovanstar\unstablecore\listener\CombatListener.class
 com\jovanstar\unstablecore\listener\ArenaListener$1.class
 com\jovanstar\unstablecore\manager\PlaytimeManager.class
+com\jovanstar\unstablecore\listener\CombatListener$CombatTag.class
 com\jovanstar\unstablecore\gui\KitsGui.class

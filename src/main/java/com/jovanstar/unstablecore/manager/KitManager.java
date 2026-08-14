@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.Level;
 
 public final class KitManager {
@@ -634,6 +635,49 @@ public final class KitManager {
     public boolean applyLoadout(Player player) {
         Kit kit = getSelectedKit(player);
         if (kit == null) {
+            return false;
+        }
+        return applyKit(player, kit);
+    }
+
+    /** Gives the player a random kit they have unlocked, without changing their selected kit. */
+    public Kit giveRandomUnlockedKit(Player player) {
+        if (player == null) {
+            return null;
+        }
+        List<Kit> options = new ArrayList<>();
+        for (Kit candidate : kits.values()) {
+            if (isUnlocked(player, candidate)) {
+                options.add(candidate);
+            }
+        }
+        if (options.isEmpty()) {
+            return null;
+        }
+        Kit kit = options.get(ThreadLocalRandom.current().nextInt(options.size()));
+        return applyKit(player, kit) ? kit : null;
+    }
+
+    public static boolean isInventoryEmpty(Player player) {
+        if (player == null) {
+            return false;
+        }
+        PlayerInventory inv = player.getInventory();
+        for (ItemStack stack : inv.getStorageContents()) {
+            if (!isEmpty(stack)) {
+                return false;
+            }
+        }
+        for (ItemStack stack : inv.getArmorContents()) {
+            if (!isEmpty(stack)) {
+                return false;
+            }
+        }
+        return isEmpty(inv.getItemInOffHand());
+    }
+
+    public boolean applyKit(Player player, Kit kit) {
+        if (player == null || kit == null) {
             return false;
         }
         ItemStack[] layout = getEffectiveContents(player, kit);

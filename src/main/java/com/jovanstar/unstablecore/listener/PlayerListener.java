@@ -1,6 +1,7 @@
 package com.jovanstar.unstablecore.listener;
 
 import com.jovanstar.unstablecore.UnstableCore;
+import com.jovanstar.unstablecore.gui.KitsGui;
 import com.jovanstar.unstablecore.manager.SettingsManager;
 import com.jovanstar.unstablecore.util.MessageUtil;
 import org.bukkit.Bukkit;
@@ -11,9 +12,11 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
+import java.util.Locale;
 import java.util.Map;
 
 public final class PlayerListener implements Listener {
@@ -138,5 +141,52 @@ public final class PlayerListener implements Listener {
     @EventHandler
     public void onWorldChange(PlayerChangedWorldEvent event) {
         plugin.getAfkZoneManager().clear(event.getPlayer());
+    }
+
+    /**
+     * Catches near-misses of /kit and /kits (typos, missing/extra letter) and opens the kits
+     * menu instead of letting the server say "unknown command". Exact matches for "kit"/"kits"
+     * are left alone since those already resolve to their real commands, and anything that
+     * matches an already-registered command label is never touched so we can't hijack it.
+     */
+    @EventHandler(priority = EventPriority.LOW)
+    public void onCommandPreprocess(PlayerCommandPreprocessEvent event) {
+        String message = event.getMessage();
+        int spaceIdx = message.indexOf(' ');
+        String label = (spaceIdx == -1 ? message.substring(1) : message.substring(1, spaceIdx))
+                .toLowerCase(Locale.ROOT);
+        if (label.length() < 2 || label.length() > 6 || label.charAt(0) != 'k' || label.equals("kit") || label.equals("kits")) {
+            return;
+        }
+        for (int i = 0; i < label.length(); i++) {
+            char c = label.charAt(i);
+            if (c < 'a' || c > 'z') {
+                return;
+            }
+        }
+        if (Bukkit.getPluginCommand(label) != null) {
+            return;
+        }
+        if (levenshtein(label, "kit") <= 1 || levenshtein(label, "kits") <= 1) {
+            event.setCancelled(true);
+            KitsGui.open(plugin, event.getPlayer());
+        }
+    }
+
+    private static int levenshtein(String a, String b) {
+        int[][] dp = new int[a.length() + 1][b.length() + 1];
+        for (int i = 0; i <= a.length(); i++) {
+            dp[i][0] = i;
+        }
+        for (int j = 0; j <= b.length(); j++) {
+            dp[0][j] = j;
+        }
+        for (int i = 1; i <= a.length(); i++) {
+            for (int j = 1; j <= b.length(); j++) {
+                int cost = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
+                dp[i][j] = Math.min(Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1), dp[i - 1][j - 1] + cost);
+            }
+        }
+        return dp[a.length()][b.length()];
     }
 }

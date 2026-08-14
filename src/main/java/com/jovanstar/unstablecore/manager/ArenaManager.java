@@ -3,6 +3,7 @@ package com.jovanstar.unstablecore.manager;
 import com.jovanstar.unstablecore.UnstableCore;
 import com.jovanstar.unstablecore.model.Arena;
 import com.jovanstar.unstablecore.model.ArenaType;
+import com.jovanstar.unstablecore.model.Kit;
 import com.jovanstar.unstablecore.util.MessageUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.HeightMap;
@@ -783,6 +784,7 @@ public final class ArenaManager {
             Bukkit.getScheduler().runTask(plugin, () -> {
                 playerArena.put(player.getUniqueId(), arena.getId());
                 MessageUtil.sendConfig(player, "arena-teleported", Map.of("map", arena.getDisplayName()));
+                giveRandomKitIfEmpty(player);
 
                 String title = MessageUtil.apply(
                         plugin.getConfig().getString("arena.teleport-title", "&a&l{map}"),
@@ -798,6 +800,18 @@ public final class ArenaManager {
             });
         });
         return true;
+    }
+
+    /** Safety net: a player entering an arena with a completely empty inventory gets a random unlocked kit. */
+    private void giveRandomKitIfEmpty(Player player) {
+        KitManager kitManager = plugin.getKitManager();
+        if (kitManager == null || !KitManager.isInventoryEmpty(player)) {
+            return;
+        }
+        Kit kit = kitManager.giveRandomUnlockedKit(player);
+        if (kit != null) {
+            MessageUtil.sendConfig(player, "arena-auto-kit", Map.of("kit", kit.getDisplayName()));
+        }
     }
 
     private void playTeleportSound(Player player, Location destination) {
