@@ -109,18 +109,6 @@ messages:
   wager-cancelled: "&7Duel request cancelled."
   request-sent: "&a✔ &7Duel request sent to &f{target}&7."
   request-received: |-
-<<<<<<< HEAD
-    &8&m----------------------------------------
-    &d⚔ &d&lDUEL REQUEST &8• &f{challenger}
-    &8&m----------------------------------------
-    &7Map &8» &f{map}          &7Kit &8» &f{kit}
-    &7Wager &8» &f{wager} coins each
-    &7Winner receives &8» &6{pot} coins{cut}
-    &8&m----------------------------------------
-    &7Respond within &e{seconds}s
-  accept-button: "&a&l[ ACCEPT ]"
-  deny-button: "&c&l[ DENY ]"
-=======
     &8&m----------------------------------
     &d&lDUEL REQUEST &8» &f{challenger}
     &7Map: &f{map} &8| &7Kit: &f{kit}
@@ -129,7 +117,6 @@ messages:
     &7Expires in &c{seconds}s
   accept-button: "&a&l[ACCEPT]"
   deny-button: "&c&l[DENY]"
->>>>>>> da832b6 (update)
   accept-hover: "&aClick to accept this duel"
   deny-hover: "&cClick to deny this duel"
   request-actionbar-target: "&d⚔ &fDuel request from &f{challenger} &8- &e{seconds}s &7to respond"
@@ -152,12 +139,7 @@ messages:
   forfeit-win: "&a✔ &f{opponent} &7disconnected - you win by forfeit."
   forfeit-loss: "&7You disconnected during an active duel and forfeited."
   timeout-no-contest: "&7The duel timed out - wagers refunded, no winner."
-<<<<<<< HEAD
-  timeout-win: "&a✔ &f{winner} &7wins by higher health after the time limit."
-  grace-period: "&7Collect your items - the arena is yours for &f{seconds}s&7. Type &f/leave &7to head out early."
-=======
   timeout-win: "&f{winner} &7wins by higher health after the time limit."
->>>>>>> da832b6 (update)
   leave-success: "&7You left the duel arena."
   not-in-grace: "&cYou're not in a post-duel grace period."
   toggle-on: "&a✔ &7You are now accepting duel requests."

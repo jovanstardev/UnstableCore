@@ -392,34 +392,6 @@ public final class DuelManager {
             target.sendMessage(buildRequestComponent(duel));
             target.playSound(target.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, SoundCategory.PLAYERS, 1.0f, 1.5f);
         }
-<<<<<<< HEAD
-        BukkitTask task = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-            if (duel.getState() != DuelState.REQUESTED) {
-                BukkitTask self = duel.getRequestTickerTask();
-                if (self != null) {
-                    self.cancel();
-                }
-                return;
-            }
-            long secondsLeft = duel.millisUntilExpiry() / 1000L;
-            Player t = Bukkit.getPlayer(duel.getTarget());
-            if (t != null && t.isOnline()) {
-                MessageUtil.actionBar(t, MessageUtil.apply(
-                        cfg().getString("messages.request-actionbar-target", "&d⚔ &fDuel request from &f{challenger} &8- &e{seconds}s &7to respond"),
-                        Map.of("challenger", nameOf(duel.getChallenger()), "seconds", String.valueOf(secondsLeft))
-                ));
-            }
-            Player c = Bukkit.getPlayer(duel.getChallenger());
-            if (c != null && c.isOnline()) {
-                MessageUtil.actionBar(c, MessageUtil.apply(
-                        cfg().getString("messages.request-actionbar-challenger", "&7Waiting on &f{target} &8- &e{seconds}s"),
-                        Map.of("target", nameOf(duel.getTarget()), "seconds", String.valueOf(secondsLeft))
-                ));
-            }
-        }, 0L, 20L);
-        duel.setRequestTickerTask(task);
-=======
->>>>>>> da832b6 (update)
     }
 
     private Component buildRequestComponent(Duel duel) {
