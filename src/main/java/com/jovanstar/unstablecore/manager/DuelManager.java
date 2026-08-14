@@ -392,6 +392,7 @@ public final class DuelManager {
             target.sendMessage(buildRequestComponent(duel));
             target.playSound(target.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, SoundCategory.PLAYERS, 1.0f, 1.5f);
         }
+<<<<<<< HEAD
         BukkitTask task = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             if (duel.getState() != DuelState.REQUESTED) {
                 BukkitTask self = duel.getRequestTickerTask();
@@ -417,6 +418,8 @@ public final class DuelManager {
             }
         }, 0L, 20L);
         duel.setRequestTickerTask(task);
+=======
+>>>>>>> da832b6 (update)
     }
 
     private Component buildRequestComponent(Duel duel) {

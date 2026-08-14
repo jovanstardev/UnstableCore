@@ -124,6 +124,7 @@ public final class AfkZoneManager {
         }
 
         for (Player player : players) {
+            boolean wasInZone = inZone.containsKey(player.getUniqueId());
             boolean inside = WorldGuardHook.isInRegion(player, region);
             if (inside && requireWater && !player.isInWater()) {
                 inside = false;
@@ -131,7 +132,7 @@ public final class AfkZoneManager {
 
             if (inside) {
                 handleInZone(player);
-            } else {
+            } else if (wasInZone) {
                 leaveZone(player);
             }
         }
