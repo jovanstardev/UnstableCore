@@ -24,11 +24,14 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/** Staff inspection/cleanup tools. `/duels` is registered as an alias in plugin.yml to this same executor. */
+/**
+ * Staff inspection and arena management tools.
+ * Registered with aliases: /dueladmin, /duels, /duelarena, /da
+ */
 public final class DuelAdminCommand implements CommandExecutor, TabCompleter {
 
     private static final List<String> SUBS = List.of(
-            "list", "inspect", "forceend", "arena", "setspawn1", "setspawn2", "setcenter", "spawns"
+            "list", "inspect", "forceend", "arena", "addarena", "removearena", "setspawn1", "setspawn2", "setcenter", "spawns"
     );
 
     private final UnstableCore plugin;
@@ -75,11 +78,34 @@ public final class DuelAdminCommand implements CommandExecutor, TabCompleter {
                         : "&c" + target.getName() + " isn't in a duel.");
             }
             case "arena" -> {
-                if (args.length < 2) {
-                    MessageUtil.send(sender, "&cUsage: /dueladmin arena <arena>");
+                if (args.length == 1) {
+                    listDuelArenas(sender);
                     return true;
                 }
-                inspectArena(sender, args[1]);
+                String action = args[1].toLowerCase(Locale.ROOT);
+                if (action.equals("add") && args.length >= 3) {
+                    addDuelArena(sender, args[2]);
+                } else if ((action.equals("remove") || action.equals("delete") || action.equals("del")) && args.length >= 3) {
+                    removeDuelArena(sender, args[2]);
+                } else if (action.equals("list")) {
+                    listDuelArenas(sender);
+                } else {
+                    inspectArena(sender, args[1]);
+                }
+            }
+            case "add", "addarena" -> {
+                if (args.length < 2) {
+                    MessageUtil.send(sender, "&cUsage: /dueladmin arena add <arena>");
+                    return true;
+                }
+                addDuelArena(sender, args[1]);
+            }
+            case "remove", "removearena", "delarena", "del" -> {
+                if (args.length < 2) {
+                    MessageUtil.send(sender, "&cUsage: /dueladmin arena remove <arena>");
+                    return true;
+                }
+                removeDuelArena(sender, args[1]);
             }
             case "setspawn1", "spawn1" -> {
                 if (!(sender instanceof Player player)) {
@@ -158,6 +184,62 @@ public final class DuelAdminCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
+    private void addDuelArena(CommandSender sender, String arenaName) {
+        if (arenaName == null || arenaName.isBlank()) {
+            MessageUtil.send(sender, "&cUsage: /dueladmin arena add <arena>");
+            return;
+        }
+        String key = arenaName.toLowerCase(Locale.ROOT);
+        DuelArenaManager dam = plugin.getDuelManager().getDuelArenaManager();
+        boolean added = dam.addArena(key);
+        if (added) {
+            Arena arena = plugin.getArenaManager().getArena(key);
+            if (arena != null) {
+                MessageUtil.send(sender, "&aAdded arena &f" + arena.getDisplayName() + " &7(" + key + ") &ato duel arenas list in duels.yml.");
+            } else {
+                MessageUtil.send(sender, "&aAdded &f" + key + " &ato duels.yml. &eNote: Arena is not in arenas.yml yet. You can configure it with &f/dueladmin setcenter " + key + " <radius>&e.");
+            }
+        } else {
+            MessageUtil.send(sender, "&eArena &f" + key + " &eis already configured in duels.yml.");
+        }
+    }
+
+    private void removeDuelArena(CommandSender sender, String arenaName) {
+        if (arenaName == null || arenaName.isBlank()) {
+            MessageUtil.send(sender, "&cUsage: /dueladmin arena remove <arena>");
+            return;
+        }
+        String key = arenaName.toLowerCase(Locale.ROOT);
+        DuelArenaManager dam = plugin.getDuelManager().getDuelArenaManager();
+        boolean removed = dam.removeArena(key);
+        if (removed) {
+            MessageUtil.send(sender, "&aRemoved arena &f" + key + " &afrom duels.yml.");
+        } else {
+            MessageUtil.send(sender, "&cArena &f" + key + " &cwas not found in duels.yml arenas list.");
+        }
+    }
+
+    private void listDuelArenas(CommandSender sender) {
+        DuelArenaManager dam = plugin.getDuelManager().getDuelArenaManager();
+        List<String> ids = dam.configuredArenaIds();
+        if (ids.isEmpty()) {
+            MessageUtil.send(sender, "&7No duel arenas configured in duels.yml. Add one with &f/dueladmin arena add <arena>&7.");
+            return;
+        }
+        MessageUtil.send(sender, "&d&lDuel Arenas &7(" + ids.size() + " configured in duels.yml)");
+        for (String id : ids) {
+            Arena arena = plugin.getArenaManager().getArena(id);
+            if (arena == null) {
+                MessageUtil.send(sender, "&8• &c" + id + " &7- &cNot found in arenas.yml");
+            } else {
+                String center = arena.hasCenter() ? "&aCenter ✓ &7(r=" + arena.getRadius() + "m)" : "&cNo center";
+                String s1 = arena.hasSpawn1() ? "&aSpawn1 ✓" : "&7Spawn1 (center)";
+                String s2 = arena.hasSpawn2() ? "&aSpawn2 ✓" : "&7Spawn2 (random)";
+                MessageUtil.send(sender, "&8• &f" + arena.getDisplayName() + " &7(" + id + ") &8| " + center + " &8| " + s1 + " &8| " + s2);
+            }
+        }
+    }
+
     private String formatLoc(Location loc) {
         if (loc == null || loc.getWorld() == null) return "None";
         return String.format("%.1f, %.1f, %.1f (%s)", loc.getX(), loc.getY(), loc.getZ(), loc.getWorld().getName());
@@ -228,11 +310,13 @@ public final class DuelAdminCommand implements CommandExecutor, TabCompleter {
     }
 
     private void sendHelp(CommandSender sender) {
-        MessageUtil.send(sender, "&d✦ &fDuel Admin");
+        MessageUtil.send(sender, "&d✦ &fDuel Admin & Arenas");
         MessageUtil.send(sender, "&e/dueladmin list &7- all active/pending duels");
         MessageUtil.send(sender, "&e/dueladmin inspect <player> &7- inspect a player's duel");
         MessageUtil.send(sender, "&e/dueladmin forceend <player> &7- safely force-end a duel");
-        MessageUtil.send(sender, "&e/dueladmin arena <arena> &7- inspect arena status");
+        MessageUtil.send(sender, "&e/dueladmin arena add <arena> &7- add arena to duels.yml");
+        MessageUtil.send(sender, "&e/dueladmin arena remove <arena> &7- remove arena from duels.yml");
+        MessageUtil.send(sender, "&e/dueladmin arena list &7- list all duel arenas in duels.yml");
         MessageUtil.send(sender, "&e/dueladmin setspawn1 <arena> &7- set Challenger spawn at your position");
         MessageUtil.send(sender, "&e/dueladmin setspawn2 <arena> &7- set Target spawn at your position");
         MessageUtil.send(sender, "&e/dueladmin setcenter <arena> <radius> &7- set center and border radius");
@@ -249,11 +333,23 @@ public final class DuelAdminCommand implements CommandExecutor, TabCompleter {
             String lower = args[0].toLowerCase(Locale.ROOT);
             return SUBS.stream().filter(s -> s.startsWith(lower)).collect(Collectors.toList());
         }
-        if (args.length == 2 && (args[0].equalsIgnoreCase("arena")
-                || args[0].equalsIgnoreCase("setspawn1")
+        if (args.length == 2 && args[0].equalsIgnoreCase("arena")) {
+            List<String> list = new ArrayList<>(List.of("add", "remove", "list"));
+            list.addAll(plugin.getArenaManager().getArenas().keySet());
+            String lower = args[1].toLowerCase(Locale.ROOT);
+            return list.stream().filter(s -> s.toLowerCase(Locale.ROOT).startsWith(lower)).collect(Collectors.toList());
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("arena") && (args[1].equalsIgnoreCase("add") || args[1].equalsIgnoreCase("remove"))) {
+            String lower = args[2].toLowerCase(Locale.ROOT);
+            return plugin.getArenaManager().getArenas().keySet().stream()
+                    .filter(s -> s.startsWith(lower)).collect(Collectors.toList());
+        }
+        if (args.length == 2 && (args[0].equalsIgnoreCase("setspawn1")
                 || args[0].equalsIgnoreCase("setspawn2")
                 || args[0].equalsIgnoreCase("setcenter")
-                || args[0].equalsIgnoreCase("spawns"))) {
+                || args[0].equalsIgnoreCase("spawns")
+                || args[0].equalsIgnoreCase("addarena")
+                || args[0].equalsIgnoreCase("removearena"))) {
             String lower = args[1].toLowerCase(Locale.ROOT);
             return plugin.getArenaManager().getArenas().keySet().stream()
                     .filter(s -> s.startsWith(lower)).collect(Collectors.toList());

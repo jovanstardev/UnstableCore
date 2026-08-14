@@ -89,7 +89,10 @@ public final class DuelListener implements Listener {
         // that only the winner is using. We need their snapshot to teleport them back.
         // We store the pending respawn-teleport in a small helper on DuelManager.
         Location loc = mgr.consumePendingRespawnLocation(uuid);
-        if (loc != null) {
+        if (loc == null && mgr.isInDuel(uuid)) {
+            loc = mgr.resolveJoinSpawn();
+        }
+        if (loc != null && loc.getWorld() != null) {
             event.setRespawnLocation(loc);
         }
     }

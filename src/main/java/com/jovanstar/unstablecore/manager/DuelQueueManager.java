@@ -117,6 +117,7 @@ public final class DuelQueueManager {
 
         queue.put(player.getUniqueId(), new QueueEntry(player.getUniqueId(), type, System.currentTimeMillis()));
         MessageUtil.send(player, "&aYou joined the " + type.getFormattedName() + "&a! Looking for an opponent...");
+        player.playSound(player.getLocation(), org.bukkit.Sound.BLOCK_NOTE_BLOCK_BELL, org.bukkit.SoundCategory.PLAYERS, 1.0f, 1.2f);
         return true;
     }
 
@@ -127,6 +128,7 @@ public final class DuelQueueManager {
         QueueEntry removed = queue.remove(player.getUniqueId());
         if (removed != null) {
             MessageUtil.send(player, "&eYou left the " + removed.type().getFormattedName() + "&e.");
+            player.playSound(player.getLocation(), org.bukkit.Sound.BLOCK_NOTE_BLOCK_BASS, org.bukkit.SoundCategory.PLAYERS, 0.8f, 0.8f);
             return true;
         }
         MessageUtil.send(player, "&cYou are not in any duel queue.");
@@ -278,5 +280,7 @@ public final class DuelQueueManager {
         String msg2 = "&a&lMatch found! &7Opponent: &f" + p1.getName() + " &7(" + type.getFormattedName() + "&7) &8| &7Kit: &e" + kitDisplayName;
         MessageUtil.send(p1, msg1);
         MessageUtil.send(p2, msg2);
+        p1.playSound(p1.getLocation(), org.bukkit.Sound.UI_TOAST_CHALLENGE_COMPLETE, org.bukkit.SoundCategory.PLAYERS, 1.0f, 1.2f);
+        p2.playSound(p2.getLocation(), org.bukkit.Sound.UI_TOAST_CHALLENGE_COMPLETE, org.bukkit.SoundCategory.PLAYERS, 1.0f, 1.2f);
     }
 }
