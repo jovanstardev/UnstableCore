@@ -914,6 +914,9 @@ public final class DuelManager {
         sendFightActionBar(duel);
         // Visibility isolation: hide every other player from both duelists
         applyDuelVisibility(duel);
+        if (plugin.getDuelScoreboardManager() != null) {
+            plugin.getDuelScoreboardManager().start(duel);
+        }
         Bukkit.getPluginManager().callEvent(new DuelStartEvent(duel));
         persistDuelRowAsync(duel);
         scheduleMaxDuration(duel);
@@ -1133,6 +1136,9 @@ public final class DuelManager {
         removeDuelVisibility(duel);
         if (plugin.getSpectatorManager() != null) {
             plugin.getSpectatorManager().onDuelEnd(duel.getId());
+        }
+        if (plugin.getDuelScoreboardManager() != null) {
+            plugin.getDuelScoreboardManager().stop(duel);
         }
 
         // Lift action-bar suppression immediately (normal bar can resume)

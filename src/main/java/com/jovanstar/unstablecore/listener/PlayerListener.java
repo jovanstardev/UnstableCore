@@ -139,6 +139,9 @@ public final class PlayerListener implements Listener {
         if (plugin.getSpectatorManager() != null) {
             plugin.getSpectatorManager().handleDisconnect(event.getPlayer());
         }
+        if (plugin.getDuelScoreboardManager() != null) {
+            plugin.getDuelScoreboardManager().handleDisconnect(event.getPlayer());
+        }
         if (plugin.getRewardsManager() != null) {
             plugin.getRewardsManager().unload(event.getPlayer().getUniqueId());
         }

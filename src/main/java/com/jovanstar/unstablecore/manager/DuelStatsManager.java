@@ -3,6 +3,10 @@ package com.jovanstar.unstablecore.manager;
 import com.jovanstar.unstablecore.UnstableCore;
 import org.bukkit.Bukkit;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -265,7 +269,127 @@ public final class DuelStatsManager {
         persistAsync(winner, snapshot(mw));
         persistAsync(loser, snapshot(ml));
 
+        checkFarming(winner, loser);
+
         return new EloChange(winnerOld, winnerNew, winnerDelta, loserOld, loserNew, loserDelta);
+    }
+
+    // -----------------------------------------------------------------------------------
+    // ELO-farming detection - "flag, don't auto-punish" per DUELS.md. Purely in-memory and
+    // resets on restart, same as dailyWagerTracking below: this is a staff-visible signal
+    // (surfaced via /dueladmin flags), not an economic safety boundary, so it doesn't need
+    // to survive a restart the way escrow/payout state does.
+    // -----------------------------------------------------------------------------------
+
+    private record RankedMatch(long atMs, UUID winner) {
+    }
+
+    private static final class PairRecord {
+        final Deque<RankedMatch> recent = new ArrayDeque<>();
+        String flagReason;
+        long flaggedAt;
+    }
+
+    public record FarmFlag(UUID playerA, UUID playerB, String reason, long flaggedAt, int recentMatches) {
+    }
+
+    private final Map<String, PairRecord> pairHistory = new ConcurrentHashMap<>();
+
+    private static String pairKey(UUID a, UUID b) {
+        return a.compareTo(b) <= 0 ? a + "|" + b : b + "|" + a;
+    }
+
+    private void checkFarming(UUID winner, UUID loser) {
+        if (!plugin.getConfigManager().getDuels().getBoolean("anti-farm.enabled", true)) {
+            return;
+        }
+        PairRecord rec = pairHistory.computeIfAbsent(pairKey(winner, loser), k -> new PairRecord());
+        long now = System.currentTimeMillis();
+        long windowMs = Math.max(1L, plugin.getConfigManager().getDuels().getInt("anti-farm.window-minutes", 30)) * 60_000L;
+
+        synchronized (rec) {
+            rec.recent.addLast(new RankedMatch(now, winner));
+            while (!rec.recent.isEmpty() && now - rec.recent.peekFirst().atMs() > windowMs) {
+                rec.recent.removeFirst();
+            }
+
+            int maxInWindow = Math.max(1, plugin.getConfigManager().getDuels().getInt("anti-farm.max-duels-per-window", 5));
+            if (rec.recent.size() >= maxInWindow) {
+                flag(rec, winner, loser, "high-frequency", rec.recent.size()
+                        + " ranked duels between this pair in the last " + (windowMs / 60_000L) + "m");
+                return;
+            }
+
+            int altThreshold = Math.max(2, plugin.getConfigManager().getDuels().getInt("anti-farm.alternating-threshold", 4));
+            if (rec.recent.size() >= altThreshold && isAlternating(rec.recent, altThreshold)) {
+                flag(rec, winner, loser, "alternating-wins", "last " + altThreshold
+                        + " ranked duels between this pair alternated winners - possible win-trading");
+            }
+        }
+    }
+
+    /** True if the most recent {@code count} matches strictly alternate winners (A beats B, B beats A, ...). */
+    private static boolean isAlternating(Deque<RankedMatch> recent, int count) {
+        List<RankedMatch> list = new ArrayList<>(recent);
+        if (list.size() < count) {
+            return false;
+        }
+        List<RankedMatch> last = list.subList(list.size() - count, list.size());
+        for (int i = 1; i < last.size(); i++) {
+            if (last.get(i).winner().equals(last.get(i - 1).winner())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void flag(PairRecord rec, UUID a, UUID b, String reasonCode, String detail) {
+        boolean wasAlreadyFlagged = rec.flagReason != null;
+        rec.flagReason = reasonCode + ": " + detail;
+        rec.flaggedAt = System.currentTimeMillis();
+        if (!wasAlreadyFlagged) {
+            plugin.getLogger().warning("[Duel][AntiFarm] Possible ELO farming between " + a + " and " + b
+                    + " - " + rec.flagReason + " - see /dueladmin flags");
+        }
+    }
+
+    /** Staff-facing view for /dueladmin flags - most recently flagged pairs first. */
+    public List<FarmFlag> activeFarmFlags() {
+        List<FarmFlag> out = new ArrayList<>();
+        for (Map.Entry<String, PairRecord> e : pairHistory.entrySet()) {
+            PairRecord rec = e.getValue();
+            synchronized (rec) {
+                if (rec.flagReason == null) {
+                    continue;
+                }
+                String[] parts = e.getKey().split("\\|", 2);
+                if (parts.length != 2) {
+                    continue;
+                }
+                try {
+                    out.add(new FarmFlag(UUID.fromString(parts[0]), UUID.fromString(parts[1]),
+                            rec.flagReason, rec.flaggedAt, rec.recent.size()));
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        }
+        out.sort(Comparator.comparingLong(FarmFlag::flaggedAt).reversed());
+        return out;
+    }
+
+    /** Clears a specific pair's flag (e.g. after staff review clears them) - leaves match history intact. */
+    public boolean clearFarmFlag(UUID a, UUID b) {
+        PairRecord rec = pairHistory.get(pairKey(a, b));
+        if (rec == null) {
+            return false;
+        }
+        synchronized (rec) {
+            if (rec.flagReason == null) {
+                return false;
+            }
+            rec.flagReason = null;
+            return true;
+        }
     }
 
     /** In-memory, resets on restart by design - used only for the "flag, don't block" daily-limit signal. */

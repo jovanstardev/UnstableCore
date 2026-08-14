@@ -38,6 +38,7 @@ import com.jovanstar.unstablecore.manager.DatabaseManager;
 import com.jovanstar.unstablecore.manager.DuelArenaManager;
 import com.jovanstar.unstablecore.manager.DuelManager;
 import com.jovanstar.unstablecore.manager.DuelQueueManager;
+import com.jovanstar.unstablecore.manager.DuelScoreboardManager;
 import com.jovanstar.unstablecore.manager.DuelStatsManager;
 import com.jovanstar.unstablecore.manager.EconomyManager;
 import com.jovanstar.unstablecore.manager.EventManager;
@@ -92,6 +93,7 @@ public final class UnstableCore extends JavaPlugin {
     private DuelManager duelManager;
     private DuelQueueManager duelQueueManager;
     private SpectatorManager spectatorManager;
+    private DuelScoreboardManager duelScoreboardManager;
     private ArenaListener arenaListener;
     private CombatListener combatListener;
     private org.bukkit.scheduler.BukkitTask autosaveTask;
@@ -161,6 +163,7 @@ public final class UnstableCore extends JavaPlugin {
         this.duelQueueManager.start();
 
         this.spectatorManager = new SpectatorManager(this);
+        this.duelScoreboardManager = new DuelScoreboardManager(this);
 
         autosaveTask = Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
             killstreakManager.save();
@@ -199,6 +202,9 @@ public final class UnstableCore extends JavaPlugin {
         }
         if (spectatorManager != null) {
             spectatorManager.shutdown();
+        }
+        if (duelScoreboardManager != null) {
+            duelScoreboardManager.shutdown();
         }
         if (duelManager != null) {
             duelManager.shutdown();
@@ -475,6 +481,10 @@ public final class UnstableCore extends JavaPlugin {
 
     public SpectatorManager getSpectatorManager() {
         return spectatorManager;
+    }
+
+    public DuelScoreboardManager getDuelScoreboardManager() {
+        return duelScoreboardManager;
     }
 
     public ArenaListener getArenaListener() {

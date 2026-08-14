@@ -9,6 +9,7 @@ com\jovanstar\unstablecore\manager\SpectatorManager$PreviousState.class
 com\jovanstar\unstablecore\gui\KitPreviewGui.class
 com\jovanstar\unstablecore\event\DuelEvent.class
 com\jovanstar\unstablecore\manager\DuelArenaManager$Availability.class
+com\jovanstar\unstablecore\manager\DuelStatsManager$PairRecord.class
 com\jovanstar\unstablecore\event\DuelStartEvent.class
 com\jovanstar\unstablecore\manager\AfkZoneManager.class
 com\jovanstar\unstablecore\manager\DatabaseManager.class
@@ -45,6 +46,7 @@ com\jovanstar\unstablecore\command\ShopCommand.class
 com\jovanstar\unstablecore\event\DuelPayoutEvent.class
 com\jovanstar\unstablecore\command\SpectateCommand.class
 com\jovanstar\unstablecore\event\DuelEndEvent.class
+com\jovanstar\unstablecore\manager\DuelStatsManager$RankedMatch.class
 com\jovanstar\unstablecore\gui\LeaderboardCategoryGui.class
 com\jovanstar\unstablecore\manager\ActionBarManager$CachedBalance.class
 com\jovanstar\unstablecore\manager\DatabaseManager$DuelStatsRow.class
@@ -53,6 +55,7 @@ com\jovanstar\unstablecore\placeholder\UnstablePlaceholders.class
 com\jovanstar\unstablecore\command\UnstableCoreCommand.class
 com\jovanstar\unstablecore\manager\DatabaseManager$DuelRow.class
 com\jovanstar\unstablecore\manager\TagManager.class
+com\jovanstar\unstablecore\manager\DuelScoreboardManager$Session.class
 com\jovanstar\unstablecore\manager\DuelStatsManager$Mutable.class
 com\jovanstar\unstablecore\manager\DuelQueueManager$QueueEntry.class
 com\jovanstar\unstablecore\gui\ShopGui.class
@@ -62,6 +65,7 @@ com\jovanstar\unstablecore\manager\BountyManager$Bounty.class
 com\jovanstar\unstablecore\manager\EconomyManager.class
 com\jovanstar\unstablecore\listener\HeldShulkerListener$Session.class
 com\jovanstar\unstablecore\manager\LeaderboardManager$Cache.class
+com\jovanstar\unstablecore\manager\DuelStatsManager$FarmFlag.class
 com\jovanstar\unstablecore\gui\KitEditGui.class
 com\jovanstar\unstablecore\listener\HeldShulkerListener.class
 com\jovanstar\unstablecore\gui\BountyBoardGui.class
@@ -75,6 +79,7 @@ com\jovanstar\unstablecore\hook\WorldGuardHook.class
 com\jovanstar\unstablecore\manager\DatabaseManager$CombatRow.class
 com\jovanstar\unstablecore\model\Duel.class
 com\jovanstar\unstablecore\manager\DuelArenaManager.class
+com\jovanstar\unstablecore\manager\DuelScoreboardManager.class
 com\jovanstar\unstablecore\manager\DuelStatsManager$EloChange.class
 com\jovanstar\unstablecore\command\KitsCommand.class
 com\jovanstar\unstablecore\manager\BountyManager$PromptType.class

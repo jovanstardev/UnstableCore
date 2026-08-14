@@ -107,6 +107,9 @@ public final class SpectatorManager {
 
         spectator.setGameMode(GameMode.SPECTATOR);
         spectator.teleport(challenger.getLocation());
+        if (plugin.getDuelScoreboardManager() != null) {
+            plugin.getDuelScoreboardManager().showToSpectator(spectator, duel);
+        }
 
         msg(spectator, "spectate-started", Map.of(
                 "challenger", challenger.getName(), "target", opponent.getName()
@@ -130,6 +133,13 @@ public final class SpectatorManager {
         UUID duelId = spectatorToDuel.remove(specUuid);
         if (duelId == null) {
             return;
+        }
+        // Only tear down the scoreboard session on a genuine final exit (restore=true). A
+        // duel-switch (restore=false) leaves it alone entirely - showToSpectator's own showTo()
+        // is self-contained and correctly carries the session forward into the next duel's board
+        // when it finds one still active, without needing this to touch it first.
+        if (restore && plugin.getDuelScoreboardManager() != null) {
+            plugin.getDuelScoreboardManager().stopFor(specUuid, true);
         }
         Set<UUID> set = duelSpectators.get(duelId);
         if (set != null) {

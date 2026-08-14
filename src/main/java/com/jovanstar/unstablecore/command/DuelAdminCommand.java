@@ -31,7 +31,8 @@ import java.util.stream.Collectors;
 public final class DuelAdminCommand implements CommandExecutor, TabCompleter {
 
     private static final List<String> SUBS = List.of(
-            "list", "inspect", "forceend", "arena", "addarena", "removearena", "setspawn1", "setspawn2", "setcenter", "spawns"
+            "list", "inspect", "forceend", "arena", "addarena", "removearena", "setspawn1", "setspawn2",
+            "setcenter", "spawns", "flags"
     );
 
     private final UnstableCore plugin;
@@ -179,9 +180,49 @@ public final class DuelAdminCommand implements CommandExecutor, TabCompleter {
                 MessageUtil.send(sender, "&7Spawn 1 (Challenger): &f" + (arena.hasSpawn1() ? formatLoc(arena.getSpawn1()) : "&cNot set (using center)"));
                 MessageUtil.send(sender, "&7Spawn 2 (Target): &f" + (arena.hasSpawn2() ? formatLoc(arena.getSpawn2()) : "&cNot set (using random spot)"));
             }
+            case "flags" -> {
+                if (args.length >= 3 && args[1].equalsIgnoreCase("clear")) {
+                    clearFlag(sender, args[2], args.length >= 4 ? args[3] : null);
+                } else {
+                    listFarmFlags(sender);
+                }
+            }
             default -> sendHelp(sender);
         }
         return true;
+    }
+
+    private void listFarmFlags(CommandSender sender) {
+        var flags = plugin.getDuelManager().getDuelStatsManager().activeFarmFlags();
+        if (flags.isEmpty()) {
+            MessageUtil.send(sender, "&7No ELO-farming flags currently active.");
+            return;
+        }
+        MessageUtil.send(sender, "&d&lELO Farming Flags &7(" + flags.size() + ")");
+        java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("MMM d, HH:mm", Locale.US);
+        for (var flag : flags) {
+            MessageUtil.send(sender, "&8• &f" + nameOf(flag.playerA()) + " &7<-> &f" + nameOf(flag.playerB())
+                    + " &8| &c" + flag.reason()
+                    + " &8| &7flagged " + fmt.format(new java.util.Date(flag.flaggedAt())));
+        }
+        MessageUtil.send(sender, "&7Clear a flag with &f/dueladmin flags clear <player1> <player2>");
+    }
+
+    private void clearFlag(CommandSender sender, String nameA, String nameB) {
+        if (nameB == null) {
+            MessageUtil.send(sender, "&cUsage: /dueladmin flags clear <player1> <player2>");
+            return;
+        }
+        OfflinePlayer a = plugin.getStatsManager().resolvePlayer(nameA);
+        OfflinePlayer b = plugin.getStatsManager().resolvePlayer(nameB);
+        if (a == null || b == null) {
+            MessageUtil.sendConfig(sender, "player-not-found", Map.of());
+            return;
+        }
+        boolean cleared = plugin.getDuelManager().getDuelStatsManager().clearFarmFlag(a.getUniqueId(), b.getUniqueId());
+        MessageUtil.send(sender, cleared
+                ? "&aCleared the farming flag between &f" + nameA + " &aand &f" + nameB + "&a."
+                : "&cNo active flag found between &f" + nameA + " &cand &f" + nameB + "&c.");
     }
 
     private void addDuelArena(CommandSender sender, String arenaName) {
@@ -271,12 +312,25 @@ public final class DuelAdminCommand implements CommandExecutor, TabCompleter {
             return;
         }
         UUID uuid = target.getUniqueId();
+        var duelStats = plugin.getDuelManager().getDuelStatsManager();
+        MessageUtil.send(sender, "&7ELO: &f" + duelStats.getElo(uuid)
+                + " &8| &7W/L: &a" + duelStats.getWins(uuid) + "&8/&c" + duelStats.getLosses(uuid));
+        List<String> involvedFlags = new ArrayList<>();
+        for (var flag : duelStats.activeFarmFlags()) {
+            if (uuid.equals(flag.playerA()) || uuid.equals(flag.playerB())) {
+                involvedFlags.add(nameOf(flag.playerA().equals(uuid) ? flag.playerB() : flag.playerA()) + " (" + flag.reason() + ")");
+            }
+        }
+        if (!involvedFlags.isEmpty()) {
+            MessageUtil.send(sender, "&c⚠ Farming flags: &f" + String.join("&7, &f", involvedFlags));
+        }
+
         Duel duel = plugin.getDuelManager().getDuelForPlayer(uuid);
         if (duel == null) {
             duel = plugin.getDuelManager().getGraceDuelForPlayer(uuid);
         }
         if (duel == null) {
-            MessageUtil.send(sender, "&c" + playerName + " isn't in a duel.");
+            MessageUtil.send(sender, "&7" + playerName + " isn't currently in a duel.");
             return;
         }
         long elapsedSec = Math.max(0, (System.currentTimeMillis() - duel.getCreatedAt()) / 1000L);
@@ -321,6 +375,8 @@ public final class DuelAdminCommand implements CommandExecutor, TabCompleter {
         MessageUtil.send(sender, "&e/dueladmin setspawn2 <arena> &7- set Target spawn at your position");
         MessageUtil.send(sender, "&e/dueladmin setcenter <arena> <radius> &7- set center and border radius");
         MessageUtil.send(sender, "&e/dueladmin spawns <arena> &7- check configured spawns for arena");
+        MessageUtil.send(sender, "&e/dueladmin flags &7- list active ELO-farming flags");
+        MessageUtil.send(sender, "&e/dueladmin flags clear <p1> <p2> &7- clear a pair's flag");
     }
 
     @Override

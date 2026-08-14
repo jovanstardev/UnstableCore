@@ -32,12 +32,23 @@ ranked:
   default-elo: 1000
   k-factor: 32
 
+# Flags suspicious ranked-duel patterns for staff review (/dueladmin flags) - never auto-punishes.
+anti-farm:
+  enabled: true
+  window-minutes: 30
+  max-duels-per-window: 5
+  alternating-threshold: 4
+
 queue:
   enabled: true
   match-interval-ticks: 20
 
 spectate:
   enabled: true
+
+scoreboard:
+  enabled: true
+  title: "&d&l⚔ DUEL"
 
 default-kit: law
 
