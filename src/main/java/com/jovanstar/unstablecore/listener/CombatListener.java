@@ -203,51 +203,38 @@ public final class CombatListener implements Listener {
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onCombatTag(EntityDamageByEntityEvent event) {
+    public void onCombatMonitor(EntityDamageByEntityEvent event) {
         if (!(event.getEntity() instanceof Player victim)) {
+            return;
+        }
+        if (event.getFinalDamage() <= 0) {
             return;
         }
         Player attacker = resolveAttacker(event);
         if (attacker == null || attacker.equals(victim)) {
             return;
         }
-        if (event.getFinalDamage() <= 0) {
-            return;
-        }
-        if (plugin.getDuelManager() != null && (plugin.getDuelManager().isInDuel(victim.getUniqueId())
-                || plugin.getDuelManager().isInDuel(attacker.getUniqueId()))) {
-            return;
-        }
-        combatTags.put(victim.getUniqueId(), new CombatTag(attacker.getUniqueId(), System.currentTimeMillis()));
-    }
 
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onHitSound(EntityDamageByEntityEvent event) {
-        if (!(event.getEntity() instanceof Player victim)) {
-            return;
-        }
-        Player attacker = resolveAttacker(event);
-        if (attacker == null || attacker.equals(victim)) {
-            return;
-        }
-        if (event.getFinalDamage() <= 0) {
-            return;
-        }
-        if (victim.getHealth() - event.getFinalDamage() <= 0) {
-            return;
+        // Combat Tagging
+        boolean inDuel = plugin.getDuelManager() != null && (plugin.getDuelManager().isInDuel(victim.getUniqueId())
+                || plugin.getDuelManager().isInDuel(attacker.getUniqueId()));
+        if (!inDuel) {
+            combatTags.put(victim.getUniqueId(), new CombatTag(attacker.getUniqueId(), System.currentTimeMillis()));
         }
 
-        long cooldown = Math.max(0L, plugin.getConfig().getLong("combat-sounds.hit.cooldown-ms", 80L));
-        if (cooldown > 0) {
-            long now = System.currentTimeMillis();
-            Long last = hitSoundCooldown.get(attacker.getUniqueId());
-            if (last != null && now - last < cooldown) {
-                return;
+        // Hit Sound
+        if (victim.getHealth() - event.getFinalDamage() > 0) {
+            long cooldown = Math.max(0L, plugin.getConfig().getLong("combat-sounds.hit.cooldown-ms", 80L));
+            if (cooldown > 0) {
+                long now = System.currentTimeMillis();
+                Long last = hitSoundCooldown.get(attacker.getUniqueId());
+                if (last != null && now - last < cooldown) {
+                    return;
+                }
+                hitSoundCooldown.put(attacker.getUniqueId(), now);
             }
-            hitSoundCooldown.put(attacker.getUniqueId(), now);
+            playCombatSound(attacker, "hit");
         }
-
-        playCombatSound(attacker, "hit");
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)

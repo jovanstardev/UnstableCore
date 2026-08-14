@@ -57,6 +57,18 @@ public final class DatabaseManager {
             hikari.setUsername(user);
             hikari.setPassword(pass);
             hikari.setDriverClassName("com.mysql.cj.jdbc.Driver");
+            hikari.addDataSourceProperty("cachePrepStmts", "true");
+            hikari.addDataSourceProperty("prepStmtCacheSize", "250");
+            hikari.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
+            hikari.addDataSourceProperty("useServerPrepStmts", "true");
+            hikari.addDataSourceProperty("useLocalSessionState", "true");
+            hikari.addDataSourceProperty("rewriteBatchedStatements", "true");
+            hikari.addDataSourceProperty("cacheResultSetMetadata", "true");
+            hikari.addDataSourceProperty("cacheServerConfiguration", "true");
+            hikari.addDataSourceProperty("elideSetAutoCommits", "true");
+            hikari.addDataSourceProperty("maintainTimeStats", "false");
+            hikari.setMaximumPoolSize(Math.max(4, plugin.getConfig().getInt("database.pool-size", 20)));
+            hikari.setMinimumIdle(Math.max(2, plugin.getConfig().getInt("database.min-idle", 5)));
         } else {
             String fileName = plugin.getConfig().getString("database.sqlite.file", "data.db");
             File file = new File(plugin.getDataFolder(), fileName);
