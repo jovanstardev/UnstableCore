@@ -1,0 +1,231 @@
+version: 4
+default-category: items
+
+navigation:
+  items:
+    slot: 2
+    material: CHEST
+    name: "&bItems"
+    lore:
+      - "&7Buy consumables and gear."
+  upgrades:
+    slot: 8
+    material: NETHER_STAR
+    name: "&bUpgrades"
+    lore:
+      - "&7Temporary boosts and perks."
+  balance:
+    slot: 5
+    material: WITHER_SKELETON_SKULL
+    name: "&f{player}"
+    lore:
+      - "&fBalance: &e{coins} coins"
+    action: none
+
+close:
+  slot: 49
+  material: BARRIER
+  name: "&cClose"
+  lore:
+    - "&7Click to close"
+
+messages:
+  bought: "&aPurchased &f{name} &afor &e{price} &acoins."
+  cannot-afford: "&cYou need &e{price} &ccoins for that."
+  no-economy: "&cEconomy is unavailable."
+  inventory-full: "&cYour inventory is full."
+  loadout-cooldown-skipped: "&aLoadout cooldown skipped. Normal cooldown applies after your next /loadout."
+  loadout-nocooldown-granted: "&aNo /loadout cooldown for &f{time}&a. Normal cooldown returns after that."
+
+categories:
+  items:
+    title: "&bShop | Items"
+    size: 54
+    filler: GRAY_STAINED_GLASS_PANE
+    selected-lore:
+      - "&aSelected"
+    items:
+      turtle_master:
+        slot: 10
+        material: SPLASH_POTION
+        amount: 1
+        name: "&dTurtle Master Potion"
+        price: 60
+        give-item: true
+        potion-type: TURTLE_MASTER
+      shulker:
+        slot: 11
+        material: PURPLE_SHULKER_BOX
+        amount: 1
+        name: "&fShulker Box"
+        price: 100
+        give-item: true
+      mace:
+        slot: 12
+        material: MACE
+        amount: 1
+        name: "&bMace"
+        price: 150
+        give-item: true
+      sword_fire:
+        slot: 13
+        material: NETHERITE_SWORD
+        amount: 1
+        name: "&bNetherite Sword"
+        price: 150
+        give-item: true
+        enchantments:
+          SHARPNESS: 5
+          SWEEPING_EDGE: 3
+          FIRE_ASPECT: 2
+          UNBREAKING: 3
+          MENDING: 1
+      sword_kb:
+        slot: 14
+        material: NETHERITE_SWORD
+        amount: 1
+        name: "&bNetherite Sword"
+        price: 150
+        give-item: true
+        enchantments:
+          SHARPNESS: 5
+          SWEEPING_EDGE: 3
+          FIRE_ASPECT: 2
+          KNOCKBACK: 1
+          UNBREAKING: 3
+          MENDING: 1
+      fireworks:
+        slot: 15
+        material: FIREWORK_ROCKET
+        amount: 5
+        name: "&fFirework Rocket"
+        price: 100
+        give-item: true
+      gapple:
+        slot: 16
+        material: GOLDEN_APPLE
+        amount: 1
+        name: "&bGolden Apple"
+        price: 50
+        give-item: true
+      pearls:
+        slot: 19
+        material: ENDER_PEARL
+        amount: 3
+        name: "&fEnder Pearl"
+        price: 80
+        give-item: true
+      totem:
+        slot: 20
+        material: TOTEM_OF_UNDYING
+        amount: 1
+        name: "&eTotem of Undying"
+        price: 150
+        give-item: true
+      arrows:
+        slot: 21
+        material: ARROW
+        amount: 8
+        name: "&fArrow"
+        price: 30
+        give-item: true
+      crossbow:
+        slot: 22
+        material: CROSSBOW
+        amount: 1
+        name: "&bCrossbow"
+        price: 100
+        give-item: true
+        enchantments:
+          PIERCING: 4
+          MULTISHOT: 1
+          QUICK_CHARGE: 3
+      end_rod:
+        slot: 23
+        material: END_ROD
+        amount: 1
+        name: "&fEnd Rod"
+        price: 20
+        give-item: true
+      invis:
+        slot: 24
+        material: SPLASH_POTION
+        amount: 1
+        name: "&bInvisibility Potion"
+        price: 50
+        give-item: true
+        potion-type: INVISIBILITY
+        potion-amplifier: 0
+        potion-duration-seconds: 480
+
+  upgrades:
+    title: "&bShop | Upgrades"
+    size: 54
+    filler: GRAY_STAINED_GLASS_PANE
+    selected-lore:
+      - "&aSelected"
+    items:
+      skip_cooldown:
+        slot: 21
+        material: CLOCK
+        amount: 1
+        name: "&e&lSKIP LOADOUT COOLDOWN"
+        lore:
+          - "&7Clears your current /loadout CD"
+          - "&7right now."
+          - "&7Next claim starts normal cooldown."
+        price: 200
+        give-item: false
+        reset-loadout-cooldown: true
+      no_cd_15m:
+        slot: 22
+        material: SUNFLOWER
+        amount: 1
+        name: "&a&l15M LOADOUT NO-CD"
+        lore:
+          - "&7No /loadout cooldown for 15 minutes."
+          - "&7After that, normal cooldown returns."
+        price: 500
+        give-item: false
+        loadout-nocooldown-seconds: 900
+      no_cd_1h:
+        slot: 23
+        material: BEACON
+        amount: 1
+        name: "&a&l1H LOADOUT NO-CD"
+        lore:
+          - "&7No /loadout cooldown for 1 hour."
+          - "&7After that, normal cooldown returns."
+        price: 1000
+        give-item: false
+        loadout-nocooldown-seconds: 3600
+      coin_boost_2x:
+        slot: 24
+        material: EXPERIENCE_BOTTLE
+        amount: 1
+        name: "&b&l2X COIN BOOST"
+        price: 9999999
+        give-item: false
+        commands:
+          - "uc event start 2 600"
+      coin_boost_15:
+        slot: 25
+        material: EXPERIENCE_BOTTLE
+        amount: 1
+        name: "&b&l1.5X COIN BOOST"
+        price: 999999
+        give-item: false
+        commands:
+          - "uc event start 1.5 600"
+      coin_boost_glow:
+        slot: 26
+        material: GLOW_BERRIES
+        amount: 1
+        name: "&b&l2X COIN BOOST"
+        price: 9999999
+        give-item: false
+        commands:
+          - "uc event start 2 600"
+
+price-lore: "&7Price: &e{price} coins"
+click-lore: "&aClick to buy"

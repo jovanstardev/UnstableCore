@@ -1,0 +1,156 @@
+package com.jovanstar.unstablecore.listener;
+
+import com.jovanstar.unstablecore.UnstableCore;
+import com.jovanstar.unstablecore.model.Arena;
+import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
+import org.bukkit.entity.AbstractWindCharge;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.Item;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityChangeBlockEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
+import org.bukkit.inventory.ItemStack;
+
+public final class AntiGlitchListener implements Listener {
+
+    private final UnstableCore plugin;
+
+    public AntiGlitchListener(UnstableCore plugin) {
+        this.plugin = plugin;
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onWindChargeBlock(EntityChangeBlockEvent event) {
+        Entity entity = event.getEntity();
+        if (!(entity instanceof AbstractWindCharge)) {
+            return;
+        }
+        Block block = event.getBlock();
+        Material type = block.getType();
+        if (!isWindToggleable(type)) {
+            return;
+        }
+        Arena arena = plugin.getArenaManager().resolveArenaAt(block.getLocation());
+        if (arena == null) {
+            return;
+        }
+        if (plugin.getArenaManager().isPlayerPlaced(block.getLocation())) {
+            return;
+        }
+        event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onItemCactus(EntityDamageEvent event) {
+        if (!(event.getEntity() instanceof Item item)) {
+            return;
+        }
+        if (event.getCause() != EntityDamageEvent.DamageCause.CONTACT) {
+            return;
+        }
+        ItemStack stack = item.getItemStack();
+        if (stack == null || !isPotionDrop(stack.getType())) {
+            return;
+        }
+        event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPearlTeleport(PlayerTeleportEvent event) {
+        if (event.getCause() != PlayerTeleportEvent.TeleportCause.ENDER_PEARL) {
+            return;
+        }
+        Location to = event.getTo();
+        if (to == null || to.getWorld() == null) {
+            return;
+        }
+        if (!plugin.getArenaManager().hasArenasInWorld(to.getWorld().getName())) {
+            return;
+        }
+        Arena arena = plugin.getArenaManager().resolveArenaAt(to);
+        if (arena == null) {
+            return;
+        }
+
+        Location safe = findSafePearlLanding(to);
+        if (safe == null) {
+            event.setCancelled(true);
+            return;
+        }
+        if (!sameBlock(to, safe)) {
+            event.setTo(safe);
+        }
+    }
+
+    private static Location findSafePearlLanding(Location to) {
+        if (isSafePearlFeet(to)) {
+            return centerFeet(to);
+        }
+
+        Block origin = to.getBlock();
+        BlockFace[] faces = {
+                BlockFace.UP, BlockFace.NORTH, BlockFace.SOUTH,
+                BlockFace.EAST, BlockFace.WEST, BlockFace.DOWN
+        };
+        for (BlockFace face : faces) {
+            Location candidate = origin.getRelative(face).getLocation().add(0.5, 0, 0.5);
+            candidate.setYaw(to.getYaw());
+            candidate.setPitch(to.getPitch());
+            if (isSafePearlFeet(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private static boolean isSafePearlFeet(Location loc) {
+        Block feet = loc.getBlock();
+        Block head = feet.getRelative(BlockFace.UP);
+        if (!feet.isPassable() || !head.isPassable()) {
+            return false;
+        }
+        Material feetType = feet.getType();
+        if (feetType == Material.COBWEB
+                || feetType.name().contains("PORTAL")
+                || feetType == Material.END_PORTAL
+                || feetType == Material.NETHER_PORTAL) {
+            return false;
+        }
+        return true;
+    }
+
+    private static Location centerFeet(Location loc) {
+        Location centered = loc.clone();
+        centered.setX(centered.getBlockX() + 0.5);
+        centered.setZ(centered.getBlockZ() + 0.5);
+        return centered;
+    }
+
+    private static boolean sameBlock(Location a, Location b) {
+        return a.getBlockX() == b.getBlockX()
+                && a.getBlockY() == b.getBlockY()
+                && a.getBlockZ() == b.getBlockZ()
+                && a.getWorld() != null
+                && a.getWorld().equals(b.getWorld());
+    }
+
+    private static boolean isWindToggleable(Material type) {
+        String name = type.name();
+        return name.endsWith("TRAPDOOR")
+                || (name.endsWith("_DOOR") && !name.endsWith("TRAPDOOR"))
+                || name.endsWith("_FENCE_GATE");
+    }
+
+    private static boolean isPotionDrop(Material type) {
+        return switch (type) {
+            case POTION, SPLASH_POTION, LINGERING_POTION, GLASS_BOTTLE -> true;
+            default -> false;
+        };
+    }
+}

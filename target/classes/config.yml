@@ -1,0 +1,527 @@
+prefix: "<#FF9C59>&lUUFFA &8• &7"
+
+database:
+  type: sqlite
+  pool-size: 4
+  migrate-from-yaml: true
+  sqlite:
+    file: data.db
+  mysql:
+    host: localhost
+    port: 3306
+    database: unstablecore
+    username: root
+    password: ""
+    params: "useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=utf8"
+
+newbie-hours: 6
+
+kill-reward: 10
+
+combat-sounds:
+  hit:
+    enabled: true
+    sound: ENTITY_PLAYER_ATTACK_STRONG
+    volume: 1.0
+    pitch: 1.0
+    cooldown-ms: 80
+  kill:
+    enabled: true
+    sound: ENTITY_WITHER_SPAWN
+    volume: 1.0
+    pitch: 1.0
+
+killstreak:
+  title-seconds: 2
+  title-minimum: 2
+  sound: ENTITY_PLAYER_LEVELUP
+  sound-volume: 1.0
+  sound-pitch: 1.5
+  streak-end-minimum: 2
+  milestones:
+    enabled: true
+    values: [5, 10, 15, 20, 25, 50, 100]
+
+kill-messages:
+  enabled: true
+  icon: "&c☠"
+  kill: "{icon} &8» &c{victim} &fwas killed by &a{killer}"
+  streak-end: "{icon} &c&lSTREAK &8» &a{killer} &fended &c{victim}'s &c{streak} &fkill streak"
+  milestone: "{icon} &c&lSTREAK &8» &f{killer} &freached &c{streak} &fkills!"
+  death: "{icon} &8» &c{victim} &fdied"
+  suicide: "{icon} &8» &c{victim} &fkilled themselves"
+
+auto-event:
+  enabled: true
+  interval-seconds: 10800
+  duration-seconds: 300
+  multiplier: 2.0
+  start-broadcast:
+    - "&8▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"
+    - "&dUNSTABLEPVP &f» &6★ &6&l{multiplier}x COIN BONUS"
+    - " &d■ &7Every kill pays out &6{multiplier}x &7for &f{duration}&7!"
+    - " &d■ &eStack kills while the bonus lasts!"
+    - "&8▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"
+  end-broadcast:
+    - "&8▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"
+    - "&dUNSTABLEPVP &f» &6★ &7The &6coin bonus &7has &cended&7."
+    - "&8▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"
+  start-sound: ENTITY_PLAYER_LEVELUP
+  end-sound: BLOCK_NOTE_BLOCK_BASS
+  bossbar:
+    enabled: true
+    title: "&6★ &6{multiplier}x &cCOIN &6BONUS &6★ &f| &e{time} &7remaining"
+    color: YELLOW
+    style: SOLID
+    update-ticks: 20
+
+streak-event:
+  enabled: true
+  interval-seconds: 14400
+  duration-seconds: 300
+  multiplier: 2.0
+  start-broadcast:
+    - "&8▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"
+    - "&dUNSTABLEPVP &f» &d★ &d&l{multiplier}x STREAK BONUS"
+    - " &d■ &7Every kill adds &d{multiplier}x &7to your streak for &f{duration}&7!"
+    - " &d■ &ePush your streak while the bonus lasts!"
+    - "&8▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"
+  end-broadcast:
+    - "&8▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"
+    - "&dUNSTABLEPVP &f» &d★ &7The &dstreak bonus &7has &cended&7."
+    - "&8▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"
+  start-sound: ENTITY_PLAYER_LEVELUP
+  end-sound: BLOCK_NOTE_BLOCK_BASS
+  bossbar:
+    enabled: true
+    title: "&d★ &d{multiplier}x &cSTREAK &dBONUS &d★ &f| &e{time} &7remaining"
+    color: PINK
+    style: SOLID
+    update-ticks: 20
+
+arena:
+  rotate-interval-seconds: 7200
+  rotate-broadcast: "<b><gradient:#A100FF:#E9D5FF>UNSTABLE KITPVP</gradient></b> &8» &fMap is rotated and new map is &a{map}"
+  rotate-sound: UI_TOAST_CHALLENGE_COMPLETE
+  rotate-transfer-players: true
+  vote:
+    enabled: true
+    lead-seconds: 60
+    duration-seconds: 45
+    max-maps: 4
+    reopen-on-join: true
+    double-vote-permission: "unstablecore.vote.2x"
+    double-vote-weight: 2
+    refresh-ticks: 20
+    start-broadcast: "<b><gradient:#A100FF:#E9D5FF>UNSTABLE KITPVP</gradient></b> &8» &fMap vote started! &7({seconds}s)"
+    end-broadcast: "<b><gradient:#A100FF:#E9D5FF>UNSTABLE KITPVP</gradient></b> &8» &fVote ended - next map is &a{map} &8(&f{percent}%&8)"
+    voted-message: "&aVoted for &f{map} &8(&f{percent}%&8)&a."
+    start-sound: BLOCK_NOTE_BLOCK_PLING
+    end-sound: UI_TOAST_CHALLENGE_COMPLETE
+  rtp-max-attempts: 120
+  rtp-cache-size: 48
+  rtp-min-spot-distance: 12
+  rtp-avoid-recent-distance: 18
+  rtp-recent-memory: 8
+  rtp-min-support-depth: 2
+  rtp-roof-air-needed: 3
+  rtp-clearance-above: 6
+  rtp-require-sky-light: true
+  rtp-border-padding: 2
+  teleport-title: "&a&l{map}"
+  teleport-subtitle: "&fYou are teleported to arena"
+  teleport-title-seconds: 2
+  teleport-sound: ITEM_MACE_SMASH_GROUND_HEAVY
+  teleport-sound-key: "minecraft:item.mace.smash_ground_heavy"
+  teleport-sound-volume: 1.0
+  teleport-sound-pitch: 1.0
+  max-nomace-arenas: 2
+  rotate-mace-only: true
+  newbie:
+    enabled: true
+    type: nomace
+    display-name: "<#55FFFF>&lNewbie Arena &8» &fUnder 6h"
+
+guis:
+  click-cooldown-ms: 250
+  live-refresh-ticks: 40
+  settings:
+    title: "&bSettings | Dashboard"
+    size: 45
+    filler: GRAY_STAINED_GLASS_PANE
+    items:
+      header:
+        slot: 4
+        material: NOTE_BLOCK
+        type: info
+        name: "&fSettings &dDashboard"
+        lore:
+          - "&7Click a setting to switch it."
+          - "&aHigher note = on"
+          - "&cLower note = off"
+      private_messages:
+        slot: 10
+        material: PAPER
+        type: command
+        setting: private_messages
+        command: "msg"
+        name: "&aPrivate Messages"
+        details: "&a| Allow /msg and /reply."
+        details-extra: "&7Controls private chat completely."
+      broadcasts:
+        slot: 11
+        material: BELL
+        type: toggle
+        setting: broadcasts
+        name: "&eBroadcasts"
+        details: "&e| Show timed server broadcasts."
+        details-extra: "&7Server tips, links, store, and info messages."
+      broadcast_ping:
+        slot: 12
+        material: NOTE_BLOCK
+        type: toggle
+        setting: broadcast_ping
+        name: "&bBroadcast Ping"
+        details: "&b| Play the broadcast ping sound."
+        details-extra: "&8Only affects the sound, not the message."
+      join_leave:
+        slot: 13
+        material: OAK_DOOR
+        type: toggle
+        setting: join_leave
+        name: "&fJoin & Leave"
+        details: "&f| Show join and leave announcements."
+        details-extra: "&7Keeps public connection messages quieter."
+      kill_messages:
+        slot: 14
+        material: IRON_SWORD
+        type: toggle
+        setting: kill_messages
+        name: "&cKill Messages"
+        details: "&c| Show kill and death messages."
+        details-extra: "&7Useful if combat chat gets too busy."
+      streak_alerts:
+        slot: 15
+        material: BLAZE_POWDER
+        type: toggle
+        setting: streak_alerts
+        name: "&6Streak Alerts"
+        details: "&6| Show kill streak callouts."
+        details-extra: "&7Controls streak messages in chat."
+      coin_notices:
+        slot: 19
+        material: GOLD_INGOT
+        type: toggle
+        setting: coin_notices
+        name: "&eCoin Notices"
+        details: "&e| Show coin reward messages."
+        details-extra: "&7Kill rewards and economy tips."
+      scoreboard:
+        slot: 20
+        material: CLOCK
+        type: command
+        setting: scoreboard
+        command: "sb toggle"
+        name: "&bScoreboard"
+        details: "&b| Show your right-side board."
+        details-extra: "&7Turns the sidebar on or off."
+      rotation_alerts:
+        slot: 21
+        material: FILLED_MAP
+        type: toggle
+        setting: rotation_alerts
+        name: "&dRotation Alerts"
+        details: "&d| Show warnings before arena rotation."
+        details-extra: "&7Helps you catch the next map swap."
+      private_profile:
+        slot: 22
+        material: PLAYER_HEAD
+        type: toggle
+        setting: private_profile
+        name: "&dPrivate Profile"
+        details: "&d| Hide profile details from other players."
+        details-extra: "&7Other players see less profile data."
+      cleanup_alerts:
+        slot: 23
+        material: BRUSH
+        type: toggle
+        setting: cleanup_alerts
+        name: "&aCleanup Alerts"
+        details: "&a| Show item cleanup countdowns."
+        details-extra: "&7Useful when fighting around dropped gear."
+      close:
+        slot: 40
+        material: BARRIER
+        type: close
+        name: "&cClose"
+        lore:
+          - "&7Click to close"
+  stats:
+    title: "&fSTATS"
+    size: 27
+    filler: ""
+    items:
+      profile:
+        slot: 4
+        material: PLAYER_HEAD
+        name: "&f{player} &7STATS"
+        lore:
+          - "&fViewing {player}'s lifetime stats."
+          - "&8Everything below belongs to this profile."
+      kills:
+        slot: 11
+        material: DIAMOND_SWORD
+        name: "&b&lKILLS"
+        lore:
+          - "&b{kills} &fkills"
+          - "&fLifetime eliminations."
+      deaths:
+        slot: 12
+        material: SKELETON_SKULL
+        name: "&c&lDEATHS"
+        lore:
+          - "&c{deaths} &fdeaths"
+          - "&7Lifetime deaths."
+      kdr:
+        slot: 13
+        material: COMPASS
+        name: "&d&lKDR"
+        lore:
+          - "&d{kdr} &fratio"
+          - "&fKills divided by deaths."
+      streak:
+        slot: 14
+        material: BLAZE_POWDER
+        name: "&6&lCURRENT STREAK"
+        lore:
+          - "&6{streak} &factive streak"
+          - "&7Kills without dying right now."
+      best:
+        slot: 15
+        material: NETHER_STAR
+        name: "&e&lBEST STREAK"
+        lore:
+          - "&e{best} &fbest streak"
+          - "&fHighest streak reached."
+      coins:
+        slot: 20
+        material: GOLD_BLOCK
+        name: "&e&lCOINS"
+        lore:
+          - "&e{coins} &fcoins"
+          - "&fCurrent spendable balance."
+      earned:
+        slot: 21
+        material: GOLD_INGOT
+        name: "&e&lCOINS EARNED"
+        lore:
+          - "&e{earned} &fcoins earned"
+          - "&fLifetime coin income."
+      spent:
+        slot: 22
+        material: HOPPER
+        name: "&f&lCOINS SPENT"
+        lore:
+          - "&f{spent} coins spent"
+          - "&7Lifetime shop spending."
+      playtime:
+        slot: 23
+        material: CLOCK
+        name: "&a&lPLAYTIME"
+        lore:
+          - "&a{playtime} &fplayed"
+          - "&fTotal time on the server."
+      tag:
+        slot: 24
+        material: WRITABLE_BOOK
+        name: "&b&lTAG"
+        lore:
+          - "&f{tag}"
+          - "&7Currently equipped tag."
+  vote:
+    title: "&8» &dMap Vote &8«"
+    size: 27
+    filler: GRAY_STAINED_GLASS_PANE
+    map-material: MAP
+    map-name: "&d&l{map}"
+    map-lore:
+      - "&r"
+      - "&fVotes: &d{votes}"
+      - "&fPercent: &d{percent}%"
+      - "&r"
+      - "&eClick to vote"
+    voted-lore: "&a✔ Your vote"
+  arenas:
+    title: "&8» <#FF55FF>&lFFA &8«"
+    size: 27
+    filler: GRAY_STAINED_GLASS_PANE
+    join-slot: 13
+    join-material: PINK_DYE
+    join-name: "&dᴊᴏɪɴ ꜰꜰᴀ"
+    join-lore:
+      - "&r"
+      - "&fᴍᴀᴘ: {displayname}"
+      - "&fᴘʟᴀʏᴇʀꜱ ɪɴꜱɪᴅᴇ: {players}"
+    no-arena-map: "&cNone"
+  sword:
+    title: "&8» <#55FF55>&lSword FFA &8«"
+    size: 27
+    filler: GRAY_STAINED_GLASS_PANE
+    join-slot: 13
+    join-material: LIME_DYE
+    join-name: "&a&lᴊᴏɪɴ ꜱᴡᴏʀᴅ ꜰꜰᴀ"
+    join-lore:
+      - "&r"
+      - "&fᴍᴏᴅᴇ: &aSword FFA"
+      - "&fᴘʟᴀʏᴇʀꜱ ɪɴꜱɪᴅᴇ: {players}"
+
+sword:
+  arena-id: ""
+
+loadout:
+  cooldown-seconds: 1800
+
+held-shulker:
+  enabled: true
+  title: "&dShulker Box"
+
+kits:
+  unlock-by-permission: false
+  default-kit: law
+
+kit-rank:
+  member-prefix: "&f&lMEMBER "
+  tab-weight-max: 49
+  member-for-kits:
+    - law
+  hide-for-groups:
+    - owner
+    - manager
+    - sradmin
+    - admin
+    - srmod
+    - mod
+    - helper
+
+disposal:
+  title: "&8Disposal"
+  size: 36
+
+action-bar:
+  enabled: true
+  interval-ticks: 20
+  format: "&c⚔ {killstreak} &8| &6☠ {deaths} &8| &e⛃ {coins}"
+
+join-leave:
+  enabled: true
+  join: "&a✓ &f{player}"
+  leave: "&c✗ &f{player}"
+
+join:
+  spawn-on-join: true
+  spawn:
+    world: world
+    x: 0.5
+    y: 64.0
+    z: 0.5
+    yaw: 0.0
+    pitch: 0.0
+  title:
+    enabled: true
+    title: ""
+    subtitle: "&7Welcome back"
+    seconds: 3
+
+settings-defaults:
+  private_profile: false
+
+cleanup:
+  enabled: true
+  interval-seconds: 900
+  warnings: [30, 15, 5, 3, 2, 1]
+  warning-message: "<b><gradient:#A100FF:#E9D5FF>UNSTABLE FFA</gradient></b> &8» &fDropped items will be cleared in <#A100FF>{seconds}s &f!"
+  cleared-message: "<b><gradient:#A100FF:#E9D5FF>UNSTABLE FFA</gradient></b> &8» &fDropped items have been &acleared&f."
+
+anti-bush:
+  enabled: true
+  materials:
+    - TALL_GRASS
+    - SHORT_GRASS
+    - FERN
+    - LARGE_FERN
+    - ROSE_BUSH
+    - LILAC
+    - PEONY
+    - SUNFLOWER
+    - SWEET_BERRY_BUSH
+    - DEAD_BUSH
+    - AZALEA
+    - FLOWERING_AZALEA
+  push-strength: 0.45
+
+messages:
+  no-permission: "&cYou don't have permission."
+  player-only: "&cPlayers only."
+  player-not-found: "&cPlayer not found."
+  reload: "&aUnstableCore reloaded."
+  spawn-set: "&aJoin spawn set to your location."
+  spawn-missing: "&cJoin spawn world is not loaded. Use &f/uc setspawn&c."
+  economy-give: "&aGave &f{amount} &acoins to &f{player}&a."
+  economy-take: "&aTook &f{amount} &acoins from &f{player}&a."
+  economy-set: "&aSet &f{player}&a's balance to &f{amount}&a."
+  economy-reset: "&aReset &f{player}&a's balance."
+  event-started: "&aStarted &f{multiplier}x &acoin event for &f{seconds}s&a."
+  event-stopped: "&aCoin event stopped."
+  event-none: "&cNo coin event is active."
+  arena-created: "&aCreated arena &f{name} &7({type}) &adisplay &f{display}"
+  arena-exists: "&cArena already exists."
+  arena-not-found: "&cArena not found."
+  arena-center-set: "&aSet center for &f{name} &awith radius &f{radius}&a. Safe spots cached."
+  arena-deleted: "&aDeleted arena &f{name}&a."
+  arena-rotated: "&aForce-rotated active arena to &f{name}&a."
+  arena-rotate-transfer: "&aMap rotated! Teleporting you to &f{map}&a..."
+  arena-teleported: "&aTeleporting to &f{map}&a..."
+  arena-no-spots: "&cNo safe teleport spots found. Ask an admin to re-set the center."
+  arena-none-active: "&cNo active arena is available right now."
+  arena-natural-break: "&c&l(!) &r&cSorry, you can't break natural blocks."
+  arena-nomace-no-place: "&c&l(!) &r&cYou can't place blocks in no-mace arenas."
+  arena-nomace-no-elytra: "&c&l(!) &r&cElytra flying is disabled in no-mace arenas."
+  mine-bypass-on: "&aMine bypass &fenabled&a. You can break/place natural arena blocks."
+  mine-bypass-off: "&cMine bypass &fdisabled&c. Natural arena blocks are protected again."
+  arena-newbie-set: "&aNewbie arena (nomace / under 6h) spawn updated."
+  arena-nomace-limit: "&cMax &f{max} &cnomace maps allowed (under 6h counts as 1). Currently &f{count}&c."
+  arena-type-set: "&aSet &f{name} &atype to &f{type}"
+  sword-none: "&cNo sword arena is configured. Set sword.arena-id or create a nomace arena."
+  loadout-given: "&aLoadout claimed!"
+  loadout-cooldown: "&cLoadout available in &f{time}&c."
+  loadout-no-kit: "&cSelect an unlocked kit first with &f/kits&c."
+  loadout-cooldown-reset: "&aReset loadout cooldown for &f{player}&a."
+  kit-none-selected: "&cYou have no kit selected. Open &f/kits &cand pick one."
+  kit-locked: "&cYou have not unlocked &f{kit}&c."
+  kit-cannot-afford: "&cYou need &e{price} coins &cto unlock &f{kit}&c."
+  kit-purchased: "&aUnlocked &f{kit} &afor &e{price} coins&a!"
+  kit-selected: "&aSelected kit &f{kit}&a."
+  kit-not-found: "&cKit &f{kit} &cnot found."
+  kit-layout-saved: "&aSaved loadout layout for &f{kit}&a."
+  kit-layout-reset: "&aReset loadout layout for &f{kit} &ato kit defaults."
+  kit-created: "&aCreated kit &f{kit}&a."
+  kit-deleted: "&aDeleted kit &f{kit}&a."
+  kit-exists: "&cKit &f{kit} &calready exists."
+  kit-contents-saved: "&aSaved default contents for &f{kit}&a."
+  kit-icon-set: "&aUpdated icon for &f{kit}&a."
+  kit-slot-set: "&aSet &f{kit} &aslot to &f{slot}&a."
+  kit-name-set: "&aSet display name to &f{kit}&a."
+  kit-unlocked: "&aUnlocked &f{kit} &afor &f{player}&a."
+  kit-locked-admin: "&aLocked &f{kit} &afor &f{player}&a."
+  kit-reloaded: "&aReloaded kits from kits/."
+  killstreak-show: "&aYour current killstreak is &f{streak}&a."
+  killstreak-titles-on: "&7Killstreak titles &aenabled&7."
+  killstreak-titles-off: "&7Killstreak titles &cdisabled&7."
+  killstreak-reset: "&cYour killstreak has been reset."
+  killstreak-title: "&a&l{streak}"
+  killstreak-subtitle: "&a&lKILLSTREAK!"
+  tag-equipped: "&aEquipped tag!"
+  tag-cleared: "&cRemoved your tag!"
+  tag-clear-cooldown: "&cYou must wait before clearing your tag again."
+  tag-no-own: "&cYou do not own {category} Tags. &7(/store)"
+  kill-reward: "&a+&f{amount} &acoins &8• &7Kill reward"

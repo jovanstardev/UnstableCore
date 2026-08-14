@@ -1,0 +1,32 @@
+enabled: true
+region: afk
+world: spawn1
+tick-seconds: 5
+reward-interval: 300
+default-reward: 5
+
+rewards:
+  - permission: group.monarch
+    amount: 15
+  - permission: group.unstable+
+    amount: 10
+  - permission: group.flame
+    amount: 10
+  - permission: group.bird
+    amount: 10
+  - permission: group.media
+    amount: 10
+  - permission: group.pirate
+    amount: 5
+
+require-water: true
+
+messages:
+  enter:
+    - ""
+    - "<#FF9C59>&lUUFFA &8• &7You are now earning coins!"
+    - "&7&oStay for {minutes} minutes in water to receive your reward of &f{amount} Coins&7&o."
+    - ""
+  leave: "<#FF9C59>&lUUFFA &8• &7You left the zone. Progress reset."
+  reward: "<#FF9C59>&l+{amount} &lCOINS &8• &7AFK Reward received!"
+  actionbar: "&e&lAFK ZONE &8| &fReward: &e{amount} &8| &fProgress: &e{progress}s &7/ &e{interval}s"
