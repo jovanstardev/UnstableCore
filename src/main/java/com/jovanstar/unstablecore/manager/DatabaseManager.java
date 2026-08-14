@@ -177,6 +177,55 @@ public final class DatabaseManager {
                       updated_at BIGINT NOT NULL DEFAULT 0
                     )
                     """);
+            st.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS duels (
+                      duel_id VARCHAR(36) NOT NULL PRIMARY KEY,
+                      challenger VARCHAR(36) NOT NULL,
+                      target VARCHAR(36) NOT NULL,
+                      kit_id VARCHAR(64) NOT NULL DEFAULT '',
+                      arena_id VARCHAR(64) NOT NULL DEFAULT '',
+                      wager DOUBLE NOT NULL DEFAULT 0,
+                      state VARCHAR(16) NOT NULL,
+                      escrowed INTEGER NOT NULL DEFAULT 0,
+                      payout_done INTEGER NOT NULL DEFAULT 0,
+                      snapshot_challenger TEXT NOT NULL DEFAULT '',
+                      snapshot_target TEXT NOT NULL DEFAULT '',
+                      created_at BIGINT NOT NULL DEFAULT 0,
+                      updated_at BIGINT NOT NULL DEFAULT 0
+                    )
+                    """);
+            st.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS duel_stats (
+                      uuid VARCHAR(36) NOT NULL PRIMARY KEY,
+                      wins INTEGER NOT NULL DEFAULT 0,
+                      losses INTEGER NOT NULL DEFAULT 0,
+                      current_streak INTEGER NOT NULL DEFAULT 0,
+                      best_streak INTEGER NOT NULL DEFAULT 0,
+                      coins_wagered DOUBLE NOT NULL DEFAULT 0,
+                      coins_won DOUBLE NOT NULL DEFAULT 0,
+                      coins_lost DOUBLE NOT NULL DEFAULT 0,
+                      duels_played INTEGER NOT NULL DEFAULT 0
+                    )
+                    """);
+            st.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS duel_history (
+                      duel_id VARCHAR(36) NOT NULL PRIMARY KEY,
+                      challenger VARCHAR(36) NOT NULL,
+                      challenger_name VARCHAR(32) NOT NULL DEFAULT '',
+                      target VARCHAR(36) NOT NULL,
+                      target_name VARCHAR(32) NOT NULL DEFAULT '',
+                      winner VARCHAR(36) NOT NULL DEFAULT '',
+                      kit_id VARCHAR(64) NOT NULL DEFAULT '',
+                      arena_id VARCHAR(64) NOT NULL DEFAULT '',
+                      wager DOUBLE NOT NULL DEFAULT 0,
+                      payout DOUBLE NOT NULL DEFAULT 0,
+                      result VARCHAR(24) NOT NULL DEFAULT '',
+                      started_at BIGINT NOT NULL DEFAULT 0,
+                      ended_at BIGINT NOT NULL DEFAULT 0
+                    )
+                    """);
+            st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_duel_history_challenger ON duel_history (challenger)");
+            st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_duel_history_target ON duel_history (target)");
         }
     }
 
@@ -1417,6 +1466,270 @@ public final class DatabaseManager {
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Failed to delete bounty " + target, e);
         }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Duels
+    // ---------------------------------------------------------------------------------------
+
+    public record DuelRow(String duelId, UUID challenger, UUID target, String kitId, String arenaId,
+                           double wager, String state, boolean escrowed, boolean payoutDone,
+                           String snapshotChallenger, String snapshotTarget,
+                           long createdAt, long updatedAt) {
+    }
+
+    private String upsertDuelSql() {
+        if (mysql) {
+            return """
+                    INSERT INTO duels (duel_id, challenger, target, kit_id, arena_id, wager, state,
+                      escrowed, payout_done, snapshot_challenger, snapshot_target, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON DUPLICATE KEY UPDATE
+                      arena_id = VALUES(arena_id), wager = VALUES(wager), state = VALUES(state),
+                      escrowed = VALUES(escrowed), payout_done = VALUES(payout_done),
+                      snapshot_challenger = VALUES(snapshot_challenger),
+                      snapshot_target = VALUES(snapshot_target), updated_at = VALUES(updated_at)
+                    """;
+        }
+        return """
+                INSERT INTO duels (duel_id, challenger, target, kit_id, arena_id, wager, state,
+                  escrowed, payout_done, snapshot_challenger, snapshot_target, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(duel_id) DO UPDATE SET
+                  arena_id = excluded.arena_id, wager = excluded.wager, state = excluded.state,
+                  escrowed = excluded.escrowed, payout_done = excluded.payout_done,
+                  snapshot_challenger = excluded.snapshot_challenger,
+                  snapshot_target = excluded.snapshot_target, updated_at = excluded.updated_at
+                """;
+    }
+
+    public void upsertDuel(DuelRow row) {
+        if (!isConnected() || row == null) {
+            return;
+        }
+        try (Connection c = getConnection(); PreparedStatement ps = c.prepareStatement(upsertDuelSql())) {
+            ps.setString(1, row.duelId());
+            ps.setString(2, row.challenger().toString());
+            ps.setString(3, row.target().toString());
+            ps.setString(4, row.kitId() == null ? "" : row.kitId());
+            ps.setString(5, row.arenaId() == null ? "" : row.arenaId());
+            ps.setDouble(6, row.wager());
+            ps.setString(7, row.state());
+            ps.setInt(8, row.escrowed() ? 1 : 0);
+            ps.setInt(9, row.payoutDone() ? 1 : 0);
+            ps.setString(10, row.snapshotChallenger() == null ? "" : row.snapshotChallenger());
+            ps.setString(11, row.snapshotTarget() == null ? "" : row.snapshotTarget());
+            ps.setLong(12, row.createdAt());
+            ps.setLong(13, row.updatedAt());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to upsert duel " + row.duelId(), e);
+        }
+    }
+
+    public void deleteDuel(String duelId) {
+        if (!isConnected() || duelId == null) {
+            return;
+        }
+        try (Connection c = getConnection();
+             PreparedStatement ps = c.prepareStatement("DELETE FROM duels WHERE duel_id = ?")) {
+            ps.setString(1, duelId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to delete duel " + duelId, e);
+        }
+    }
+
+    /** Rows left over from a previous run that never reached a terminal state - used for crash recovery. */
+    public List<DuelRow> loadAllDuels() {
+        List<DuelRow> out = new ArrayList<>();
+        if (!isConnected()) {
+            return out;
+        }
+        try (Connection c = getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT duel_id, challenger, target, kit_id, arena_id, wager, state, escrowed, "
+                             + "payout_done, snapshot_challenger, snapshot_target, created_at, updated_at FROM duels");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                try {
+                    out.add(new DuelRow(
+                            rs.getString(1),
+                            UUID.fromString(rs.getString(2)),
+                            UUID.fromString(rs.getString(3)),
+                            rs.getString(4), rs.getString(5), rs.getDouble(6), rs.getString(7),
+                            rs.getInt(8) != 0, rs.getInt(9) != 0, rs.getString(10), rs.getString(11),
+                            rs.getLong(12), rs.getLong(13)
+                    ));
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to load duels from database", e);
+        }
+        return out;
+    }
+
+    public record DuelStatsRow(int wins, int losses, int currentStreak, int bestStreak,
+                                double coinsWagered, double coinsWon, double coinsLost, int duelsPlayed) {
+        public static DuelStatsRow empty() {
+            return new DuelStatsRow(0, 0, 0, 0, 0, 0, 0, 0);
+        }
+    }
+
+    public Map<UUID, DuelStatsRow> loadAllDuelStats() {
+        Map<UUID, DuelStatsRow> out = new ConcurrentHashMap<>();
+        if (!isConnected()) {
+            return out;
+        }
+        try (Connection c = getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT uuid, wins, losses, current_streak, best_streak, coins_wagered, "
+                             + "coins_won, coins_lost, duels_played FROM duel_stats");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                try {
+                    out.put(UUID.fromString(rs.getString(1)), new DuelStatsRow(
+                            rs.getInt(2), rs.getInt(3), rs.getInt(4), rs.getInt(5),
+                            rs.getDouble(6), rs.getDouble(7), rs.getDouble(8), rs.getInt(9)
+                    ));
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to load duel stats from database", e);
+        }
+        return out;
+    }
+
+    private String upsertDuelStatsSql() {
+        if (mysql) {
+            return """
+                    INSERT INTO duel_stats (uuid, wins, losses, current_streak, best_streak,
+                      coins_wagered, coins_won, coins_lost, duels_played)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON DUPLICATE KEY UPDATE
+                      wins = VALUES(wins), losses = VALUES(losses),
+                      current_streak = VALUES(current_streak), best_streak = VALUES(best_streak),
+                      coins_wagered = VALUES(coins_wagered), coins_won = VALUES(coins_won),
+                      coins_lost = VALUES(coins_lost), duels_played = VALUES(duels_played)
+                    """;
+        }
+        return """
+                INSERT INTO duel_stats (uuid, wins, losses, current_streak, best_streak,
+                  coins_wagered, coins_won, coins_lost, duels_played)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(uuid) DO UPDATE SET
+                  wins = excluded.wins, losses = excluded.losses,
+                  current_streak = excluded.current_streak, best_streak = excluded.best_streak,
+                  coins_wagered = excluded.coins_wagered, coins_won = excluded.coins_won,
+                  coins_lost = excluded.coins_lost, duels_played = excluded.duels_played
+                """;
+    }
+
+    public void upsertDuelStats(UUID uuid, DuelStatsRow row) {
+        if (!isConnected() || uuid == null || row == null) {
+            return;
+        }
+        try (Connection c = getConnection(); PreparedStatement ps = c.prepareStatement(upsertDuelStatsSql())) {
+            ps.setString(1, uuid.toString());
+            ps.setInt(2, row.wins());
+            ps.setInt(3, row.losses());
+            ps.setInt(4, row.currentStreak());
+            ps.setInt(5, row.bestStreak());
+            ps.setDouble(6, row.coinsWagered());
+            ps.setDouble(7, row.coinsWon());
+            ps.setDouble(8, row.coinsLost());
+            ps.setInt(9, row.duelsPlayed());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to upsert duel stats for " + uuid, e);
+        }
+    }
+
+    public record DuelHistoryRow(String duelId, UUID challenger, String challengerName, UUID target,
+                                  String targetName, UUID winner, String kitId, String arenaId,
+                                  double wager, double payout, String result, long startedAt, long endedAt) {
+    }
+
+    public void insertDuelHistory(DuelHistoryRow row) {
+        if (!isConnected() || row == null) {
+            return;
+        }
+        String sql = """
+                INSERT INTO duel_history (duel_id, challenger, challenger_name, target, target_name,
+                  winner, kit_id, arena_id, wager, payout, result, started_at, ended_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """;
+        try (Connection c = getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, row.duelId());
+            ps.setString(2, row.challenger().toString());
+            ps.setString(3, row.challengerName() == null ? "" : row.challengerName());
+            ps.setString(4, row.target().toString());
+            ps.setString(5, row.targetName() == null ? "" : row.targetName());
+            ps.setString(6, row.winner() == null ? "" : row.winner().toString());
+            ps.setString(7, row.kitId() == null ? "" : row.kitId());
+            ps.setString(8, row.arenaId() == null ? "" : row.arenaId());
+            ps.setDouble(9, row.wager());
+            ps.setDouble(10, row.payout());
+            ps.setString(11, row.result() == null ? "" : row.result());
+            ps.setLong(12, row.startedAt());
+            ps.setLong(13, row.endedAt());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to insert duel history row " + row.duelId(), e);
+        }
+    }
+
+    public List<DuelHistoryRow> loadDuelHistory(UUID player, int limit, int offset) {
+        List<DuelHistoryRow> out = new ArrayList<>();
+        if (!isConnected() || player == null) {
+            return out;
+        }
+        String sql = "SELECT duel_id, challenger, challenger_name, target, target_name, winner, "
+                + "kit_id, arena_id, wager, payout, result, started_at, ended_at FROM duel_history "
+                + "WHERE challenger = ? OR target = ? ORDER BY ended_at DESC LIMIT ? OFFSET ?";
+        try (Connection c = getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, player.toString());
+            ps.setString(2, player.toString());
+            ps.setInt(3, Math.max(1, Math.min(200, limit)));
+            ps.setInt(4, Math.max(0, offset));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String winnerStr = rs.getString(6);
+                    out.add(new DuelHistoryRow(
+                            rs.getString(1),
+                            UUID.fromString(rs.getString(2)), rs.getString(3),
+                            UUID.fromString(rs.getString(4)), rs.getString(5),
+                            (winnerStr == null || winnerStr.isBlank()) ? null : UUID.fromString(winnerStr),
+                            rs.getString(7), rs.getString(8), rs.getDouble(9), rs.getDouble(10),
+                            rs.getString(11), rs.getLong(12), rs.getLong(13)
+                    ));
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to load duel history for " + player, e);
+        }
+        return out;
+    }
+
+    public int countDuelHistory(UUID player) {
+        if (!isConnected() || player == null) {
+            return 0;
+        }
+        String sql = "SELECT COUNT(*) FROM duel_history WHERE challenger = ? OR target = ?";
+        try (Connection c = getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, player.toString());
+            ps.setString(2, player.toString());
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt(1);
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to count duel history for " + player, e);
+        }
+        return 0;
     }
 
     private static String nullToEmpty(String s) {

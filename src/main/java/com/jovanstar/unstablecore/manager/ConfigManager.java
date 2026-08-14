@@ -19,6 +19,7 @@ public final class ConfigManager {
     private FileConfiguration rewardsConfig;
     private FileConfiguration bountyConfig;
     private FileConfiguration leaderboardConfig;
+    private FileConfiguration duelsConfig;
     private FileConfiguration dataConfig;
 
     private File afkFile;
@@ -28,6 +29,7 @@ public final class ConfigManager {
     private File rewardsFile;
     private File bountyFile;
     private File leaderboardFile;
+    private File duelsFile;
     private File dataFile;
 
     public ConfigManager(UnstableCore plugin) {
@@ -46,6 +48,7 @@ public final class ConfigManager {
         rewardsFile = saveResourceIfMissing("dailyrewards.yml");
         bountyFile = saveResourceIfMissing("bounty.yml");
         leaderboardFile = saveResourceIfMissing("leaderboard.yml");
+        duelsFile = saveResourceIfMissing("duels.yml");
         dataFile = new File(plugin.getDataFolder(), "data.yml");
 
         afkConfig = YamlConfiguration.loadConfiguration(afkFile);
@@ -55,6 +58,7 @@ public final class ConfigManager {
         rewardsConfig = YamlConfiguration.loadConfiguration(rewardsFile);
         bountyConfig = YamlConfiguration.loadConfiguration(bountyFile);
         leaderboardConfig = YamlConfiguration.loadConfiguration(leaderboardFile);
+        duelsConfig = YamlConfiguration.loadConfiguration(duelsFile);
         if (!dataFile.exists()) {
             try {
                 dataFile.getParentFile().mkdirs();
@@ -139,6 +143,10 @@ public final class ConfigManager {
         leaderboardConfig = YamlConfiguration.loadConfiguration(leaderboardFile);
     }
 
+    public void reloadDuels() {
+        duelsConfig = YamlConfiguration.loadConfiguration(duelsFile);
+    }
+
     private void save(FileConfiguration config, File file) {
         try {
             config.save(file);
@@ -173,6 +181,10 @@ public final class ConfigManager {
 
     public FileConfiguration getLeaderboard() {
         return leaderboardConfig;
+    }
+
+    public FileConfiguration getDuels() {
+        return duelsConfig;
     }
 
     public FileConfiguration getData() {

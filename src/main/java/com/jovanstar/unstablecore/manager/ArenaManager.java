@@ -835,6 +835,16 @@ public final class ArenaManager {
         }
     }
 
+    /**
+     * Public entry point for other systems (e.g. duels) that need a single safe teleport spot
+     * inside an arena without going through the FFA-specific {@link #teleportToArena} flow
+     * (which sends FFA messages/sounds and auto-gives a random kit on empty inventory). Reuses
+     * the exact same spot-picking/validation logic FFA rotation relies on.
+     */
+    public Location findSafeSpot(Arena arena) {
+        return pickValidatedSpot(arena);
+    }
+
     private Location pickValidatedSpot(Arena arena) {
         Location center = arena.getCenter();
         if (center == null) {

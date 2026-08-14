@@ -96,6 +96,17 @@ commands:
     description: Open UnstableCore leaderboards
     aliases: [leaderboards, lb]
     usage: /leaderboard [coins|kills|biggest_killstreak|deaths|playtime|reload]
+  duel:
+    description: Challenge a player to a kit+map+wager duel
+    usage: /duel <player|accept|deny|cancel|toggle|history|forceend>
+  leave:
+    description: Leave the post-duel grace period early
+    usage: /leave
+  dueladmin:
+    description: Staff duel inspection/cleanup tools
+    aliases: [duels]
+    permission: unstablecore.duel.admin
+    usage: /dueladmin <list|inspect|forceend|arena>
 
 permissions:
   unstablecore.admin:
@@ -118,6 +129,12 @@ permissions:
     default: op
   unstablecore.leaderboard.reload:
     description: Reload leaderboard config
+    default: op
+  unstablecore.duel:
+    description: Access to /duel and /leave
+    default: true
+  unstablecore.duel.admin:
+    description: Access to /dueladmin staff tools and /duel forceend
     default: op
   tags.emoji:
     description: Access to emoji tags

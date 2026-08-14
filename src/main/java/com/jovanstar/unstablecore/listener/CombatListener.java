@@ -64,6 +64,11 @@ public final class CombatListener implements Listener {
             return;
         }
         Player victim = event.getEntity();
+        if (plugin.getDuelManager() != null && plugin.getDuelManager().isInDuel(victim.getUniqueId())) {
+            // Duel deaths are handled entirely by DuelListener/DuelManager - never feed FFA
+            // kill/streak/bounty systems from a duel.
+            return;
+        }
         recentDeathHandled.put(victim.getUniqueId(), System.currentTimeMillis());
         int brokenStreak = plugin.getKillstreakManager().getStreak(victim.getUniqueId());
         Player killer = victim.getKiller();
@@ -127,6 +132,11 @@ public final class CombatListener implements Listener {
      */
     public void handleQuitCombatTag(Player victim) {
         UUID uuid = victim.getUniqueId();
+        if (plugin.getDuelManager() != null && plugin.getDuelManager().isInDuel(uuid)) {
+            // Duel disconnects are forfeits handled by DuelManager.handleDisconnect, routed to
+            // duel payout instead of FFA killstreak - never double-credit both systems.
+            return;
+        }
         CombatTag tag = combatTags.remove(uuid);
         if (tag == null || !plugin.getConfig().getBoolean("combat-tag.enabled", true)) {
             return;
@@ -177,6 +187,19 @@ public final class CombatListener implements Listener {
         if (plugin.getBountyManager() != null) {
             plugin.getBountyManager().claimOnKill(killer, victim);
         }
+    }
+
+    /** Whether the player is currently within the post-hit combat-tag window (used by duel-request validation). */
+    public boolean isCombatTagged(UUID uuid) {
+        if (uuid == null || !plugin.getConfig().getBoolean("combat-tag.enabled", true)) {
+            return false;
+        }
+        CombatTag tag = combatTags.get(uuid);
+        if (tag == null) {
+            return false;
+        }
+        long windowMs = Math.max(0L, plugin.getConfig().getLong("combat-tag.seconds", 15) * 1000L);
+        return System.currentTimeMillis() - tag.atMs() <= windowMs;
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)

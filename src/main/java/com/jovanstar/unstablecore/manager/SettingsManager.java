@@ -17,6 +17,7 @@ public final class SettingsManager {
     public static final String ROTATION_ALERTS = "rotation_alerts";
     public static final String PRIVATE_PROFILE = "private_profile";
     public static final String SCOREBOARD = "scoreboard";
+    public static final String DUEL_REQUESTS = "duel_requests";
 
     private final Map<String, Boolean> defaults = new ConcurrentHashMap<>();
     private final UnstableCore plugin;

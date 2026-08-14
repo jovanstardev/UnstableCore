@@ -78,6 +78,9 @@ public final class PlayerListener implements Listener {
         if (plugin.getRewardsManager() != null) {
             plugin.getRewardsManager().handleJoin(player);
         }
+        if (plugin.getDuelManager() != null) {
+            plugin.getDuelManager().applyPendingCrashRestore(player);
+        }
         if (plugin.getKitManager() != null) {
             plugin.getKitManager().ensureDefaultKit(player);
         }
@@ -115,6 +118,12 @@ public final class PlayerListener implements Listener {
         plugin.getArenaManager().clearPlayer(event.getPlayer().getUniqueId());
         if (plugin.getArenaListener() != null) {
             plugin.getArenaListener().clearPlayer(event.getPlayer().getUniqueId());
+        }
+        if (plugin.getDuelManager() != null) {
+            // Must run before handleQuitCombatTag - a duel disconnect is a forfeit routed to
+            // duel payout, not an FFA combat-log kill credit (CombatListener itself also checks
+            // isInDuel and no-ops, this ordering just makes the intent explicit).
+            plugin.getDuelManager().handleDisconnect(event.getPlayer());
         }
         if (plugin.getCombatListener() != null) {
             plugin.getCombatListener().handleQuitCombatTag(event.getPlayer());

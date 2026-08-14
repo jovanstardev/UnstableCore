@@ -1,0 +1,143 @@
+enabled: true
+
+request:
+  timeout-seconds: 30
+  cooldown-seconds: 5
+  rate-limit-seconds: 3
+  chat-refresh-seconds: 5
+
+countdown-seconds: 3
+max-duration-seconds: 600
+# refund = both wagers refunded, no winner recorded | higher-health = whoever has more HP wins
+max-duration-outcome: refund
+grace-period-seconds: 180
+
+wager:
+  min: 0
+  max: 1000000
+  daily-limit: 0
+  min-account-age-days: 0
+  min-playtime-minutes: 0
+
+no-wager-reward: 25
+house-cut-percent: 0
+
+rematch:
+  enabled: true
+
+default-kit: law
+
+arenas:
+  - duel1
+  - duel2
+
+announcements:
+  enabled: true
+  min-wager: 0
+  broadcast: "&d⚔ &f{winner} &7defeated &f{loser} &7in a duel!"
+  broadcast-wager: "&d⚔ &f{winner} &7defeated &f{loser} &7in a duel for &6{pot} &7coins!"
+
+# Commands blocked while a duel is ACTIVE (label only, no leading slash).
+restricted-commands:
+  - spawn
+  - warp
+  - home
+  - tpa
+  - tpaccept
+  - tpahere
+  - tp
+  - back
+
+gui:
+  map-title: "&8» &dDuel: Select Map &8«"
+  size: 27
+  filler: GRAY_STAINED_GLASS_PANE
+  map-material: MAP
+  map-name: "&d&l{map}"
+  map-lore-available:
+    - "&a✔ Available"
+    - "&e> Click to select"
+  map-lore-unavailable:
+    - "&c✘ {reason}"
+  target-slot: 4
+  target-online-lore:
+    - "&a● Online"
+    - "&7Ready to duel"
+  target-offline-lore:
+    - "&c● Offline"
+    - "&cCan't send a request"
+  cancel-slot: 22
+  cancel-name: "&cCancel"
+
+messages:
+  disabled: "&cDuels are currently disabled."
+  player-only: "&cPlayers only."
+  usage: "&cUsage: /duel <player>"
+  self-duel: "&cYou can't duel yourself."
+  target-offline: "&cThat player isn't online."
+  target-opted-out: "&cThat player isn't accepting duel requests."
+  already-in-duel: "&cYou're already in a duel."
+  target-already-in-duel: "&c{target} is already in a duel."
+  target-busy: "&c{target} can't be challenged right now."
+  challenger-busy: "&cYou can't send a duel request right now (combat-tagged, dead, or busy)."
+  duplicate-request: "&cYou already have a pending request with {target}."
+  on-cooldown: "&cYou must wait {seconds}s before challenging {target} again."
+  rate-limited: "&cYou're sending requests too quickly - wait a moment."
+  no-arenas-configured: "&cNo duel arenas are configured."
+  arena-unavailable: "&cThat arena is no longer available - pick another."
+  wager-too-low: "&cMinimum wager is &e{min} &ccoins."
+  wager-too-high: "&cMaximum wager is &e{max} &ccoins."
+  daily-limit-reached: "&cYou've reached your daily wager limit of &e{limit} &ccoins."
+  insufficient-funds: "&cYou don't have &e{amount} &ccoins."
+  insufficient-funds-target: "&c{target} can't cover that wager anymore."
+  wager-prompt: "&eType the wager amount (&7{min}-{max}&e) for your duel with &f{target}&e, or &c0&e for no wager, or &ccancel&e."
+  wager-invalid: "&cEnter a whole number, or &ccancel&c."
+  wager-cancelled: "&7Duel request cancelled."
+  request-sent: "&aDuel request sent to &f{target}&a."
+  request-received: |-
+    &8&m----------------------------------
+    &d&lDUEL REQUEST &8» &f{challenger}
+    &7Map: &f{map} &8| &7Kit: &f{kit}
+    &7Wager: &f{wager} &7coins each
+    &7Winner receives: &6{pot} &7coins{cut}
+    &7Expires in &c{seconds}s
+  accept-button: "&a[ACCEPT]"
+  deny-button: "&c[DENY]"
+  accept-hover: "&aClick to accept this duel"
+  deny-hover: "&cClick to deny this duel"
+  request-cancelled: "&7Duel request to {target} cancelled."
+  request-declined: "&c{target} declined your duel request."
+  request-declined-self: "&7You declined the duel request from {challenger}."
+  request-expired: "&7Your duel request to {target} expired."
+  request-expired-target: "&7The duel request from {challenger} expired."
+  request-not-found: "&cThat duel request no longer exists."
+  request-invalid-state: "&cThat request has already been handled."
+  accept-failed: "&cCouldn't start the duel ({reason}) - both players have been refunded."
+  countdown: "&e{seconds}..."
+  fight: "&a&lFIGHT!"
+  win-broadcast: "&d⚔ &f{winner} &7defeated &f{loser}&7!"
+  win-wager: "&aYou won &6{pot} &acoins!"
+  win-streak: "&e{streak} duel win streak!"
+  loss-message: "&cYou lost the duel against &f{winner}&c."
+  forfeit-win: "&f{opponent} &7disconnected - you win by forfeit."
+  forfeit-loss: "&7You disconnected during an active duel and forfeited."
+  timeout-no-contest: "&7The duel timed out - wagers refunded, no winner."
+  timeout-win: "&f{winner} &7wins by higher health after the time limit."
+  grace-period: "&7Collect your items - the arena is available for &f{seconds}s&7."
+  leave-success: "&7You left the duel arena."
+  not-in-grace: "&cYou're not in a post-duel grace period."
+  toggle-on: "&aYou are now accepting duel requests."
+  toggle-off: "&cYou are no longer accepting duel requests."
+  escape-blocked: "&cThat command is blocked during an active duel."
+  teleport-item-blocked: "&cThat item is disabled during this duel."
+  history-header: "&d&lDuel History &7(page {page}/{pages})"
+  history-entry: "&8• &f{opponent} &7- {result} &7| {map} &7| {wager} coins &7| {date}"
+  history-empty: "&7No duel history yet."
+  stats-header: "&d&lDuel Stats &7» &f{player}"
+  admin-list-header: "&d&lActive Duels &7({count})"
+  admin-list-entry: "&8• &f#{id} &7{challenger} vs {target} &7| {arena} &7| {state} &7| {duration}"
+  admin-no-active: "&7No active duels."
+  admin-not-found: "&cThat player isn't in a duel."
+  admin-inspect-header: "&d&lDuel Inspect &7» &f#{id}"
+  admin-forceend-success: "&aForce-ended the duel involving &f{player}&a."
+  rematch-offered: "&e{opponent} &7wants a rematch! Type &f/duel {opponent} &7to accept."

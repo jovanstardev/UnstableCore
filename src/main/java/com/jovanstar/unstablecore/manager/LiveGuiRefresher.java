@@ -2,6 +2,7 @@ package com.jovanstar.unstablecore.manager;
 
 import com.jovanstar.unstablecore.UnstableCore;
 import com.jovanstar.unstablecore.gui.ArenaGui;
+import com.jovanstar.unstablecore.gui.DuelMapGui;
 import com.jovanstar.unstablecore.gui.SwordGui;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -34,7 +35,7 @@ public final class LiveGuiRefresher {
         boolean any = false;
         for (Player player : Bukkit.getOnlinePlayers()) {
             InventoryHolder holder = player.getOpenInventory().getTopInventory().getHolder();
-            if (holder instanceof ArenaGui || holder instanceof SwordGui) {
+            if (holder instanceof ArenaGui || holder instanceof SwordGui || holder instanceof DuelMapGui) {
                 any = true;
                 break;
             }
@@ -59,6 +60,8 @@ public final class LiveGuiRefresher {
                 gui.refreshLive(activeMap, activePlayers, active != null && active.hasCenter());
             } else if (holder instanceof SwordGui gui) {
                 gui.refreshLive(swordMap, swordPlayers, sword != null && sword.hasCenter());
+            } else if (holder instanceof DuelMapGui gui) {
+                gui.refreshLive();
             }
         }
     }
