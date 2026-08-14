@@ -155,6 +155,62 @@ public final class DuelStatsManager {
         return m == null || m.elo <= 0 ? 1000 : m.elo;
     }
 
+    // -----------------------------------------------------------------------------------
+    // Leaderboard sourcing - snapshot views, same pattern as StatsManager.trackedKills()/
+    // trackedBestStreaks(), so LeaderboardManager can rank duel stats the same way it ranks
+    // FFA ones.
+    // -----------------------------------------------------------------------------------
+
+    public Map<UUID, Integer> trackedWins() {
+        Map<UUID, Integer> out = new java.util.HashMap<>();
+        for (Map.Entry<UUID, Mutable> e : stats.entrySet()) {
+            synchronized (e.getValue()) {
+                if (e.getValue().wins > 0) {
+                    out.put(e.getKey(), e.getValue().wins);
+                }
+            }
+        }
+        return out;
+    }
+
+    public Map<UUID, Integer> trackedBestStreaks() {
+        Map<UUID, Integer> out = new java.util.HashMap<>();
+        for (Map.Entry<UUID, Mutable> e : stats.entrySet()) {
+            synchronized (e.getValue()) {
+                if (e.getValue().bestStreak > 0) {
+                    out.put(e.getKey(), e.getValue().bestStreak);
+                }
+            }
+        }
+        return out;
+    }
+
+    public Map<UUID, Integer> trackedCoinsWon() {
+        Map<UUID, Integer> out = new java.util.HashMap<>();
+        for (Map.Entry<UUID, Mutable> e : stats.entrySet()) {
+            synchronized (e.getValue()) {
+                if (e.getValue().coinsWon > 0) {
+                    out.put(e.getKey(), (int) Math.floor(e.getValue().coinsWon));
+                }
+            }
+        }
+        return out;
+    }
+
+    /** Only includes players who've actually played a duel - everyone else sits at the default
+     * 1000 rating, which would otherwise flood the leaderboard with people who never queued. */
+    public Map<UUID, Integer> trackedElo() {
+        Map<UUID, Integer> out = new java.util.HashMap<>();
+        for (Map.Entry<UUID, Mutable> e : stats.entrySet()) {
+            synchronized (e.getValue()) {
+                if (e.getValue().duelsPlayed > 0) {
+                    out.put(e.getKey(), e.getValue().elo <= 0 ? 1000 : e.getValue().elo);
+                }
+            }
+        }
+        return out;
+    }
+
     public String getRankTier(int elo) {
         if (elo >= 2000) return "&d&lMaster";
         if (elo >= 1750) return "&b&lDiamond";

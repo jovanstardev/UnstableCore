@@ -317,6 +317,12 @@ public final class LeaderboardManager {
             case KILLS -> rank(computeStatMap(plugin.getStatsManager().trackedKills(), true));
             case BIGGEST_KILLSTREAK -> rank(computeStatMap(plugin.getStatsManager().trackedBestStreaks(), true));
             case DEATHS -> rank(computeStatMap(plugin.getKillstreakManager().trackedDeaths(), true));
+            case DUEL_WINS -> rank(computeStatMap(plugin.getDuelManager().getDuelStatsManager().trackedWins(), true));
+            case DUEL_BEST_STREAK ->
+                    rank(computeStatMap(plugin.getDuelManager().getDuelStatsManager().trackedBestStreaks(), true));
+            case DUEL_COINS_WON ->
+                    rank(computeStatMap(plugin.getDuelManager().getDuelStatsManager().trackedCoinsWon(), true));
+            case DUEL_ELO -> rank(computeStatMap(plugin.getDuelManager().getDuelStatsManager().trackedElo(), true));
         };
     }
 

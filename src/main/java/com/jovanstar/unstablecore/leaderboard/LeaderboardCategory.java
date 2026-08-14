@@ -10,7 +10,11 @@ public enum LeaderboardCategory {
     KILLS("kills"),
     BIGGEST_KILLSTREAK("biggest_killstreak"),
     DEATHS("deaths"),
-    PLAYTIME("playtime");
+    PLAYTIME("playtime"),
+    DUEL_WINS("duel_wins"),
+    DUEL_BEST_STREAK("duel_best_streak"),
+    DUEL_COINS_WON("duel_coins_won"),
+    DUEL_ELO("duel_elo");
 
     private final String id;
 
@@ -45,6 +49,18 @@ public enum LeaderboardCategory {
         if (key.equals("time") || key.equals("pt")) {
             return PLAYTIME;
         }
+        if (key.equals("duelwins") || key.equals("duel_win")) {
+            return DUEL_WINS;
+        }
+        if (key.equals("duelstreak") || key.equals("duel_streak") || key.equals("dueleststreak")) {
+            return DUEL_BEST_STREAK;
+        }
+        if (key.equals("duelcoins") || key.equals("duel_coins") || key.equals("duelwinnings")) {
+            return DUEL_COINS_WON;
+        }
+        if (key.equals("elo") || key.equals("rank") || key.equals("duelrank")) {
+            return DUEL_ELO;
+        }
         for (LeaderboardCategory cat : values()) {
             if (cat.id.equals(key)) {
                 return cat;
@@ -55,7 +71,7 @@ public enum LeaderboardCategory {
 
     public String formatValue(double value) {
         return switch (this) {
-            case COINS -> EconomyManager.formatCommas(value);
+            case COINS, DUEL_COINS_WON -> EconomyManager.formatCommas(value);
             case PLAYTIME -> formatPlaytimeTicks((long) value);
             default -> String.valueOf((long) Math.floor(value));
         };
