@@ -349,29 +349,35 @@ public final class DatabaseManager {
                                              java.util.function.Function<String, Boolean> defaultOf) {
         try (Connection c = getConnection()) {
             c.setAutoCommit(false);
-            try (Statement clear = c.createStatement()) {
-                clear.executeUpdate("DELETE FROM player_settings");
-            }
-            try (PreparedStatement ps = c.prepareStatement(upsertSettingsSql())) {
-                for (Map.Entry<UUID, Map<String, Boolean>> e : settings.entrySet()) {
-                    for (Map.Entry<String, Boolean> s : e.getValue().entrySet()) {
-                        if (s.getValue() == null) {
-                            continue;
-                        }
-                        boolean def = defaultOf.apply(s.getKey());
-                        if (s.getValue() == def) {
-                            continue;
-                        }
-                        ps.setString(1, e.getKey().toString());
-                        ps.setString(2, s.getKey());
-                        ps.setInt(3, s.getValue() ? 1 : 0);
-                        ps.addBatch();
-                    }
+            try {
+                try (Statement clear = c.createStatement()) {
+                    clear.executeUpdate("DELETE FROM player_settings");
                 }
-                ps.executeBatch();
+                try (PreparedStatement ps = c.prepareStatement(upsertSettingsSql())) {
+                    for (Map.Entry<UUID, Map<String, Boolean>> e : settings.entrySet()) {
+                        for (Map.Entry<String, Boolean> s : e.getValue().entrySet()) {
+                            if (s.getValue() == null) {
+                                continue;
+                            }
+                            boolean def = defaultOf.apply(s.getKey());
+                            if (s.getValue() == def) {
+                                continue;
+                            }
+                            ps.setString(1, e.getKey().toString());
+                            ps.setString(2, s.getKey());
+                            ps.setInt(3, s.getValue() ? 1 : 0);
+                            ps.addBatch();
+                        }
+                    }
+                    ps.executeBatch();
+                }
+                c.commit();
+            } catch (SQLException e) {
+                c.rollback();
+                throw e;
+            } finally {
+                c.setAutoCommit(true);
             }
-            c.commit();
-            c.setAutoCommit(true);
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Failed to save settings to database", e);
         }
@@ -411,29 +417,35 @@ public final class DatabaseManager {
 
         try (Connection c = getConnection()) {
             c.setAutoCommit(false);
-            try (Statement clear = c.createStatement()) {
-                clear.executeUpdate("DELETE FROM player_stats");
-            }
-            try (PreparedStatement ps = c.prepareStatement(upsertStatsSql())) {
-                for (UUID uuid : uuids) {
-                    int k = kills.getOrDefault(uuid, 0);
-                    int b = bestStreak.getOrDefault(uuid, 0);
-                    double earned = coinsEarned.getOrDefault(uuid, 0.0);
-                    double spent = coinsSpent.getOrDefault(uuid, 0.0);
-                    if (k <= 0 && b <= 0 && earned <= 0 && spent <= 0) {
-                        continue;
-                    }
-                    ps.setString(1, uuid.toString());
-                    ps.setInt(2, k);
-                    ps.setInt(3, b);
-                    ps.setDouble(4, earned);
-                    ps.setDouble(5, spent);
-                    ps.addBatch();
+            try {
+                try (Statement clear = c.createStatement()) {
+                    clear.executeUpdate("DELETE FROM player_stats");
                 }
-                ps.executeBatch();
+                try (PreparedStatement ps = c.prepareStatement(upsertStatsSql())) {
+                    for (UUID uuid : uuids) {
+                        int k = kills.getOrDefault(uuid, 0);
+                        int b = bestStreak.getOrDefault(uuid, 0);
+                        double earned = coinsEarned.getOrDefault(uuid, 0.0);
+                        double spent = coinsSpent.getOrDefault(uuid, 0.0);
+                        if (k <= 0 && b <= 0 && earned <= 0 && spent <= 0) {
+                            continue;
+                        }
+                        ps.setString(1, uuid.toString());
+                        ps.setInt(2, k);
+                        ps.setInt(3, b);
+                        ps.setDouble(4, earned);
+                        ps.setDouble(5, spent);
+                        ps.addBatch();
+                    }
+                    ps.executeBatch();
+                }
+                c.commit();
+            } catch (SQLException e) {
+                c.rollback();
+                throw e;
+            } finally {
+                c.setAutoCommit(true);
             }
-            c.commit();
-            c.setAutoCommit(true);
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Failed to save stats to database", e);
         }

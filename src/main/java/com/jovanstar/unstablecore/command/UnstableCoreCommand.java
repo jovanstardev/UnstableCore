@@ -312,7 +312,11 @@ public final class UnstableCoreCommand implements CommandExecutor, TabCompleter 
         String action = args[1].toLowerCase(Locale.ROOT);
 
         if (action.equals("reset")) {
-            OfflinePlayer target = Bukkit.getOfflinePlayer(args[2]);
+            OfflinePlayer target = resolveOfflinePlayer(args[2]);
+            if (target == null) {
+                MessageUtil.sendConfig(sender, "player-not-found", Map.of());
+                return;
+            }
             plugin.getEconomyManager().reset(target);
             MessageUtil.sendConfig(sender, "economy-reset", Map.of("player", args[2]));
             return;
@@ -330,7 +334,11 @@ public final class UnstableCoreCommand implements CommandExecutor, TabCompleter 
             MessageUtil.send(sender, "&cInvalid amount.");
             return;
         }
-        OfflinePlayer target = Bukkit.getOfflinePlayer(args[3]);
+        OfflinePlayer target = resolveOfflinePlayer(args[3]);
+        if (target == null) {
+            MessageUtil.sendConfig(sender, "player-not-found", Map.of());
+            return;
+        }
         String amountStr = EconomyManager.format(amount);
 
         switch (action) {
@@ -348,6 +356,17 @@ public final class UnstableCoreCommand implements CommandExecutor, TabCompleter 
             }
             default -> MessageUtil.send(sender, "&cUnknown economy action.");
         }
+    }
+
+    /** Resolves an online player first, then an offline one that has actually played before. Returns null if not found. */
+    private static OfflinePlayer resolveOfflinePlayer(String name) {
+        Player online = Bukkit.getPlayerExact(name);
+        if (online != null) {
+            return online;
+        }
+        @SuppressWarnings("deprecation")
+        OfflinePlayer off = Bukkit.getOfflinePlayer(name);
+        return (off.hasPlayedBefore() || off.isOnline()) ? off : null;
     }
 
     private void handleEvent(CommandSender sender, String[] args) {

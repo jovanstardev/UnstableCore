@@ -69,13 +69,8 @@ public final class ArenaListener implements Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
-    public void onPlaceLowest(BlockPlaceEvent event) {
-        handlePlace(event);
-    }
-
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
-    public void onPlaceHighest(BlockPlaceEvent event) {
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onBlockPlace(BlockPlaceEvent event) {
         handlePlace(event);
     }
 
@@ -98,10 +93,6 @@ public final class ArenaListener implements Listener {
         if (plugin.getArenaManager().shouldDenyNomacePlace(player, blockLoc)) {
             event.setCancelled(true);
             sendPlaceDenied(player);
-            return;
-        }
-
-        if (event.isCancelled()) {
             return;
         }
 

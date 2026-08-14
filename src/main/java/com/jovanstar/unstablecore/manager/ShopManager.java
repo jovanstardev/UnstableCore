@@ -219,9 +219,10 @@ public final class ShopManager {
             if (command == null || command.isBlank()) {
                 continue;
             }
-            String parsed = applyPlayer(command, player, price, displayName);
+            String parsed = applyPlayerForCommand(command, player, price, displayName);
             Bukkit.dispatchCommand(Bukkit.getConsoleSender(), parsed);
         }
+
 
         MessageUtil.send(player, MessageUtil.apply(
                 config().getString("messages.bought", "&aPurchased &f{name} &afor &e{price} &acoins."),
@@ -242,6 +243,24 @@ public final class ShopManager {
                 "name", MessageUtil.strip(name == null ? "" : name)
         ));
     }
+
+    /**
+     * Like {@link #applyPlayer} but used when building console commands.
+     * The {@code {player}} placeholder is sanitized to only allow word characters
+     * (letters, digits, underscores) so a player cannot inject extra sub-commands.
+     * Prefer using {@code {uuid}} in shop.yml command templates; it is always safe.
+     */
+    private String applyPlayerForCommand(String input, Player player, double price, String name) {
+        String safeName = player.getName().replaceAll("[^\\w]", "_");
+        return MessageUtil.apply(input, Map.of(
+                "player", safeName,
+                "uuid", player.getUniqueId().toString(),
+                "price", EconomyManager.formatCommas(price),
+                "coins", EconomyManager.formatCommas(plugin.getEconomyManager().getBalance(player)),
+                "name", MessageUtil.strip(name == null ? "" : name)
+        ));
+    }
+
 
     private static boolean canFit(Player player, ItemStack reward) {
         ItemStack[] storage = player.getInventory().getStorageContents();
