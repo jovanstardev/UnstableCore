@@ -335,6 +335,26 @@ public final class ArenaManager {
         return true;
     }
 
+    public boolean setSpawn1(String name, Location loc) {
+        Arena arena = getArena(name);
+        if (arena == null) {
+            return false;
+        }
+        arena.setSpawn1(loc);
+        save();
+        return true;
+    }
+
+    public boolean setSpawn2(String name, Location loc) {
+        Arena arena = getArena(name);
+        if (arena == null) {
+            return false;
+        }
+        arena.setSpawn2(loc);
+        save();
+        return true;
+    }
+
     public void setPermanent(String name, boolean permanent) {
         Arena arena = arenas.get(name.toLowerCase(Locale.ROOT));
         if (arena != null) {
@@ -465,6 +485,13 @@ public final class ArenaManager {
     }
 
     private boolean shouldTransferOnRotate(Player player, Arena from) {
+        if (plugin.getDuelManager() != null) {
+            UUID uuid = player.getUniqueId();
+            if (plugin.getDuelManager().isInDuel(uuid) || plugin.getDuelManager().isInGrace(uuid)) {
+                return false;
+            }
+        }
+
         String tracked = playerArena.get(player.getUniqueId());
 
         if ("newbie".equalsIgnoreCase(tracked)) {
@@ -743,6 +770,14 @@ public final class ArenaManager {
     }
 
     public boolean teleportToArena(Player player, String arenaKey) {
+        if (plugin.getDuelManager() != null) {
+            UUID uuid = player.getUniqueId();
+            if (plugin.getDuelManager().isInDuel(uuid) || plugin.getDuelManager().isInGrace(uuid)) {
+                MessageUtil.send(player, "&cYou cannot join an arena while in a duel.");
+                return false;
+            }
+        }
+
         Arena arena;
         if ("newbie".equalsIgnoreCase(arenaKey)) {
             arena = newbieArena;

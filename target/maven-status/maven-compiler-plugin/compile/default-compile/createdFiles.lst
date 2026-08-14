@@ -1,4 +1,5 @@
 com\jovanstar\unstablecore\manager\LiveGuiRefresher.class
+com\jovanstar\unstablecore\manager\DuelQueueManager.class
 com\jovanstar\unstablecore\manager\EventManager.class
 com\jovanstar\unstablecore\manager\ItemCleanupManager.class
 com\jovanstar\unstablecore\manager\SettingsManager.class
@@ -14,6 +15,7 @@ com\jovanstar\unstablecore\gui\StatsGui.class
 com\jovanstar\unstablecore\command\TagsCommand.class
 com\jovanstar\unstablecore\model\TagEntry.class
 com\jovanstar\unstablecore\listener\AntiGlitchListener.class
+com\jovanstar\unstablecore\gui\DuelMapGui$Step.class
 com\jovanstar\unstablecore\util\MessageUtil.class
 com\jovanstar\unstablecore\manager\KillstreakManager.class
 com\jovanstar\unstablecore\command\DisposalCommand.class
@@ -22,6 +24,7 @@ com\jovanstar\unstablecore\manager\DatabaseManager$StatsRow.class
 com\jovanstar\unstablecore\leaderboard\LeaderboardEntry.class
 com\jovanstar\unstablecore\command\KitCommand.class
 com\jovanstar\unstablecore\gui\SettingsGui.class
+com\jovanstar\unstablecore\gui\DuelQueueGui.class
 com\jovanstar\unstablecore\gui\LeaderboardMenuGui.class
 com\jovanstar\unstablecore\gui\DuelHistoryGui.class
 com\jovanstar\unstablecore\model\DuelInventorySnapshot.class
@@ -29,6 +32,7 @@ com\jovanstar\unstablecore\gui\TagsGui$Mode.class
 com\jovanstar\unstablecore\manager\RewardsManager$DayState.class
 com\jovanstar\unstablecore\gui\RewardsGui$1.class
 com\jovanstar\unstablecore\listener\DuelListener.class
+com\jovanstar\unstablecore\manager\DuelQueueManager$QueueType.class
 com\jovanstar\unstablecore\gui\DuelMapGui.class
 com\jovanstar\unstablecore\manager\ActionBarManager.class
 com\jovanstar\unstablecore\listener\BountyListener.class
@@ -48,6 +52,7 @@ com\jovanstar\unstablecore\command\UnstableCoreCommand.class
 com\jovanstar\unstablecore\manager\DatabaseManager$DuelRow.class
 com\jovanstar\unstablecore\manager\TagManager.class
 com\jovanstar\unstablecore\manager\DuelStatsManager$Mutable.class
+com\jovanstar\unstablecore\manager\DuelQueueManager$QueueEntry.class
 com\jovanstar\unstablecore\gui\ShopGui.class
 com\jovanstar\unstablecore\command\StatsCommand.class
 com\jovanstar\unstablecore\event\DuelForfeitEvent.class
@@ -68,6 +73,7 @@ com\jovanstar\unstablecore\hook\WorldGuardHook.class
 com\jovanstar\unstablecore\manager\DatabaseManager$CombatRow.class
 com\jovanstar\unstablecore\model\Duel.class
 com\jovanstar\unstablecore\manager\DuelArenaManager.class
+com\jovanstar\unstablecore\manager\DuelStatsManager$EloChange.class
 com\jovanstar\unstablecore\command\KitsCommand.class
 com\jovanstar\unstablecore\manager\BountyManager$PromptType.class
 com\jovanstar\unstablecore\command\LoadoutCommand.class

@@ -214,6 +214,10 @@ public final class CombatListener implements Listener {
         if (event.getFinalDamage() <= 0) {
             return;
         }
+        if (plugin.getDuelManager() != null && (plugin.getDuelManager().isInDuel(victim.getUniqueId())
+                || plugin.getDuelManager().isInDuel(attacker.getUniqueId()))) {
+            return;
+        }
         combatTags.put(victim.getUniqueId(), new CombatTag(attacker.getUniqueId(), System.currentTimeMillis()));
     }
 

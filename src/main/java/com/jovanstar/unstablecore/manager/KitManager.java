@@ -498,6 +498,24 @@ public final class KitManager {
         return kit != null && kit.getTier() != null && "starter".equalsIgnoreCase(kit.getTier());
     }
 
+    public Kit getRandomKit() {
+        if (kits.isEmpty()) {
+            return null;
+        }
+        List<Kit> all = new ArrayList<>(kits.values());
+        return all.get(ThreadLocalRandom.current().nextInt(all.size()));
+    }
+
+    public List<Kit> getUnlockedKits(Player player) {
+        List<Kit> out = new ArrayList<>();
+        for (Kit kit : kits.values()) {
+            if (isUnlocked(player, kit)) {
+                out.add(kit);
+            }
+        }
+        return out;
+    }
+
     public void unlock(UUID uuid, String kitId) {
         unlocked.computeIfAbsent(uuid, u -> ConcurrentHashMap.newKeySet())
                 .add(kitId.toLowerCase(Locale.ROOT));

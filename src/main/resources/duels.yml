@@ -25,6 +25,15 @@ house-cut-percent: 0
 rematch:
   enabled: true
 
+ranked:
+  enabled: true
+  default-elo: 1000
+  k-factor: 32
+
+queue:
+  enabled: true
+  match-interval-ticks: 20
+
 default-kit: law
 
 arenas:
@@ -51,7 +60,6 @@ restricted-commands:
 gui:
   map-title: "&8» &dDuel: Select Map &8«"
   size: 27
-  filler: GRAY_STAINED_GLASS_PANE
   map-material: MAP
   map-name: "&d&l{map}"
   map-lore-available:
@@ -68,6 +76,8 @@ gui:
     - "&cCan't send a request"
   cancel-slot: 22
   cancel-name: "&cCancel"
+
+fight-action-bar-duration-ms: 5000
 
 messages:
   disabled: "&cDuels are currently disabled."
@@ -115,6 +125,7 @@ messages:
   accept-failed: "&cCouldn't start the duel ({reason}) - both players have been refunded."
   countdown: "&e{seconds}..."
   fight: "&a&lFIGHT!"
+  fight-action-bar: "&7Your opponent &b{opponent} &7has a &b{winrate}% &7winrate. Good luck!"
   win-broadcast: "&d⚔ &f{winner} &7defeated &f{loser}&7!"
   win-wager: "&aYou won &6{pot} &acoins!"
   win-streak: "&e{streak} duel win streak!"
