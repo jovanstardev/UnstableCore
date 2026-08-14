@@ -117,7 +117,8 @@ arena:
     double-vote-permission: "unstablecore.vote.2x"
     double-vote-weight: 2
     refresh-ticks: 20
-    start-broadcast: "<b><gradient:#A100FF:#E9D5FF>UNSTABLE KITPVP</gradient></b> &8» &fMap vote started! &7({seconds}s)"
+    start-broadcast: "<b><gradient:#A100FF:#E9D5FF>UNSTABLE KITPVP</gradient></b> &8» &fMap vote started! &eClick here to vote! &7({seconds}s)"
+    start-hover: "&7Click to open the map vote menu"
     end-broadcast: "<b><gradient:#A100FF:#E9D5FF>UNSTABLE KITPVP</gradient></b> &8» &fVote ended - next map is &a{map} &8(&f{percent}%&8)"
     voted-message: "&aVoted for &f{map} &8(&f{percent}%&8)&a."
     start-sound: BLOCK_NOTE_BLOCK_PLING

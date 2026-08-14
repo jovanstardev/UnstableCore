@@ -8,6 +8,7 @@ import com.jovanstar.unstablecore.command.KitCommand;
 import com.jovanstar.unstablecore.command.KitsCommand;
 import com.jovanstar.unstablecore.command.LeaderboardCommand;
 import com.jovanstar.unstablecore.command.LoadoutCommand;
+import com.jovanstar.unstablecore.command.MapVoteCommand;
 import com.jovanstar.unstablecore.command.RewardsCommand;
 import com.jovanstar.unstablecore.command.SettingsCommand;
 import com.jovanstar.unstablecore.command.ShopCommand;
@@ -264,6 +265,7 @@ public final class UnstableCore extends JavaPlugin {
         getCommand("sword").setExecutor(new SwordCommand(this));
         getCommand("loadout").setExecutor(new LoadoutCommand(this));
         getCommand("kits").setExecutor(new KitsCommand(this));
+        getCommand("mapvote").setExecutor(new MapVoteCommand(this));
         KitCommand kit = new KitCommand(this);
         getCommand("kit").setExecutor(kit);
         getCommand("kit").setTabCompleter(kit);

@@ -4,6 +4,9 @@ import com.jovanstar.unstablecore.UnstableCore;
 import com.jovanstar.unstablecore.gui.VoteGui;
 import com.jovanstar.unstablecore.model.Arena;
 import com.jovanstar.unstablecore.util.MessageUtil;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
@@ -147,14 +150,8 @@ public final class MapVoteManager {
         voting = true;
         voteEndsAt = System.currentTimeMillis() + duration * 1000L;
 
-        MessageUtil.broadcastFiltered(plugin.getConfig().getString("arena.vote.start-broadcast", ""), Map.of(
-                "seconds", String.valueOf(duration)
-        ), plugin.getSettingsManager().filter(SettingsManager.ROTATION_ALERTS));
+        broadcastVoteStart(duration);
         playSound(plugin.getConfig().getString("arena.vote.start-sound", "BLOCK_NOTE_BLOCK_PLING"));
-
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            VoteGui.open(plugin, player);
-        }
 
         if (endTask != null) {
             endTask.cancel();
@@ -166,6 +163,30 @@ public final class MapVoteManager {
         }
         long refresh = Math.max(10L, plugin.getConfig().getLong("arena.vote.refresh-ticks", 20L));
         refreshTask = Bukkit.getScheduler().runTaskTimer(plugin, this::refreshOpenGuis, refresh, refresh);
+    }
+
+    /**
+     * Sends a single clickable chat line announcing the vote instead of forcing the GUI open on
+     * everyone's screen. Clicking it runs /mapvote, which opens the map-select GUI for whoever
+     * clicked - the GUI itself is unchanged, only how it's first triggered.
+     */
+    private void broadcastVoteStart(int duration) {
+        String template = plugin.getConfig().getString("arena.vote.start-broadcast", "");
+        if (template.isBlank()) {
+            return;
+        }
+        String hoverTemplate = plugin.getConfig().getString("arena.vote.start-hover", "&7Click to open the map vote menu");
+        Component message = MessageUtil.parse(MessageUtil.apply(template, Map.of("seconds", String.valueOf(duration))))
+                .clickEvent(ClickEvent.runCommand("/mapvote"))
+                .hoverEvent(HoverEvent.showText(MessageUtil.parse(hoverTemplate)));
+
+        java.util.function.Predicate<Player> filter = plugin.getSettingsManager().filter(SettingsManager.ROTATION_ALERTS);
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (filter == null || filter.test(player)) {
+                player.sendMessage(message);
+            }
+        }
+        Bukkit.getConsoleSender().sendMessage(message);
     }
 
     public void castVote(Player player, String arenaId) {
@@ -219,6 +240,7 @@ public final class MapVoteManager {
         VoteGui.open(plugin, player);
     }
 
+    /** Opens the map-select GUI for a player - used by /mapvote (chat click) and on join mid-vote. */
     public void openFor(Player player) {
         if (voting && player != null) {
             VoteGui.open(plugin, player);

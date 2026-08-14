@@ -33,6 +33,9 @@ commands:
     description: Open the Unstable Kits browser
     aliases: [unstablekits]
     usage: /kits
+  mapvote:
+    description: Opens the map vote GUI (used internally by the clickable chat vote link)
+    usage: /mapvote
   kit:
     description: Admin kit create/edit commands
     permission: unstablecore.admin

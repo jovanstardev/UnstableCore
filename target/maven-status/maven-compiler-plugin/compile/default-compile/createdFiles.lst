@@ -75,6 +75,7 @@ com\jovanstar\unstablecore\gui\DisposalGui.class
 com\jovanstar\unstablecore\gui\VoteGui.class
 com\jovanstar\unstablecore\manager\DatabaseManager$ProfileRow.class
 com\jovanstar\unstablecore\model\ArenaType.class
+com\jovanstar\unstablecore\command\MapVoteCommand.class
 com\jovanstar\unstablecore\util\SmallCaps.class
 com\jovanstar\unstablecore\model\Arena.class
 com\jovanstar\unstablecore\command\SwordCommand.class
