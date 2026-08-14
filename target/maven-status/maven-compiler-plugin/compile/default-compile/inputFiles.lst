@@ -13,6 +13,7 @@ E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstableco
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\command\RewardsCommand.java
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\command\SettingsCommand.java
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\command\ShopCommand.java
+E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\command\SpectateCommand.java
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\command\StatsCommand.java
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\command\SwordCommand.java
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\command\TagsCommand.java
@@ -80,6 +81,7 @@ E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstableco
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\manager\RewardsManager.java
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\manager\SettingsManager.java
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\manager\ShopManager.java
+E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\manager\SpectatorManager.java
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\manager\StatsManager.java
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\manager\TagManager.java
 E:\UnstableCore-main updated\UnstableCore\src\main\java\com\jovanstar\unstablecore\model\Arena.java

@@ -36,6 +36,9 @@ queue:
   enabled: true
   match-interval-ticks: 20
 
+spectate:
+  enabled: true
+
 default-kit: law
 
 arenas:
@@ -152,3 +155,9 @@ messages:
   admin-not-found: "&cThat player isn't in a duel."
   admin-forceend-success: "&aForce-ended the duel involving &f{player}&a."
   rematch-offered: "&d⚔ &7Want a rematch? Type &f/duel {opponent}&7."
+  spectate-disabled: "&cSpectating is currently disabled."
+  spectate-self: "&cYou can't spectate yourself."
+  spectate-not-dueling: "&c{target} isn't in an active duel right now."
+  spectate-started: "&d👁 &7Now spectating &f{challenger} &7vs &f{target}&7. Type &f/spec &7again to stop."
+  spectate-stopped: "&7You stopped spectating."
+  spectate-duel-ended: "&7The duel ended - you've stopped spectating."

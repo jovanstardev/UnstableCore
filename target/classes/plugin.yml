@@ -107,6 +107,10 @@ commands:
     aliases: [duels, duelarena, da]
     permission: unstablecore.duel.admin
     usage: /dueladmin <list|inspect|forceend|arena|setspawn1|setspawn2|setcenter|spawns>
+  spec:
+    description: Spectate an active duel
+    aliases: [spectate]
+    usage: /spec <player>
 
 permissions:
   unstablecore.admin:
@@ -136,6 +140,9 @@ permissions:
   unstablecore.duel.admin:
     description: Access to /dueladmin staff tools and /duel forceend
     default: op
+  unstablecore.duel.spectate:
+    description: Access to /spec
+    default: true
   tags.emoji:
     description: Access to emoji tags
     default: false

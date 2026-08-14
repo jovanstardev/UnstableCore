@@ -36,6 +36,11 @@ public final class LeaveCommand implements CommandExecutor {
             return true;
         }
 
+        if (plugin.getSpectatorManager() != null && plugin.getSpectatorManager().isSpectating(player.getUniqueId())) {
+            plugin.getSpectatorManager().stopSpectating(player, true);
+            return true;
+        }
+
         DuelManager duelMgr = plugin.getDuelManager();
         if (duelMgr != null && duelMgr.isInDuel(player.getUniqueId())) {
             Duel duel = duelMgr.getDuelForPlayer(player.getUniqueId());

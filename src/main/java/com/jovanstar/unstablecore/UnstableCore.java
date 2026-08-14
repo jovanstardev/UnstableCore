@@ -15,6 +15,7 @@ import com.jovanstar.unstablecore.command.MapVoteCommand;
 import com.jovanstar.unstablecore.command.RewardsCommand;
 import com.jovanstar.unstablecore.command.SettingsCommand;
 import com.jovanstar.unstablecore.command.ShopCommand;
+import com.jovanstar.unstablecore.command.SpectateCommand;
 import com.jovanstar.unstablecore.command.StatsCommand;
 import com.jovanstar.unstablecore.command.SwordCommand;
 import com.jovanstar.unstablecore.command.TagsCommand;
@@ -51,6 +52,7 @@ import com.jovanstar.unstablecore.manager.PlaytimeManager;
 import com.jovanstar.unstablecore.manager.RewardsManager;
 import com.jovanstar.unstablecore.manager.SettingsManager;
 import com.jovanstar.unstablecore.manager.ShopManager;
+import com.jovanstar.unstablecore.manager.SpectatorManager;
 import com.jovanstar.unstablecore.manager.StatsManager;
 import com.jovanstar.unstablecore.manager.TagManager;
 import com.jovanstar.unstablecore.placeholder.UnstablePlaceholders;
@@ -89,6 +91,7 @@ public final class UnstableCore extends JavaPlugin {
     private DuelStatsManager duelStatsManager;
     private DuelManager duelManager;
     private DuelQueueManager duelQueueManager;
+    private SpectatorManager spectatorManager;
     private ArenaListener arenaListener;
     private CombatListener combatListener;
     private org.bukkit.scheduler.BukkitTask autosaveTask;
@@ -157,6 +160,8 @@ public final class UnstableCore extends JavaPlugin {
         this.duelQueueManager = new DuelQueueManager(this);
         this.duelQueueManager.start();
 
+        this.spectatorManager = new SpectatorManager(this);
+
         autosaveTask = Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
             killstreakManager.save();
             statsManager.save();
@@ -191,6 +196,9 @@ public final class UnstableCore extends JavaPlugin {
         }
         if (duelQueueManager != null) {
             duelQueueManager.stop();
+        }
+        if (spectatorManager != null) {
+            spectatorManager.shutdown();
         }
         if (duelManager != null) {
             duelManager.shutdown();
@@ -346,6 +354,10 @@ public final class UnstableCore extends JavaPlugin {
         getCommand("dueladmin").setTabCompleter(duelAdmin);
         getCommand("duels").setExecutor(duelAdmin);
         getCommand("duels").setTabCompleter(duelAdmin);
+
+        SpectateCommand spectate = new SpectateCommand(this);
+        getCommand("spec").setExecutor(spectate);
+        getCommand("spec").setTabCompleter(spectate);
     }
 
     private void registerListeners() {
@@ -459,6 +471,10 @@ public final class UnstableCore extends JavaPlugin {
 
     public DuelQueueManager getDuelQueueManager() {
         return duelQueueManager;
+    }
+
+    public SpectatorManager getSpectatorManager() {
+        return spectatorManager;
     }
 
     public ArenaListener getArenaListener() {

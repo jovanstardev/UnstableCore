@@ -5,6 +5,7 @@ com\jovanstar\unstablecore\manager\ItemCleanupManager.class
 com\jovanstar\unstablecore\manager\SettingsManager.class
 com\jovanstar\unstablecore\listener\GuiListener.class
 com\jovanstar\unstablecore\manager\DuelManager$PayoutResult.class
+com\jovanstar\unstablecore\manager\SpectatorManager$PreviousState.class
 com\jovanstar\unstablecore\gui\KitPreviewGui.class
 com\jovanstar\unstablecore\event\DuelEvent.class
 com\jovanstar\unstablecore\manager\DuelArenaManager$Availability.class
@@ -42,6 +43,7 @@ com\jovanstar\unstablecore\manager\ArenaManager.class
 com\jovanstar\unstablecore\UnstableCore.class
 com\jovanstar\unstablecore\command\ShopCommand.class
 com\jovanstar\unstablecore\event\DuelPayoutEvent.class
+com\jovanstar\unstablecore\command\SpectateCommand.class
 com\jovanstar\unstablecore\event\DuelEndEvent.class
 com\jovanstar\unstablecore\gui\LeaderboardCategoryGui.class
 com\jovanstar\unstablecore\manager\ActionBarManager$CachedBalance.class
@@ -115,6 +117,7 @@ com\jovanstar\unstablecore\manager\BountyManager$Prompt.class
 com\jovanstar\unstablecore\manager\RewardsManager$Tab.class
 com\jovanstar\unstablecore\command\DuelAdminCommand.class
 com\jovanstar\unstablecore\gui\ArenaGui.class
+com\jovanstar\unstablecore\manager\SpectatorManager.class
 com\jovanstar\unstablecore\command\LeaderboardCommand.class
 com\jovanstar\unstablecore\leaderboard\LeaderboardCategory.class
 com\jovanstar\unstablecore\command\ArenasCommand.class

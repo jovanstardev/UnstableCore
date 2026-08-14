@@ -81,6 +81,13 @@ public final class PlayerListener implements Listener {
         if (plugin.getDuelManager() != null) {
             plugin.getDuelManager().applyPendingCrashRestore(player);
         }
+        // A player who disconnected mid-/spec (rare, but possible) has GameMode.SPECTATOR saved
+        // in their player data - SpectatorManager can't restore it while they're offline, so
+        // undo it here instead of leaving them permanently stuck in spectator mode. Nothing else
+        // in this plugin ever expects a player to legitimately rejoin already in spectator mode.
+        if (player.getGameMode() == org.bukkit.GameMode.SPECTATOR) {
+            player.setGameMode(org.bukkit.GameMode.SURVIVAL);
+        }
         if (plugin.getKitManager() != null) {
             plugin.getKitManager().ensureDefaultKit(player);
         }
@@ -128,6 +135,9 @@ public final class PlayerListener implements Listener {
         if (plugin.getCombatListener() != null) {
             plugin.getCombatListener().handleQuitCombatTag(event.getPlayer());
             plugin.getCombatListener().clearPlayer(event.getPlayer().getUniqueId());
+        }
+        if (plugin.getSpectatorManager() != null) {
+            plugin.getSpectatorManager().handleDisconnect(event.getPlayer());
         }
         if (plugin.getRewardsManager() != null) {
             plugin.getRewardsManager().unload(event.getPlayer().getUniqueId());

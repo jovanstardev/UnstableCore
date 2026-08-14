@@ -718,6 +718,17 @@ public final class DuelManager {
             rollbackSetup(duel, "player-offline");
             return false;
         }
+        // A player about to fight in their own duel can't still be sitting in spectator mode
+        // watching a different one - force them out first so kit application/teleport below
+        // don't run on a player stuck in GameMode.SPECTATOR.
+        if (plugin.getSpectatorManager() != null) {
+            if (plugin.getSpectatorManager().isSpectating(challenger.getUniqueId())) {
+                plugin.getSpectatorManager().stopSpectating(challenger, false);
+            }
+            if (plugin.getSpectatorManager().isSpectating(target.getUniqueId())) {
+                plugin.getSpectatorManager().stopSpectating(target, false);
+            }
+        }
 
         EconomyManager economy = plugin.getEconomyManager();
         if (duel.getWager() > 0) {
@@ -1119,6 +1130,9 @@ public final class DuelManager {
 
         // Restore visibility for all players before anything else
         removeDuelVisibility(duel);
+        if (plugin.getSpectatorManager() != null) {
+            plugin.getSpectatorManager().onDuelEnd(duel.getId());
+        }
 
         // Lift action-bar suppression immediately (normal bar can resume)
         ActionBarManager abMgr = plugin.getActionBarManager();
