@@ -50,6 +50,12 @@ public final class KitManager {
     }
 
     public void load() {
+        if (dataFile != null) {
+            // Flush any pending batched player-data save (unlocks, selections, layouts) before
+            // the in-memory maps below get wiped and repopulated from disk - otherwise a reload
+            // that races a pending save silently discards the most recent player changes.
+            savePlayerData();
+        }
         kitsFolder = new File(plugin.getDataFolder(), "kits");
         dataFile = new File(plugin.getDataFolder(), "kit-data.yml");
         if (!kitsFolder.exists() && !kitsFolder.mkdirs()) {

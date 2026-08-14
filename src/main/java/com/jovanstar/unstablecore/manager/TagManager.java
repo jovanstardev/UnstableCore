@@ -27,6 +27,7 @@ public final class TagManager {
     private final Map<String, TagCategory> categories = new LinkedHashMap<>();
     private final Map<UUID, String> equipped = new ConcurrentHashMap<>();
     private final Map<UUID, Long> clearCooldown = new ConcurrentHashMap<>();
+    private final Map<UUID, Object> tagLocks = new ConcurrentHashMap<>();
 
     private int clearCooldownSeconds = 30;
     private int suffixPriority = 1;
@@ -126,62 +127,70 @@ public final class TagManager {
         String rawSuffix = suffixSpacer + suffixDisplay;
 
         String lpSuffix = toLuckPerms(rawSuffix);
+        UUID uuid = player.getUniqueId();
 
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            try {
-                LuckPerms api = LuckPermsProvider.get();
-                User user = api.getUserManager().loadUser(player.getUniqueId()).join();
-                if (user == null) {
-                    return;
+            synchronized (lockFor(uuid)) {
+                try {
+                    LuckPerms api = LuckPermsProvider.get();
+                    User user = api.getUserManager().loadUser(uuid).join();
+                    if (user == null) {
+                        return;
+                    }
+                    user.data().clear(NodeType.SUFFIX.predicate(n -> n.getPriority() == suffixPriority));
+                    user.data().add(SuffixNode.builder(lpSuffix, suffixPriority).build());
+                    api.getUserManager().saveUser(user);
+                    equipped.put(uuid, suffixDisplay);
+                    plugin.getDatabaseManager().upsertTag(uuid, suffixDisplay);
+                    Bukkit.getScheduler().runTask(plugin, () ->
+                            MessageUtil.sendConfig(player, "tag-equipped", Map.of()));
+                } catch (Exception e) {
+                    plugin.getLogger().warning("Failed to set tag for " + player.getName() + ": " + e.getMessage());
                 }
-                user.data().clear(NodeType.SUFFIX.predicate(n -> n.getPriority() == suffixPriority));
-                user.data().add(SuffixNode.builder(lpSuffix, suffixPriority).build());
-                api.getUserManager().saveUser(user);
-                equipped.put(player.getUniqueId(), suffixDisplay);
-                Bukkit.getScheduler().runTaskAsynchronously(plugin, () ->
-                        plugin.getDatabaseManager().upsertTag(player.getUniqueId(), suffixDisplay));
-                Bukkit.getScheduler().runTask(plugin, () ->
-                        MessageUtil.sendConfig(player, "tag-equipped", Map.of()));
-            } catch (Exception e) {
-                plugin.getLogger().warning("Failed to set tag for " + player.getName() + ": " + e.getMessage());
             }
         });
         return true;
     }
 
     public boolean clear(Player player) {
+        UUID uuid = player.getUniqueId();
         long now = System.currentTimeMillis();
-        Long last = clearCooldown.get(player.getUniqueId());
+        Long last = clearCooldown.get(uuid);
         if (last != null && now - last < clearCooldownSeconds * 1000L) {
             MessageUtil.sendConfig(player, "tag-clear-cooldown", Map.of());
             return false;
         }
-        clearCooldown.put(player.getUniqueId(), now);
 
         if (!hasLuckPerms()) {
             MessageUtil.send(player, "&cLuckPerms is required for tags.");
             return false;
         }
+        clearCooldown.put(uuid, now);
 
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            try {
-                LuckPerms api = LuckPermsProvider.get();
-                User user = api.getUserManager().loadUser(player.getUniqueId()).join();
-                if (user == null) {
-                    return;
+            synchronized (lockFor(uuid)) {
+                try {
+                    LuckPerms api = LuckPermsProvider.get();
+                    User user = api.getUserManager().loadUser(uuid).join();
+                    if (user == null) {
+                        return;
+                    }
+                    user.data().clear(NodeType.SUFFIX.predicate(n -> n.getPriority() == suffixPriority));
+                    api.getUserManager().saveUser(user);
+                    equipped.remove(uuid);
+                    plugin.getDatabaseManager().deleteTag(uuid);
+                    Bukkit.getScheduler().runTask(plugin, () ->
+                            MessageUtil.sendConfig(player, "tag-cleared", Map.of()));
+                } catch (Exception e) {
+                    plugin.getLogger().warning("Failed to clear tag for " + player.getName() + ": " + e.getMessage());
                 }
-                user.data().clear(NodeType.SUFFIX.predicate(n -> n.getPriority() == suffixPriority));
-                api.getUserManager().saveUser(user);
-                equipped.remove(player.getUniqueId());
-                Bukkit.getScheduler().runTaskAsynchronously(plugin, () ->
-                        plugin.getDatabaseManager().deleteTag(player.getUniqueId()));
-                Bukkit.getScheduler().runTask(plugin, () ->
-                        MessageUtil.sendConfig(player, "tag-cleared", Map.of()));
-            } catch (Exception e) {
-                plugin.getLogger().warning("Failed to clear tag for " + player.getName() + ": " + e.getMessage());
             }
         });
         return true;
+    }
+
+    private Object lockFor(UUID uuid) {
+        return tagLocks.computeIfAbsent(uuid, u -> new Object());
     }
 
     public String getEquipped(UUID uuid) {

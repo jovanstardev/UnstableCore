@@ -23,19 +23,27 @@ import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 
+import java.util.Collections;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class CombatListener implements Listener {
 
     private static final long ELYTRA_MSG_COOLDOWN_MS = 2000L;
 
+    private record CombatTag(UUID attacker, long atMs) {
+    }
+
     private final UnstableCore plugin;
     private final Map<UUID, Long> elytraMsgCooldown = new ConcurrentHashMap<>();
     private final Map<UUID, Long> hitSoundCooldown = new ConcurrentHashMap<>();
     private final Map<UUID, Long> recentDeathHandled = new ConcurrentHashMap<>();
+    private final Map<UUID, CombatTag> combatTags = new ConcurrentHashMap<>();
+    private final Set<PlayerDeathEvent> handledDeathEvents = Collections.newSetFromMap(new WeakHashMap<>());
 
     public CombatListener(UnstableCore plugin) {
         this.plugin = plugin;
@@ -46,17 +54,17 @@ public final class CombatListener implements Listener {
             elytraMsgCooldown.remove(uuid);
             hitSoundCooldown.remove(uuid);
             recentDeathHandled.remove(uuid);
+            combatTags.remove(uuid);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onDeath(PlayerDeathEvent event) {
-        Player victim = event.getEntity();
-        long now = System.currentTimeMillis();
-        Long prevDeath = recentDeathHandled.put(victim.getUniqueId(), now);
-        if (prevDeath != null && now - prevDeath < 250L) {
+        if (!handledDeathEvents.add(event)) {
             return;
         }
+        Player victim = event.getEntity();
+        recentDeathHandled.put(victim.getUniqueId(), System.currentTimeMillis());
         int brokenStreak = plugin.getKillstreakManager().getStreak(victim.getUniqueId());
         Player killer = victim.getKiller();
 
@@ -109,6 +117,81 @@ public final class CombatListener implements Listener {
         if (plugin.getBountyManager() != null) {
             plugin.getBountyManager().claimOnKill(killer, victim);
         }
+    }
+
+    /**
+     * Called on player quit. If the player recently took damage from another player and never
+     * respawned, treats the disconnect as a death credited to that attacker - closing the
+     * combat-log exploit where quitting denies the attacker their kill reward/streak/bounty
+     * and lets the victim's own streak survive the reconnect.
+     */
+    public void handleQuitCombatTag(Player victim) {
+        UUID uuid = victim.getUniqueId();
+        CombatTag tag = combatTags.remove(uuid);
+        if (tag == null || !plugin.getConfig().getBoolean("combat-tag.enabled", true)) {
+            return;
+        }
+        long windowMs = Math.max(0L, plugin.getConfig().getLong("combat-tag.seconds", 15) * 1000L);
+        long now = System.currentTimeMillis();
+        if (now - tag.atMs() > windowMs) {
+            return;
+        }
+        Long lastRealDeath = recentDeathHandled.get(uuid);
+        if (lastRealDeath != null && now - lastRealDeath < windowMs) {
+            return;
+        }
+        Player killer = plugin.getServer().getPlayer(tag.attacker());
+        if (killer == null || !killer.isOnline() || killer.getUniqueId().equals(uuid)) {
+            return;
+        }
+        recentDeathHandled.put(uuid, now);
+
+        int brokenStreak = plugin.getKillstreakManager().getStreak(uuid);
+        if (plugin.getConfig().getBoolean("kill-messages.enabled", true)) {
+            String icon = plugin.getConfig().getString("kill-messages.icon", "&c⚔");
+            int minBreak = plugin.getConfig().getInt("killstreak.streak-end-minimum", 1);
+            if (brokenStreak >= minBreak) {
+                MessageUtil.broadcastFiltered(plugin.getConfig().getString("kill-messages.streak-end", ""), Map.of(
+                        "icon", icon,
+                        "killer", killer.getName(),
+                        "victim", victim.getName(),
+                        "streak", String.valueOf(brokenStreak)
+                ), p -> plugin.getSettingsManager().isEnabled(p, SettingsManager.KILL_MESSAGES)
+                        && plugin.getSettingsManager().isEnabled(p, SettingsManager.STREAK_ALERTS));
+            }
+            MessageUtil.broadcastFiltered(plugin.getConfig().getString("kill-messages.kill", ""), Map.of(
+                    "icon", icon,
+                    "killer", killer.getName(),
+                    "victim", victim.getName()
+            ), plugin.getSettingsManager().filter(SettingsManager.KILL_MESSAGES));
+        }
+
+        plugin.getKillstreakManager().reset(uuid);
+        plugin.getKillstreakManager().addDeath(uuid);
+
+        playCombatSound(killer, "kill");
+
+        int newStreak = plugin.getKillstreakManager().addKill(killer);
+        plugin.getEconomyManager().rewardKill(killer, plugin.getConfig().getDouble("kill-reward", 10));
+        plugin.getKillstreakManager().broadcastMilestone(killer, newStreak);
+        if (plugin.getBountyManager() != null) {
+            plugin.getBountyManager().claimOnKill(killer, victim);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onCombatTag(EntityDamageByEntityEvent event) {
+        if (!(event.getEntity() instanceof Player victim)) {
+            return;
+        }
+        Player attacker = resolveAttacker(event);
+        if (attacker == null || attacker.equals(victim)) {
+            return;
+        }
+        if (event.getFinalDamage() <= 0) {
+            return;
+        }
+        combatTags.put(victim.getUniqueId(), new CombatTag(attacker.getUniqueId(), System.currentTimeMillis()));
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)

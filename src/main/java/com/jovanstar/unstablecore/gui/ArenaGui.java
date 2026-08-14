@@ -82,6 +82,9 @@ public final class ArenaGui implements InventoryHolder {
         lastJoinable = joinable;
 
         int slot = gui.getInt("join-slot", 13);
+        if (slot < 0 || slot >= inventory.getSize()) {
+            return;
+        }
         Material mat = material(gui.getString("join-material"), Material.PINK_DYE);
         String name = gui.getString("join-name", "&dᴊᴏɪɴ ꜰꜰᴀ");
         List<String> lore = new ArrayList<>();

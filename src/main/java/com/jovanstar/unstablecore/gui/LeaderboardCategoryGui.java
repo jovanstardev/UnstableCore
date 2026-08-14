@@ -96,28 +96,42 @@ public final class LeaderboardCategoryGui implements InventoryHolder {
         int searchSlot = cfg.getInt("gui.category.slots.search", 50);
         int nextSlot = cfg.getInt("gui.category.slots.next", 53);
 
-        if (page > 0) {
+        if (page > 0 && validSlot(prevSlot)) {
             inventory.setItem(prevSlot, button("previous", smallCapsButtons, Map.of()));
             actions.put(prevSlot, "prev");
         }
-        inventory.setItem(backSlot, button("back", smallCapsButtons, Map.of()));
-        actions.put(backSlot, "back");
+        if (validSlot(backSlot)) {
+            inventory.setItem(backSlot, button("back", smallCapsButtons, Map.of()));
+            actions.put(backSlot, "back");
+        }
 
-        inventory.setItem(viewerSlot, viewerItem());
-        inventory.setItem(refreshSlot, button("refresh", smallCapsButtons, Map.of()));
-        actions.put(refreshSlot, "refresh");
-        inventory.setItem(searchSlot, button("search", smallCapsButtons, Map.of()));
-        actions.put(searchSlot, "search");
+        if (validSlot(viewerSlot)) {
+            inventory.setItem(viewerSlot, viewerItem());
+        }
+        if (validSlot(refreshSlot)) {
+            inventory.setItem(refreshSlot, button("refresh", smallCapsButtons, Map.of()));
+            actions.put(refreshSlot, "refresh");
+        }
+        if (validSlot(searchSlot)) {
+            inventory.setItem(searchSlot, button("search", smallCapsButtons, Map.of()));
+            actions.put(searchSlot, "search");
+        }
 
-        if (page + 1 < pages) {
+        if (page + 1 < pages && validSlot(nextSlot)) {
             inventory.setItem(nextSlot, button("next", smallCapsButtons, Map.of()));
             actions.put(nextSlot, "next");
         }
 
         if (category == LeaderboardCategory.COINS && !plugin.getEconomyManager().isReady()) {
             int slot = cfg.getInt("gui.category.slots.no-economy", 22);
-            inventory.setItem(slot, button("no-economy", smallCapsButtons, Map.of()));
+            if (validSlot(slot)) {
+                inventory.setItem(slot, button("no-economy", smallCapsButtons, Map.of()));
+            }
         }
+    }
+
+    private boolean validSlot(int slot) {
+        return slot >= 0 && slot < inventory.getSize();
     }
 
     private ItemStack headItem(LeaderboardEntry entry) {

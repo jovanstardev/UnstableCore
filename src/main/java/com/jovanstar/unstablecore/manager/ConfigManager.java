@@ -81,8 +81,7 @@ public final class ConfigManager {
         }
         FileConfiguration live = YamlConfiguration.loadConfiguration(file);
         int liveVersion = live.getInt("version", 0);
-        try {
-            java.io.InputStream in = plugin.getResource("shop.yml");
+        try (java.io.InputStream in = plugin.getResource("shop.yml")) {
             if (in == null) {
                 return;
             }

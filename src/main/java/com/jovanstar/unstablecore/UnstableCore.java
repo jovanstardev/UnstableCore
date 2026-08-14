@@ -78,6 +78,7 @@ public final class UnstableCore extends JavaPlugin {
     private ItemCleanupManager itemCleanupManager;
     private ArenaListener arenaListener;
     private CombatListener combatListener;
+    private org.bukkit.scheduler.BukkitTask autosaveTask;
 
     @Override
     public void onEnable() {
@@ -135,7 +136,7 @@ public final class UnstableCore extends JavaPlugin {
         this.itemCleanupManager = new ItemCleanupManager(this);
         this.itemCleanupManager.start();
 
-        Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
+        autosaveTask = Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
             killstreakManager.save();
             statsManager.save();
             settingsManager.save();
@@ -160,6 +161,10 @@ public final class UnstableCore extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (autosaveTask != null) {
+            autosaveTask.cancel();
+            autosaveTask = null;
+        }
         if (itemCleanupManager != null) {
             itemCleanupManager.stop();
         }

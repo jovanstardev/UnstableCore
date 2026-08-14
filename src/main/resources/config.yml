@@ -31,6 +31,10 @@ combat-sounds:
     volume: 1.0
     pitch: 1.0
 
+combat-tag:
+  enabled: true
+  seconds: 15
+
 killstreak:
   title-seconds: 2
   title-minimum: 2
