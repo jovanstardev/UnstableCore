@@ -716,6 +716,14 @@ public final class DuelManager {
         if (isInDuel(challenger.getUniqueId()) || isInDuel(target.getUniqueId())) {
             return false;
         }
+        // Matchmaking re-validates candidates every tick (DuelQueueManager#isValidQueuedPlayer),
+        // but that check never covered arena residency - only isInDuel/isInGrace/dead/combat-tag.
+        // Without isBusy() here too, a player standing in a live FFA arena fight could still be
+        // matched and instantly teleported out via runSetupSequence below, the same escape this
+        // isBusy() gate already blocks for the direct /duel request+accept flow.
+        if (isBusy(challenger) || isBusy(target)) {
+            return false;
+        }
         String effectiveKit = (kitId != null && !kitId.isBlank()) ? kitId : defaultKitId();
         Duel duel = new Duel(challenger.getUniqueId(), target.getUniqueId(), effectiveKit, 0.0, ranked, 0);
         duel.setArenaId(arenaId.toLowerCase(Locale.ROOT));

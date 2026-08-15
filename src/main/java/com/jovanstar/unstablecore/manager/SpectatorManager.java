@@ -79,6 +79,14 @@ public final class SpectatorManager {
             msg(spectator, "spectate-busy", Map.of());
             return false;
         }
+        // A player mid-fight in the open world/FFA arena (combat-tagged but not in a duel of
+        // their own) could otherwise type /spec on any active duelist to be instantly set to
+        // GameMode.SPECTATOR and teleported away - dodging their fight for free with immunity
+        // to boot, worse than a plain teleport escape.
+        if (plugin.getCombatListener() != null && plugin.getCombatListener().isCombatTagged(spectator.getUniqueId())) {
+            msg(spectator, "spectate-busy", Map.of());
+            return false;
+        }
         Duel duel = plugin.getDuelManager().getDuelForPlayer(target.getUniqueId());
         if (duel == null || duel.getState() != DuelState.ACTIVE) {
             msg(spectator, "spectate-not-dueling", Map.of("target", target.getName()));

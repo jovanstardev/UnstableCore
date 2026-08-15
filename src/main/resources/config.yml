@@ -488,6 +488,7 @@ messages:
   arena-teleported: "&aTeleporting to &f{map}&a..."
   arena-no-spots: "&cNo safe teleport spots found. Ask an admin to re-set the center."
   arena-none-active: "&cNo active arena is available right now."
+  arena-in-combat: "&cYou cannot switch arenas while in combat."
   arena-natural-break: "&c&l(!) &r&cSorry, you can't break natural blocks."
   arena-nomace-no-place: "&c&l(!) &r&cYou can't place blocks in no-mace arenas."
   arena-nomace-no-elytra: "&c&l(!) &r&cElytra flying is disabled in no-mace arenas."

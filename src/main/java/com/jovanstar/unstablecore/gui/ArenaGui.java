@@ -110,6 +110,10 @@ public final class ArenaGui implements InventoryHolder {
         }
         player.closeInventory();
         if ("active".equals(action)) {
+            if (plugin.getCombatListener() != null && plugin.getCombatListener().isCombatTagged(player.getUniqueId())) {
+                MessageUtil.sendConfig(player, "arena-in-combat", Map.of());
+                return;
+            }
             Arena active = plugin.getArenaManager().getActiveArena();
             if (active == null || !active.hasCenter()) {
                 MessageUtil.sendConfig(player, "arena-none-active", Map.of());

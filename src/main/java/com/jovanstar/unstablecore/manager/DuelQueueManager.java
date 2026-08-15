@@ -108,6 +108,10 @@ public final class DuelQueueManager {
             MessageUtil.send(player, plugin.getConfigManager().getDuels().getString("messages.challenger-busy", "&cYou cannot join the queue while in combat."));
             return false;
         }
+        if (plugin.getArenaManager().getPlayerArena(player.getUniqueId()) != null) {
+            MessageUtil.send(player, "&cYou cannot join the queue while inside an arena.");
+            return false;
+        }
 
         QueueEntry existing = queue.get(player.getUniqueId());
         if (existing != null && existing.type() == type) {
@@ -260,6 +264,9 @@ public final class DuelQueueManager {
             return false;
         }
         if (plugin.getCombatListener() != null && plugin.getCombatListener().isCombatTagged(p.getUniqueId())) {
+            return false;
+        }
+        if (plugin.getArenaManager().getPlayerArena(p.getUniqueId()) != null) {
             return false;
         }
         return true;

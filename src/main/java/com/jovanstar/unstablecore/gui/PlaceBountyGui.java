@@ -77,6 +77,12 @@ public final class PlaceBountyGui implements InventoryHolder {
                     && !cfg().getBoolean("allow-self", false)) {
                 continue;
             }
+            // Bukkit's getOnlinePlayers() returns vanished players regardless of visibility -
+            // without filtering, a regular player could browse this GUI to discover the real
+            // online name (and place a bounty on) a staff member hidden from them.
+            if (!viewer.canSee(p) || p.hasMetadata("vanished")) {
+                continue;
+            }
             if (!q.isEmpty() && !p.getName().toLowerCase(Locale.ROOT).contains(q)) {
                 continue;
             }

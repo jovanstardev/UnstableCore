@@ -108,6 +108,10 @@ public final class SwordGui implements InventoryHolder {
             return;
         }
         player.closeInventory();
+        if (plugin.getCombatListener() != null && plugin.getCombatListener().isCombatTagged(player.getUniqueId())) {
+            MessageUtil.sendConfig(player, "arena-in-combat", Map.of());
+            return;
+        }
         Arena sword = plugin.getArenaManager().getSwordArena();
         if (sword == null || !sword.hasCenter()) {
             MessageUtil.sendConfig(player, "sword-none", Map.of());

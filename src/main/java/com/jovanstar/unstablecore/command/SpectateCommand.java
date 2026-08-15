@@ -76,9 +76,14 @@ public final class SpectateCommand implements CommandExecutor, TabCompleter {
             return List.of();
         }
         String p = args[0].toLowerCase(Locale.ROOT);
+        // Bukkit's getOnlinePlayers() returns vanished players regardless of visibility - without
+        // filtering, a regular player could type /spec <partial> to enumerate the real online name
+        // of a staff member hidden from them (see StatsCommand.onTabComplete for the same fix).
+        Player viewer = sender instanceof Player pl ? pl : null;
         List<String> out = new ArrayList<>();
         for (Player online : Bukkit.getOnlinePlayers()) {
-            if (online.getName().toLowerCase(Locale.ROOT).startsWith(p)) {
+            if ((viewer == null || viewer.canSee(online)) && !online.hasMetadata("vanished")
+                    && online.getName().toLowerCase(Locale.ROOT).startsWith(p)) {
                 out.add(online.getName());
             }
         }

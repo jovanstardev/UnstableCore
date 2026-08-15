@@ -189,6 +189,11 @@ public final class DatabaseManager {
                       updated_at BIGINT NOT NULL DEFAULT 0
                     )
                     """);
+            // topProfiles() sorts the whole table by these columns (COINS/PLAYTIME leaderboards) -
+            // without an index that's a full table scan + sort on every cache refresh, which gets
+            // expensive once player_profiles has thousands of rows (every unique player ever seen).
+            createIndex(st, "idx_player_profiles_balance", "player_profiles", "balance DESC");
+            createIndex(st, "idx_player_profiles_playtime", "player_profiles", "playtime_ticks DESC");
             st.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS duels (
                       duel_id VARCHAR(36) NOT NULL PRIMARY KEY,
@@ -242,8 +247,28 @@ public final class DatabaseManager {
                       ended_at BIGINT NOT NULL DEFAULT 0
                     )
                     """);
-            st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_duel_history_challenger ON duel_history (challenger)");
-            st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_duel_history_target ON duel_history (target)");
+            createIndex(st, "idx_duel_history_challenger", "duel_history", "challenger");
+            createIndex(st, "idx_duel_history_target", "duel_history", "target");
+        }
+    }
+
+    /**
+     * MySQL has no {@code CREATE INDEX IF NOT EXISTS} (SQLite and MariaDB do), so issuing that form
+     * against MySQL fails with a syntax error, aborts createTables(), and takes the whole plugin
+     * down via the connect() failure path in onEnable. Emit the plain form there instead and
+     * tolerate the "index already exists" error on later startups, the same way the elo column
+     * migration above tolerates an already-applied change. All arguments are compile-time
+     * constants, never user input.
+     */
+    private void createIndex(Statement st, String name, String table, String columns) throws SQLException {
+        if (!mysql) {
+            st.executeUpdate("CREATE INDEX IF NOT EXISTS " + name + " ON " + table + " (" + columns + ")");
+            return;
+        }
+        try {
+            st.executeUpdate("CREATE INDEX " + name + " ON " + table + " (" + columns + ")");
+        } catch (SQLException ignored) {
+            // index already exists (MySQL error 1061)
         }
     }
 

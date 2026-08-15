@@ -106,8 +106,13 @@ public final class BountyCommand implements CommandExecutor, TabCompleter {
                     out.add(s);
                 }
             }
+            // Bukkit's getOnlinePlayers() returns vanished players regardless of visibility -
+            // without filtering, a regular player could type /bounty <partial> to enumerate the
+            // real online name of a staff member hidden from them.
+            Player viewer = sender instanceof Player pl ? pl : null;
             for (Player player : Bukkit.getOnlinePlayers()) {
-                if (player.getName().toLowerCase(Locale.ROOT).startsWith(p)) {
+                if ((viewer == null || viewer.canSee(player)) && !player.hasMetadata("vanished")
+                        && player.getName().toLowerCase(Locale.ROOT).startsWith(p)) {
                     out.add(player.getName());
                 }
             }
