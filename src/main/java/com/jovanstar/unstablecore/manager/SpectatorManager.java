@@ -70,6 +70,15 @@ public final class SpectatorManager {
             msg(spectator, "spectate-self", Map.of());
             return false;
         }
+        // A participant in their own live duel can't sidestep into spectating someone else's -
+        // that would GameMode.SPECTATOR/teleport them out of their own arena (dodging damage,
+        // stranding their opponent) while playerDuel/state still says they're mid-fight. Contrast
+        // with DuelManager.runSetupSequence, which already forces the opposite direction (pulling
+        // a spectator out before letting them start a duel of their own).
+        if (plugin.getDuelManager().isInActiveDuel(spectator.getUniqueId())) {
+            msg(spectator, "spectate-busy", Map.of());
+            return false;
+        }
         Duel duel = plugin.getDuelManager().getDuelForPlayer(target.getUniqueId());
         if (duel == null || duel.getState() != DuelState.ACTIVE) {
             msg(spectator, "spectate-not-dueling", Map.of("target", target.getName()));

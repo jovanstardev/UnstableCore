@@ -200,10 +200,11 @@ public final class BountyManager {
             rebuildSortedCache();
         }
 
-        Bounty finalResult = result;
-        boolean finalStacked = stacked;
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () ->
-                plugin.getDatabaseManager().upsertBounty(finalResult.toRow()));
+        // Persisted synchronously (like nextBountyId() above) so the DB is never behind the
+        // in-memory map. reload() reads straight from the DB and clears the in-memory map, so a
+        // fire-and-forget async write here could lose this bounty (or resurrect a claimed one)
+        // if a reload landed in the gap before the write completed.
+        plugin.getDatabaseManager().upsertBounty(result.toRow());
 
         if (stacked) {
             msg(placer, "stacked", Map.of(
@@ -268,8 +269,10 @@ public final class BountyManager {
             return;
         }
 
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () ->
-                plugin.getDatabaseManager().deleteBounty(target, claimed.bountyId(), claimed.updatedAt()));
+        // Synchronous for the same reason as the upsert in placeOrStack: an async delete that
+        // hasn't landed yet by the time reload() runs would leave the paid-out bounty row in the
+        // DB, letting reload() resurrect it and pay it out a second time to the next killer.
+        plugin.getDatabaseManager().deleteBounty(target, claimed.bountyId(), claimed.updatedAt());
 
         msg(killer, "claimed", Map.of(
                 "amount", EconomyManager.format(reward),

@@ -173,6 +173,7 @@ messages:
   rematch-offered: "&d⚔ &7Want a rematch? Type &f/duel {opponent}&7."
   spectate-disabled: "&cSpectating is currently disabled."
   spectate-self: "&cYou can't spectate yourself."
+  spectate-busy: "&cYou can't spectate while you're in your own duel."
   spectate-not-dueling: "&c{target} isn't in an active duel right now."
   spectate-started: "&d👁 &7Now spectating &f{challenger} &7vs &f{target}&7. Type &f/spec &7again to stop."
   spectate-stopped: "&7You stopped spectating."
