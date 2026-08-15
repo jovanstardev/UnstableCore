@@ -175,10 +175,22 @@ public final class BountyManager {
                 result = new Bounty(target.getUniqueId(), name, rounded, id, now);
                 stacked = false;
             } else {
+                double newTotal = existing.amount() + rounded;
+                if (newTotal > maxAmount()) {
+                    // Individual contributions are validated above, but stacking onto an
+                    // existing bounty was never re-checked against the cap - repeated small
+                    // contributions could push the total arbitrarily above max-amount.
+                    plugin.getEconomyManager().deposit(placer, rounded);
+                    msg(placer, "invalid-amount", Map.of(
+                            "min", EconomyManager.format(minAmount()),
+                            "max", EconomyManager.format(maxAmount())
+                    ));
+                    return false;
+                }
                 result = new Bounty(
                         existing.target(),
                         name,
-                        existing.amount() + rounded,
+                        newTotal,
                         existing.bountyId(),
                         now
                 );

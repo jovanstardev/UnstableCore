@@ -700,6 +700,13 @@ public final class KitManager {
         }
         ItemStack[] layout = getEffectiveContents(player, kit);
         PlayerInventory inv = player.getInventory();
+        // A held shulker box's virtual edit GUI holds its contents in a separate Inventory object
+        // that inv.clear() below has no idea exists - without settling it first, the box (and
+        // anything staged into it) is silently deleted, and any kit item that happens to land as
+        // a shulker box in the same hand slot could later get overwritten by the stale session.
+        if (plugin.getHeldShulkerListener() != null) {
+            plugin.getHeldShulkerListener().forceCloseSession(player);
+        }
         inv.clear();
         inv.setArmorContents(null);
         inv.setItemInOffHand(null);

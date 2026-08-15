@@ -227,6 +227,28 @@ public final class HeldShulkerListener implements Listener {
         closeAndSave(event.getPlayer(), true);
     }
 
+    /**
+     * Force-closes and synchronously saves any open held-shulker-box session for this player.
+     * Must be called before anything wipes the player's live inventory (kit apply, loadout
+     * apply) - those call {@code inv.clear()} directly with no awareness of an open session, so
+     * without this the box (and anything staged into its GUI) is silently destroyed, and if a
+     * kit item later lands as a shulker box in the same hand slot, the stale session contents
+     * would later get written into that unrelated new item on close.
+     */
+    public void forceCloseSession(Player player) {
+        if (player == null) {
+            return;
+        }
+        Session session = sessions.remove(player.getUniqueId());
+        if (session == null) {
+            return;
+        }
+        saveToItem(player, session);
+        if (player.isOnline() && player.getOpenInventory().getTopInventory().getHolder() instanceof Holder) {
+            player.closeInventory();
+        }
+    }
+
     private void closeAndSave(Player player, boolean forceClose) {
         Session session = sessions.remove(player.getUniqueId());
         if (session == null) {

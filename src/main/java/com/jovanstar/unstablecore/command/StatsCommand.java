@@ -52,7 +52,12 @@ public final class StatsCommand implements CommandExecutor, TabCompleter {
                                                 @NotNull String alias, @NotNull String[] args) {
         if (args.length == 1) {
             String partial = args[0].toLowerCase(Locale.ROOT);
+            // Bukkit's getOnlinePlayers() returns vanished players regardless of visibility -
+            // without filtering, a regular player could type /stats <partial> to enumerate the
+            // real online name of a staff member hidden from them.
+            Player viewer = sender instanceof Player p ? p : null;
             return plugin.getServer().getOnlinePlayers().stream()
+                    .filter(p -> (viewer == null || viewer.canSee(p)) && !p.hasMetadata("vanished"))
                     .map(Player::getName)
                     .filter(n -> n.toLowerCase(Locale.ROOT).startsWith(partial))
                     .sorted()

@@ -56,6 +56,26 @@ public final class StatsManager {
         db.saveAllStats(kills, bestStreak, coinsEarned, coinsSpent);
     }
 
+    /** Save-on-quit for a single player, so a crash between the 5-minute autosaves can't lose
+     *  their kills/best-streak/coins since the last periodic save. */
+    public void save(UUID uuid) {
+        if (uuid == null) {
+            return;
+        }
+        DatabaseManager db = plugin.getDatabaseManager();
+        if (db == null || !db.isConnected()) {
+            return;
+        }
+        int k = kills.getOrDefault(uuid, 0);
+        int b = bestStreak.getOrDefault(uuid, 0);
+        double earned = coinsEarned.getOrDefault(uuid, 0.0);
+        double spent = coinsSpent.getOrDefault(uuid, 0.0);
+        if (k <= 0 && b <= 0 && earned <= 0 && spent <= 0) {
+            return;
+        }
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> db.upsertStatsRow(uuid, k, b, earned, spent));
+    }
+
     public int getKills(UUID uuid) {
         return kills.getOrDefault(uuid, 0);
     }

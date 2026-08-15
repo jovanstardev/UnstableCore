@@ -139,6 +139,16 @@ public final class DuelArenaManager {
         if (arena == null || !arena.hasCenter()) {
             return Availability.MISSING;
         }
+        Long graceEnd = graceEndsAt.get(key);
+        if (graceEnd != null) {
+            if (System.currentTimeMillis() < graceEnd) {
+                return Availability.GRACE_PERIOD;
+            }
+            graceEndsAt.remove(key);
+        }
+        if (reservedBy.containsKey(key)) {
+            return Availability.RESERVED;
+        }
         return Availability.AVAILABLE;
     }
 
@@ -146,12 +156,21 @@ public final class DuelArenaManager {
         return availability(arenaId) == Availability.AVAILABLE;
     }
 
-    /** No exclusive lock needed: returns true if arena exists and is ready. */
+    /**
+     * Atomically claims the arena for {@code duelId} - fails if another duel already holds it or
+     * it's still in its post-duel grace window. Each arena has exactly one fixed spawn1/spawn2
+     * pair (see runSetupSequence), so without this exclusivity check two duels started in the
+     * same tick would teleport four different players onto the same two coordinates.
+     */
     public boolean reserve(String arenaId, UUID duelId) {
-        return isAvailable(arenaId);
+        if (arenaId == null || duelId == null || !isAvailable(arenaId)) {
+            return false;
+        }
+        String key = arenaId.toLowerCase(Locale.ROOT);
+        return reservedBy.putIfAbsent(key, duelId) == null;
     }
 
-    /** No-op for shared arenas. */
+    /** Frees the arena immediately - used for setup-rollback/shutdown paths that skip grace. */
     public void release(String arenaId) {
         if (arenaId == null) {
             return;

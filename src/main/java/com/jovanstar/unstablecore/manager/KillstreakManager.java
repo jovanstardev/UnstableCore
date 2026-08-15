@@ -55,6 +55,26 @@ public final class KillstreakManager {
         db.saveAllCombat(streaks, deaths, titlesEnabled);
     }
 
+    /** Save-on-quit for a single player, so a crash between the 5-minute autosaves can't lose
+     *  their combat streak/deaths since the last periodic save. */
+    public void save(UUID uuid) {
+        if (uuid == null) {
+            return;
+        }
+        DatabaseManager db = plugin.getDatabaseManager();
+        if (db == null || !db.isConnected()) {
+            return;
+        }
+        int streak = streaks.getOrDefault(uuid, 0);
+        int death = deaths.getOrDefault(uuid, 0);
+        boolean titles = titlesEnabled.getOrDefault(uuid, true);
+        if (streak <= 0 && death <= 0 && titles) {
+            return;
+        }
+        org.bukkit.Bukkit.getScheduler().runTaskAsynchronously(plugin,
+                () -> db.upsertCombatRow(uuid, streak, death, titles));
+    }
+
     public int getStreak(UUID uuid) {
         return streaks.getOrDefault(uuid, 0);
     }

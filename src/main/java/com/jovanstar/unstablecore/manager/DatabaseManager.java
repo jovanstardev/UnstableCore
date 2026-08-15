@@ -412,33 +412,79 @@ public final class DatabaseManager {
         return out;
     }
 
+    /** Single-player scoped save, used for save-on-quit so a crash between periodic autosaves
+     *  can't lose a departing player's toggled settings. */
+    public void savePlayerSettings(UUID uuid, Map<String, Boolean> playerSettings,
+                                    java.util.function.Function<String, Boolean> defaultOf) {
+        if (!isConnected() || uuid == null) {
+            return;
+        }
+        try (Connection c = getConnection()) {
+            c.setAutoCommit(false);
+            try {
+                try (PreparedStatement clear = c.prepareStatement("DELETE FROM player_settings WHERE uuid = ?")) {
+                    clear.setString(1, uuid.toString());
+                    clear.executeUpdate();
+                }
+                if (playerSettings != null && !playerSettings.isEmpty()) {
+                    try (PreparedStatement ps = c.prepareStatement(upsertSettingsSql())) {
+                        for (Map.Entry<String, Boolean> s : playerSettings.entrySet()) {
+                            if (s.getValue() == null || s.getValue() == defaultOf.apply(s.getKey())) {
+                                continue;
+                            }
+                            ps.setString(1, uuid.toString());
+                            ps.setString(2, s.getKey());
+                            ps.setInt(3, s.getValue() ? 1 : 0);
+                            ps.addBatch();
+                        }
+                        ps.executeBatch();
+                    }
+                }
+                c.commit();
+            } catch (SQLException e) {
+                c.rollback();
+                throw e;
+            } finally {
+                c.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to save settings for " + uuid, e);
+        }
+    }
+
     public synchronized void saveAllSettings(Map<UUID, Map<String, Boolean>> settings,
                                              java.util.function.Function<String, Boolean> defaultOf) {
         try (Connection c = getConnection()) {
             c.setAutoCommit(false);
-            try (Statement clear = c.createStatement()) {
-                clear.executeUpdate("DELETE FROM player_settings");
-            }
-            try (PreparedStatement ps = c.prepareStatement(upsertSettingsSql())) {
-                for (Map.Entry<UUID, Map<String, Boolean>> e : settings.entrySet()) {
-                    for (Map.Entry<String, Boolean> s : e.getValue().entrySet()) {
-                        if (s.getValue() == null) {
-                            continue;
-                        }
-                        boolean def = defaultOf.apply(s.getKey());
-                        if (s.getValue() == def) {
-                            continue;
-                        }
-                        ps.setString(1, e.getKey().toString());
-                        ps.setString(2, s.getKey());
-                        ps.setInt(3, s.getValue() ? 1 : 0);
-                        ps.addBatch();
-                    }
+            try {
+                try (Statement clear = c.createStatement()) {
+                    clear.executeUpdate("DELETE FROM player_settings");
                 }
-                ps.executeBatch();
+                try (PreparedStatement ps = c.prepareStatement(upsertSettingsSql())) {
+                    for (Map.Entry<UUID, Map<String, Boolean>> e : settings.entrySet()) {
+                        for (Map.Entry<String, Boolean> s : e.getValue().entrySet()) {
+                            if (s.getValue() == null) {
+                                continue;
+                            }
+                            boolean def = defaultOf.apply(s.getKey());
+                            if (s.getValue() == def) {
+                                continue;
+                            }
+                            ps.setString(1, e.getKey().toString());
+                            ps.setString(2, s.getKey());
+                            ps.setInt(3, s.getValue() ? 1 : 0);
+                            ps.addBatch();
+                        }
+                    }
+                    ps.executeBatch();
+                }
+                c.commit();
+            } catch (SQLException e) {
+                c.rollback();
+                throw e;
+            } finally {
+                c.setAutoCommit(true);
             }
-            c.commit();
-            c.setAutoCommit(true);
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Failed to save settings to database", e);
         }
@@ -466,6 +512,24 @@ public final class DatabaseManager {
         return out;
     }
 
+    /** Single-player upsert, used for save-on-quit so a crash between periodic autosaves can't
+     *  lose a departing player's stats. */
+    public void upsertStatsRow(UUID uuid, int kills, int bestStreak, double coinsEarned, double coinsSpent) {
+        if (!isConnected() || uuid == null) {
+            return;
+        }
+        try (Connection c = getConnection(); PreparedStatement ps = c.prepareStatement(upsertStatsSql())) {
+            ps.setString(1, uuid.toString());
+            ps.setInt(2, kills);
+            ps.setInt(3, bestStreak);
+            ps.setDouble(4, coinsEarned);
+            ps.setDouble(5, coinsSpent);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to upsert stats for " + uuid, e);
+        }
+    }
+
     public synchronized void saveAllStats(Map<UUID, Integer> kills,
                                           Map<UUID, Integer> bestStreak,
                                           Map<UUID, Double> coinsEarned,
@@ -478,29 +542,35 @@ public final class DatabaseManager {
 
         try (Connection c = getConnection()) {
             c.setAutoCommit(false);
-            try (Statement clear = c.createStatement()) {
-                clear.executeUpdate("DELETE FROM player_stats");
-            }
-            try (PreparedStatement ps = c.prepareStatement(upsertStatsSql())) {
-                for (UUID uuid : uuids) {
-                    int k = kills.getOrDefault(uuid, 0);
-                    int b = bestStreak.getOrDefault(uuid, 0);
-                    double earned = coinsEarned.getOrDefault(uuid, 0.0);
-                    double spent = coinsSpent.getOrDefault(uuid, 0.0);
-                    if (k <= 0 && b <= 0 && earned <= 0 && spent <= 0) {
-                        continue;
-                    }
-                    ps.setString(1, uuid.toString());
-                    ps.setInt(2, k);
-                    ps.setInt(3, b);
-                    ps.setDouble(4, earned);
-                    ps.setDouble(5, spent);
-                    ps.addBatch();
+            try {
+                try (Statement clear = c.createStatement()) {
+                    clear.executeUpdate("DELETE FROM player_stats");
                 }
-                ps.executeBatch();
+                try (PreparedStatement ps = c.prepareStatement(upsertStatsSql())) {
+                    for (UUID uuid : uuids) {
+                        int k = kills.getOrDefault(uuid, 0);
+                        int b = bestStreak.getOrDefault(uuid, 0);
+                        double earned = coinsEarned.getOrDefault(uuid, 0.0);
+                        double spent = coinsSpent.getOrDefault(uuid, 0.0);
+                        if (k <= 0 && b <= 0 && earned <= 0 && spent <= 0) {
+                            continue;
+                        }
+                        ps.setString(1, uuid.toString());
+                        ps.setInt(2, k);
+                        ps.setInt(3, b);
+                        ps.setDouble(4, earned);
+                        ps.setDouble(5, spent);
+                        ps.addBatch();
+                    }
+                    ps.executeBatch();
+                }
+                c.commit();
+            } catch (SQLException e) {
+                c.rollback();
+                throw e;
+            } finally {
+                c.setAutoCommit(true);
             }
-            c.commit();
-            c.setAutoCommit(true);
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Failed to save stats to database", e);
         }
@@ -528,6 +598,23 @@ public final class DatabaseManager {
         return out;
     }
 
+    /** Single-player upsert, used for save-on-quit so a crash between periodic autosaves can't
+     *  lose a departing player's combat streak/deaths. */
+    public void upsertCombatRow(UUID uuid, int streak, int deaths, boolean titlesEnabled) {
+        if (!isConnected() || uuid == null) {
+            return;
+        }
+        try (Connection c = getConnection(); PreparedStatement ps = c.prepareStatement(upsertCombatSql())) {
+            ps.setString(1, uuid.toString());
+            ps.setInt(2, streak);
+            ps.setInt(3, deaths);
+            ps.setInt(4, titlesEnabled ? 1 : 0);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to upsert combat data for " + uuid, e);
+        }
+    }
+
     public synchronized void saveAllCombat(Map<UUID, Integer> streaks,
                                            Map<UUID, Integer> deaths,
                                            Map<UUID, Boolean> titlesEnabled) {
@@ -538,27 +625,33 @@ public final class DatabaseManager {
 
         try (Connection c = getConnection()) {
             c.setAutoCommit(false);
-            try (Statement clear = c.createStatement()) {
-                clear.executeUpdate("DELETE FROM player_combat");
-            }
-            try (PreparedStatement ps = c.prepareStatement(upsertCombatSql())) {
-                for (UUID uuid : uuids) {
-                    int streak = streaks.getOrDefault(uuid, 0);
-                    int death = deaths.getOrDefault(uuid, 0);
-                    boolean titles = titlesEnabled.getOrDefault(uuid, true);
-                    if (streak <= 0 && death <= 0 && titles) {
-                        continue;
-                    }
-                    ps.setString(1, uuid.toString());
-                    ps.setInt(2, streak);
-                    ps.setInt(3, death);
-                    ps.setInt(4, titles ? 1 : 0);
-                    ps.addBatch();
+            try {
+                try (Statement clear = c.createStatement()) {
+                    clear.executeUpdate("DELETE FROM player_combat");
                 }
-                ps.executeBatch();
+                try (PreparedStatement ps = c.prepareStatement(upsertCombatSql())) {
+                    for (UUID uuid : uuids) {
+                        int streak = streaks.getOrDefault(uuid, 0);
+                        int death = deaths.getOrDefault(uuid, 0);
+                        boolean titles = titlesEnabled.getOrDefault(uuid, true);
+                        if (streak <= 0 && death <= 0 && titles) {
+                            continue;
+                        }
+                        ps.setString(1, uuid.toString());
+                        ps.setInt(2, streak);
+                        ps.setInt(3, death);
+                        ps.setInt(4, titles ? 1 : 0);
+                        ps.addBatch();
+                    }
+                    ps.executeBatch();
+                }
+                c.commit();
+            } catch (SQLException e) {
+                c.rollback();
+                throw e;
+            } finally {
+                c.setAutoCommit(true);
             }
-            c.commit();
-            c.setAutoCommit(true);
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Failed to save combat data to database", e);
         }

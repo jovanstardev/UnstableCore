@@ -1048,10 +1048,26 @@ public final class DuelManager {
     // Death / disconnect resolution
     // ---------------------------------------------------------------------------------------
 
-    /** Called by DuelListener's PlayerDeathEvent handler. No-op if the victim isn't in an active duel. */
+    /** Called by DuelListener's PlayerDeathEvent handler. No-op if the victim isn't in a duel. */
     public void handleDeath(Player victim) {
         Duel duel = getDuelForPlayer(victim.getUniqueId());
-        if (duel == null || duel.getState() != DuelState.ACTIVE) {
+        if (duel == null) {
+            return;
+        }
+        DuelState state = duel.getState();
+        if (state == DuelState.ACCEPTED || state == DuelState.STARTING) {
+            // Nobody has actually fought yet (pre-FIGHT countdown damage is cancelled, so this
+            // can only happen via /leave's forced setHealth(0)). Previously this was silently
+            // ignored: the countdown task kept running, the duel later flipped to ACTIVE with
+            // one participant already dead/respawned elsewhere, and the honest opponent was
+            // stranded - unable to queue/duel again - until max-duration-seconds (default 600s)
+            // elapsed. Worse, with max-duration-outcome=higher-health the fled player could even
+            // be awarded a TIMEOUT_WIN. Resolve it immediately as a clean, no-fault cancellation
+            // instead, matching how a genuine disconnect during STARTING is already handled.
+            handleStartingDeath(duel, victim.getUniqueId());
+            return;
+        }
+        if (state != DuelState.ACTIVE) {
             return;
         }
         if (!duel.markDeathProcessed()) {
@@ -1062,6 +1078,55 @@ public final class DuelManager {
         }
         UUID winner = duel.opponentOf(victim.getUniqueId());
         finishDuel(duel, winner, DuelResult.NORMAL_WIN);
+    }
+
+    /**
+     * Cancels a duel whose countdown was interrupted by a participant's death (only reachable via
+     * /leave today). Shares rollbackSetup's idempotency flag so a death arriving alongside a
+     * disconnect for the same duel can't double-cancel. The opponent is still alive and standing
+     * in the arena, so their inventory is restored immediately; the victim is mid-death-screen, so
+     * their restore is deferred through the normal post-duel respawn hook (restoring straight into
+     * a not-yet-cleared death inventory would just be overwritten by vanilla death handling).
+     */
+    private void handleStartingDeath(Duel duel, UUID victimUuid) {
+        if (!duel.markRollbackDone()) {
+            return;
+        }
+        UUID opponentUuid = duel.opponentOf(victimUuid);
+        Player opponent = Bukkit.getPlayer(opponentUuid);
+
+        if (duel.isEscrowed() && duel.getWager() > 0) {
+            depositOrWarn(duel, duel.getChallenger(), duel.getWager(), "starting-death-rollback");
+            depositOrWarn(duel, duel.getTarget(), duel.getWager(), "starting-death-rollback");
+        }
+
+        DuelInventorySnapshot opponentSnapshot = duel.snapshotFor(opponentUuid);
+        if (opponentSnapshot != null && opponent != null && opponent.isOnline()) {
+            opponentSnapshot.restore(opponent);
+        }
+        Location spawn = resolveJoinSpawn();
+        if (spawn != null) {
+            pendingRespawnLocations.put(victimUuid, spawn);
+        }
+        DuelInventorySnapshot victimSnapshot = duel.snapshotFor(victimUuid);
+        if (victimSnapshot != null) {
+            pendingRespawnSnapshots.put(victimUuid, victimSnapshot);
+        }
+
+        removeDuelVisibility(duel);
+        if (duel.getArenaId() != null) {
+            duelArenaManager.release(duel.getArenaId());
+        }
+        duel.transitionFromAny(DuelState.CANCELLED, DuelState.ACCEPTED, DuelState.STARTING);
+        duel.cancelAllTasks();
+        playerDuel.remove(duel.getChallenger());
+        playerDuel.remove(duel.getTarget());
+        duels.remove(duel.getId());
+        deleteDuelRowAsync(duel.getId());
+
+        msg(opponent, "accept-failed", Map.of("reason", "opponent-left-during-starting"));
+        plugin.getLogger().info("[Duel " + duel.getId() + "] cancelled: " + victimUuid
+                + " died during the pre-fight countdown");
     }
 
     /** Called from PlayerListener.onQuit. */
@@ -1222,6 +1287,12 @@ public final class DuelManager {
                     if (wp.isOnline()) {
                         teleportToSpawn(wp);
                         restorePlayerPostDuel(wp, winnerSnapshot);
+                    } else if (winnerSnapshot != null) {
+                        // Winner disconnected during the 3s victory delay - without this, their
+                        // real pre-duel inventory would be silently discarded once this terminal
+                        // Duel is garbage-collected, leaving their saved inventory stuck on the
+                        // duel kit. Reuse the same restore-on-next-join path as crash recovery.
+                        pendingCrashRestores.put(winner, winnerSnapshot);
                     }
                 }, 60L);
             }
@@ -1239,13 +1310,36 @@ public final class DuelManager {
             }
         }
 
-        playerGrace.remove(duel.getChallenger());
-        playerGrace.remove(duel.getTarget());
         deleteDuelRowAsync(duel.getId());
         sendRematchHint(duel);
+        startGracePeriod(duel);
 
         plugin.getLogger().info("[Duel " + duel.getId() + "] finished result=" + result
                 + " winner=" + winner + " payout=" + payoutAmount);
+    }
+
+    /**
+     * Locks the arena out from new duels for grace-period-seconds so leftover items/mobs from
+     * this duel can't bleed into the next one, then frees it. Without this, finishDuel() never
+     * released the arena reservation at all (enterGrace/releaseGraceArena were dead code), so a
+     * finished duel's arena would stay permanently unusable and the Duel object would never be
+     * removed from the duels map.
+     */
+    private void startGracePeriod(Duel duel) {
+        long graceSeconds = Math.max(0L, cfg().getLong("grace-period-seconds", 180));
+        if (duel.getArenaId() == null || graceSeconds <= 0) {
+            if (duel.getArenaId() != null) {
+                duelArenaManager.release(duel.getArenaId());
+            }
+            duels.remove(duel.getId());
+            return;
+        }
+        duelArenaManager.enterGrace(duel.getArenaId(), System.currentTimeMillis() + graceSeconds * 1000L);
+        playerGrace.put(duel.getChallenger(), duel.getId());
+        playerGrace.put(duel.getTarget(), duel.getId());
+        sendGraceMessage(duel);
+        BukkitTask task = Bukkit.getScheduler().runTaskLater(plugin, () -> endGrace(duel.getId()), graceSeconds * 20L);
+        duel.setGraceTask(task);
     }
 
     private PayoutResult resolvePayout(Duel duel, UUID winner, DuelResult result) {

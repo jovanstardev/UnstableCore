@@ -36,11 +36,18 @@ public final class LeaderboardManager {
     private final Map<UUID, Long> lastRefreshMs = new ConcurrentHashMap<>();
     private final Set<UUID> switchingGui = ConcurrentHashMap.newKeySet();
     private final Map<UUID, String> nameCache = new ConcurrentHashMap<>();
+    // Raw DB rows backing the COINS/PLAYTIME categories, refreshed off-thread on a timer (see
+    // refreshDbRowsAsync). compute()/list() only ever read this cache - they never touch the
+    // database directly - so a leaderboard-cache-expiry can no longer block the main thread on a
+    // JDBC round-trip (previously up to the full 10s Hikari connection timeout under DB latency).
+    private final Map<LeaderboardCategory, List<DatabaseManager.ProfileRow>> dbRowsCache = new ConcurrentHashMap<>();
+    private volatile boolean dbRefreshInFlight = false;
     private int syncTaskId = -1;
 
     public LeaderboardManager(UnstableCore plugin) {
         this.plugin = plugin;
         reloadNameCache();
+        refreshDbRowsAsync();
         startProfileSync();
     }
 
@@ -156,7 +163,29 @@ public final class LeaderboardManager {
             for (Player player : Bukkit.getOnlinePlayers()) {
                 syncProfile(player);
             }
+            refreshDbRowsAsync();
         }, period, period).getTaskId();
+    }
+
+    /** Off-thread refresh of the COINS/PLAYTIME DB row cache. Never called from the main thread's
+     *  compute() path - only from this periodic timer and the constructor's initial warm-up. */
+    private void refreshDbRowsAsync() {
+        if (dbRefreshInFlight) {
+            return;
+        }
+        DatabaseManager db = plugin.getDatabaseManager();
+        if (db == null || !db.isConnected()) {
+            return;
+        }
+        dbRefreshInFlight = true;
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                dbRowsCache.put(LeaderboardCategory.COINS, db.topBalances(maxEntries()));
+                dbRowsCache.put(LeaderboardCategory.PLAYTIME, db.topPlaytimes(maxEntries()));
+            } finally {
+                dbRefreshInFlight = false;
+            }
+        });
     }
 
     public void shutdown() {
@@ -261,6 +290,8 @@ public final class LeaderboardManager {
         // list()/compute() reads Bukkit.getOnlinePlayers() and the Vault economy provider, which
         // must stay on the main thread - every caller here (commands, GUI clicks) already runs on
         // the main thread, so this is computed synchronously rather than hopping to an async task.
+        // It's still safe to call from the main thread because compute() never touches the
+        // database directly - see dbRowsCache/refreshDbRowsAsync().
         // The GUI-open itself still defers to the next tick, matching openMenu()'s behavior.
         List<LeaderboardEntry> entries = list(category);
         int pages = Math.max(1, (int) Math.ceil(entries.size() / (double) pageSize()));
@@ -328,9 +359,9 @@ public final class LeaderboardManager {
 
     private Map<UUID, Double> computeCoins() {
         Map<UUID, Double> scores = new HashMap<>();
-        DatabaseManager db = plugin.getDatabaseManager();
-        if (db != null && db.isConnected()) {
-            for (DatabaseManager.ProfileRow row : db.topBalances(maxEntries())) {
+        List<DatabaseManager.ProfileRow> rows = dbRowsCache.get(LeaderboardCategory.COINS);
+        if (rows != null) {
+            for (DatabaseManager.ProfileRow row : rows) {
                 if (row.name() != null && !row.name().isBlank()) {
                     rememberName(row.uuid(), row.name());
                 }
@@ -355,9 +386,9 @@ public final class LeaderboardManager {
 
     private Map<UUID, Double> computePlaytime() {
         Map<UUID, Double> scores = new HashMap<>();
-        DatabaseManager db = plugin.getDatabaseManager();
-        if (db != null && db.isConnected()) {
-            for (DatabaseManager.ProfileRow row : db.topPlaytimes(maxEntries())) {
+        List<DatabaseManager.ProfileRow> rows = dbRowsCache.get(LeaderboardCategory.PLAYTIME);
+        if (rows != null) {
+            for (DatabaseManager.ProfileRow row : rows) {
                 if (row.name() != null && !row.name().isBlank()) {
                     rememberName(row.uuid(), row.name());
                 }

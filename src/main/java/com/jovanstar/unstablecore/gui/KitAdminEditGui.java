@@ -94,7 +94,14 @@ public final class KitAdminEditGui implements InventoryHolder {
 
         if (click == ClickType.SHIFT_LEFT
                 || click == ClickType.SHIFT_RIGHT
-                || action == InventoryAction.MOVE_TO_OTHER_INVENTORY) {
+                || click == ClickType.NUMBER_KEY
+                || click == ClickType.DROP
+                || click == ClickType.CONTROL_DROP
+                || click == ClickType.DOUBLE_CLICK
+                || action == InventoryAction.MOVE_TO_OTHER_INVENTORY
+                || action == InventoryAction.HOTBAR_SWAP
+                || action == InventoryAction.HOTBAR_MOVE_AND_READD
+                || action == InventoryAction.COLLECT_TO_CURSOR) {
             event.setCancelled(true);
             return;
         }

@@ -96,6 +96,7 @@ public final class UnstableCore extends JavaPlugin {
     private DuelScoreboardManager duelScoreboardManager;
     private ArenaListener arenaListener;
     private CombatListener combatListener;
+    private HeldShulkerListener heldShulkerListener;
     private org.bukkit.scheduler.BukkitTask autosaveTask;
 
     @Override
@@ -373,7 +374,8 @@ public final class UnstableCore extends JavaPlugin {
         this.arenaListener = new ArenaListener(this);
         Bukkit.getPluginManager().registerEvents(arenaListener, this);
         Bukkit.getPluginManager().registerEvents(new AntiGlitchListener(this), this);
-        Bukkit.getPluginManager().registerEvents(new HeldShulkerListener(this), this);
+        this.heldShulkerListener = new HeldShulkerListener(this);
+        Bukkit.getPluginManager().registerEvents(heldShulkerListener, this);
         Bukkit.getPluginManager().registerEvents(new GuiListener(this), this);
         Bukkit.getPluginManager().registerEvents(new BountyListener(this), this);
         Bukkit.getPluginManager().registerEvents(new LeaderboardListener(this), this);
@@ -493,5 +495,9 @@ public final class UnstableCore extends JavaPlugin {
 
     public CombatListener getCombatListener() {
         return combatListener;
+    }
+
+    public HeldShulkerListener getHeldShulkerListener() {
+        return heldShulkerListener;
     }
 }

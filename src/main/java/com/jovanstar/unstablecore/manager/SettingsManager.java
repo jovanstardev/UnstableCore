@@ -63,6 +63,25 @@ public final class SettingsManager {
         db.saveAllSettings(settings, this::defaultEnabled);
     }
 
+    /** Save-on-quit for a single player, so a crash between the 5-minute autosaves can't lose
+     *  their toggled settings since the last periodic save. */
+    public void save(UUID uuid) {
+        if (uuid == null) {
+            return;
+        }
+        DatabaseManager db = plugin.getDatabaseManager();
+        if (db == null || !db.isConnected()) {
+            return;
+        }
+        Map<String, Boolean> playerSettings = settings.get(uuid);
+        if (playerSettings == null || playerSettings.isEmpty()) {
+            return;
+        }
+        Map<String, Boolean> snapshot = Map.copyOf(playerSettings);
+        org.bukkit.Bukkit.getScheduler().runTaskAsynchronously(plugin,
+                () -> db.savePlayerSettings(uuid, snapshot, this::defaultEnabled));
+    }
+
     public boolean isEnabled(UUID uuid, String key) {
         if (uuid == null || key == null) {
             return true;

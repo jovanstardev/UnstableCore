@@ -18,6 +18,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 
 public final class PlayerListener implements Listener {
 
@@ -157,6 +158,21 @@ public final class PlayerListener implements Listener {
         }
         if (plugin.getActionBarManager() != null) {
             plugin.getActionBarManager().invalidate(event.getPlayer().getUniqueId());
+        }
+
+        // Stats/settings/combat are otherwise only persisted on a 5-minute timer or clean
+        // shutdown - an unexpected crash/kill in between would lose whatever changed for every
+        // online player in that window. Save just this player's row now so a disconnect (the
+        // most common way a player's session actually ends) can't lose their own data.
+        UUID quitUuid = event.getPlayer().getUniqueId();
+        if (plugin.getStatsManager() != null) {
+            plugin.getStatsManager().save(quitUuid);
+        }
+        if (plugin.getSettingsManager() != null) {
+            plugin.getSettingsManager().save(quitUuid);
+        }
+        if (plugin.getKillstreakManager() != null) {
+            plugin.getKillstreakManager().save(quitUuid);
         }
     }
 

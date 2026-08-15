@@ -61,6 +61,11 @@ public final class LeaveCommand implements CommandExecutor {
             }
         }
 
+        if (duelMgr != null && duelMgr.isInGrace(player.getUniqueId())) {
+            duelMgr.leaveGrace(player);
+            return true;
+        }
+
         DuelQueueManager queueMgr = plugin.getDuelQueueManager();
         if (queueMgr != null && queueMgr.isInQueue(player.getUniqueId())) {
             queueMgr.leaveQueue(player);
