@@ -267,8 +267,13 @@ public final class DatabaseManager {
         }
         try {
             st.executeUpdate("CREATE INDEX " + name + " ON " + table + " (" + columns + ")");
-        } catch (SQLException ignored) {
-            // index already exists (MySQL error 1061)
+        } catch (SQLException e) {
+            // 1061 / 42000 is "duplicate key name", i.e. the index is already there from a previous
+            // startup - anything else (bad column, missing table) is a real defect and must not be
+            // swallowed into a silently unindexed table.
+            if (e.getErrorCode() != 1061) {
+                throw e;
+            }
         }
     }
 

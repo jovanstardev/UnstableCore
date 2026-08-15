@@ -68,6 +68,13 @@ public final class DuelManager {
     /** Loser's pre-duel location queued until their respawn event fires, so we can set the respawn location. */
     private final Map<UUID, Location> pendingRespawnLocations = new ConcurrentHashMap<>();
     private final Map<UUID, DuelInventorySnapshot> pendingRespawnSnapshots = new ConcurrentHashMap<>();
+    /**
+     * Restores that finishDuel scheduled but that haven't run yet - currently the winner's 3s
+     * victory delay. The duel is already terminal and its DB crash-recovery row already deleted
+     * by then, so shutdown() has no other way to know a restore is still owed; see the flush at
+     * the end of shutdown().
+     */
+    private final Map<UUID, DuelInventorySnapshot> pendingPostDuelRestores = new ConcurrentHashMap<>();
     private BukkitTask boundaryTask;
 
     public DuelManager(UnstableCore plugin, DuelArenaManager duelArenaManager, DuelStatsManager duelStatsManager) {
@@ -172,6 +179,20 @@ public final class DuelManager {
             }
             plugin.getDatabaseManager().deleteDuel(duel.getId().toString());
         }
+        // finishDuel hands both players back their pre-duel inventory on a delay - the winner
+        // after a 3s victory pause, the loser on respawn - and deletes the duel's DB
+        // crash-recovery row immediately. A duel sitting in either window is already terminal, so
+        // the loop above skips it (restoring there would clobber a live inventory), and the row is
+        // gone, so next boot won't recover it either. Flush whatever is still owed here, or the
+        // player keeps the duel kit and their real inventory is lost.
+        for (Map.Entry<UUID, DuelInventorySnapshot> entry : pendingPostDuelRestores.entrySet()) {
+            restoreIfOnline(entry.getKey(), entry.getValue());
+        }
+        for (Map.Entry<UUID, DuelInventorySnapshot> entry : pendingRespawnSnapshots.entrySet()) {
+            restoreIfOnline(entry.getKey(), entry.getValue());
+        }
+        pendingPostDuelRestores.clear();
+        pendingRespawnSnapshots.clear();
         duels.clear();
         playerDuel.clear();
         playerGrace.clear();
@@ -1314,7 +1335,11 @@ public final class DuelManager {
             if (wp != null && wp.isOnline()) {
                 wp.playSound(wp.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, SoundCategory.PLAYERS, 1.0f, 1.0f);
                 DuelInventorySnapshot winnerSnapshot = duel.snapshotFor(winner);
+                if (winnerSnapshot != null) {
+                    pendingPostDuelRestores.put(winner, winnerSnapshot);
+                }
                 Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                    pendingPostDuelRestores.remove(winner);
                     if (wp.isOnline()) {
                         teleportToSpawn(wp);
                         restorePlayerPostDuel(wp, winnerSnapshot);
