@@ -104,6 +104,8 @@ messages:
   target-opted-out: "&cThat player isn't accepting duel requests."
   already-in-duel: "&cYou're already in a duel."
   target-already-in-duel: "&c{target} is already in a duel."
+  already-in-arena: "&cYou can't send a duel request while you're in an arena."
+  target-in-arena: "&c{target} is currently in an arena and can't be challenged."
   target-busy: "&c{target} can't be challenged right now."
   challenger-busy: "&cYou can't do that right now (combat-tagged, dead, or busy)."
   duplicate-request: "&cYou already have a pending request with {target}."
