@@ -837,19 +837,10 @@ public final class ArenaManager {
         return true;
     }
 
-    /**
-     * Safety net: a player entering an arena with a completely empty inventory gets a random
-     * unlocked kit. Must still respect the /loadout cooldown - otherwise dying (which empties
-     * your inventory) and immediately re-entering the arena re-gears you for free, defeating the
-     * whole point of that cooldown.
-     */
+    /** Safety net: a player entering an arena with a completely empty inventory gets a random unlocked kit. */
     private void giveRandomKitIfEmpty(Player player) {
         KitManager kitManager = plugin.getKitManager();
         if (kitManager == null || !KitManager.isInventoryEmpty(player)) {
-            return;
-        }
-        LoadoutManager loadoutManager = plugin.getLoadoutManager();
-        if (loadoutManager != null && loadoutManager.remainingMillis(player.getUniqueId()) > 0) {
             return;
         }
         Kit kit = kitManager.giveRandomUnlockedKit(player);
