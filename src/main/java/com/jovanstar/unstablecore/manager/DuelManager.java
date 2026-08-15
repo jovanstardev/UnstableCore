@@ -149,7 +149,12 @@ public final class DuelManager {
         for (Duel duel : new ArrayList<>(duels.values())) {
             duel.cancelAllTasks();
             DuelState state = duel.getState();
-            if (state == DuelState.REQUESTED) {
+            // REQUESTED never had a snapshot/escrow to touch, and a terminal duel (FINISHED/
+            // FORFEITED, still sitting here only because it's mid grace-period) already ran its
+            // real payout/inventory resolution through finishDuel - re-running the crash-recovery
+            // restore below would clobber whatever the player currently has with their stale
+            // pre-duel snapshot. releaseAll() on next start() reclaims its arena regardless.
+            if (state == DuelState.REQUESTED || state.isTerminal()) {
                 continue;
             }
             if (duel.markInventoryRestored()) {

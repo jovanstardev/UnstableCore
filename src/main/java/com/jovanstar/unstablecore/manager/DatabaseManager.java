@@ -1050,6 +1050,7 @@ public final class DatabaseManager {
 
         try (Connection c = getConnection()) {
             c.setAutoCommit(false);
+            try {
 
             if (data.isConfigurationSection("player-settings")) {
                 try (PreparedStatement ps = c.prepareStatement(upsertSettingsSql())) {
@@ -1177,7 +1178,12 @@ public final class DatabaseManager {
             }
 
             c.commit();
-            c.setAutoCommit(true);
+            } catch (SQLException e) {
+                c.rollback();
+                throw e;
+            } finally {
+                c.setAutoCommit(true);
+            }
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "YAML → database migration failed", e);
             return;
