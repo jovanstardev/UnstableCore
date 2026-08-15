@@ -214,6 +214,10 @@ public final class KitCommand implements CommandExecutor, TabCompleter {
                     MessageUtil.sendConfig(sender, "player-not-found", Map.of());
                     return true;
                 }
+                if (kits.getKit(args[2]) == null) {
+                    MessageUtil.sendConfig(sender, "kit-not-found", Map.of("kit", args[2]));
+                    return true;
+                }
                 kits.lock(target.getUniqueId(), args[2]);
                 MessageUtil.sendConfig(sender, "kit-locked-admin", Map.of(
                         "player", target.getName(),

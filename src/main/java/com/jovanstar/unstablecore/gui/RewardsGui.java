@@ -25,6 +25,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 
 public final class RewardsGui implements InventoryHolder {
 
@@ -54,10 +55,24 @@ public final class RewardsGui implements InventoryHolder {
 
     public static void open(UnstableCore plugin, Player player, Tab tab) {
         RewardsManager mgr = plugin.getRewardsManager();
-        if (mgr != null) {
-            mgr.touchLogin(player.getUniqueId());
+        if (mgr == null || mgr.peek(player.getUniqueId()) != null) {
+            if (mgr != null) {
+                mgr.touchLogin(player.getUniqueId());
+            }
+            player.openInventory(new RewardsGui(plugin, player, tab).getInventory());
+            return;
         }
-        player.openInventory(new RewardsGui(plugin, player, tab).getInventory());
+        UUID uuid = player.getUniqueId();
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            mgr.get(uuid);
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (!player.isOnline()) {
+                    return;
+                }
+                mgr.touchLogin(uuid);
+                player.openInventory(new RewardsGui(plugin, player, tab).getInventory());
+            });
+        });
     }
 
     private FileConfiguration cfg() {
