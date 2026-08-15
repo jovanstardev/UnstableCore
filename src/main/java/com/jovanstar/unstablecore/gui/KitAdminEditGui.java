@@ -118,12 +118,6 @@ public final class KitAdminEditGui implements InventoryHolder {
         for (int i = 0; i <= EDITABLE_END; i++) {
             ItemStack stack = inventory.getItem(i);
             if (stack != null && !stack.getType().isAir()) {
-                Material type = stack.getType();
-                if (type == Material.LIME_DYE || type == Material.RED_DYE
-                        || type == Material.GRAY_STAINED_GLASS_PANE || type == Material.PAPER
-                        || type == Material.ORANGE_DYE) {
-                    continue;
-                }
                 layout[i] = stack.clone();
             }
         }

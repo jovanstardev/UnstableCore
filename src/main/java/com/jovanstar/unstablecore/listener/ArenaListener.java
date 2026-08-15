@@ -71,7 +71,13 @@ public final class ArenaListener implements Listener {
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onPlaceLowest(BlockPlaceEvent event) {
-        handlePlace(event);
+        // Only handle the axe-strip force-allow here, before other protection plugins can
+        // cancel the event. The full deny-check/marking logic below must run exactly once,
+        // so it is left to onPlaceHighest - calling handlePlace(event) unconditionally from
+        // both handlers double-sent the deny message and double-executed the arena marking.
+        if (isAxeStripPlace(event)) {
+            handlePlace(event);
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)

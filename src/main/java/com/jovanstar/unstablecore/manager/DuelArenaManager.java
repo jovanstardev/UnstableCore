@@ -80,6 +80,7 @@ public final class DuelArenaManager {
         list.add(key);
         plugin.getConfigManager().getDuels().set("arenas", list);
         plugin.getConfigManager().saveDuels();
+        configuredIdsCache = null;
         return true;
     }
 
@@ -93,6 +94,7 @@ public final class DuelArenaManager {
         if (removed) {
             plugin.getConfigManager().getDuels().set("arenas", list);
             plugin.getConfigManager().saveDuels();
+            configuredIdsCache = null;
         }
         return removed;
     }
