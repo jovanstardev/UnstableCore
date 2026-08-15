@@ -16,6 +16,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Modern visual GUI for joining/leaving Casual and Ranked duel queues.
@@ -30,6 +31,7 @@ public final class DuelQueueGui implements InventoryHolder {
     private final int casualSlot = 11;
     private final int rankedSlot = 15;
     private final int leaveSlot = 22;
+    private final int statsSlot = 4;
 
     private DuelQueueGui(UnstableCore plugin, Player viewer) {
         this.plugin = plugin;
@@ -51,6 +53,18 @@ public final class DuelQueueGui implements InventoryHolder {
         DuelStatsManager statsMgr = plugin.getDuelStatsManager();
         boolean inQueue = queueMgr.isInQueue(viewer.getUniqueId());
         QueueType currentType = queueMgr.getQueueType(viewer.getUniqueId());
+
+        if (statsMgr != null) {
+            UUID uuid = viewer.getUniqueId();
+            inventory.setItem(statsSlot, new ItemBuilder(Material.COMPASS)
+                    .name("&d&lYour Duel Stats")
+                    .lore(List.of(
+                            "&7Wins: &a" + statsMgr.getWins(uuid) + "  &7Losses: &c" + statsMgr.getLosses(uuid),
+                            "&7Streak: &e" + statsMgr.getCurrentStreak(uuid) + " &8(Best: &6" + statsMgr.getBestStreak(uuid) + "&8)",
+                            "&7ELO: &b" + statsMgr.getElo(uuid) + " &7(" + statsMgr.getRankTier(statsMgr.getElo(uuid)) + "&7)"
+                    ))
+                    .hideAttributes().build());
+        }
 
         // 1. Casual Queue Button (Slot 11)
         int casualCount = queueMgr.getQueueCount(QueueType.CASUAL);
@@ -103,8 +117,8 @@ public final class DuelQueueGui implements InventoryHolder {
                     .lore("&7Click to exit matchmaking")
                     .hideAttributes().build());
         } else {
-            inventory.setItem(leaveSlot, new ItemBuilder(Material.BARRIER)
-                    .name("&cClose")
+            inventory.setItem(leaveSlot, new ItemBuilder(Material.RED_STAINED_GLASS_PANE)
+                    .name("&c&lClose")
                     .lore("&7Click to close")
                     .hideAttributes().build());
         }

@@ -2,6 +2,7 @@ package com.jovanstar.unstablecore.gui;
 
 import com.jovanstar.unstablecore.UnstableCore;
 import com.jovanstar.unstablecore.manager.DuelArenaManager;
+import com.jovanstar.unstablecore.manager.DuelStatsManager;
 import com.jovanstar.unstablecore.manager.EconomyManager;
 import com.jovanstar.unstablecore.model.Arena;
 import com.jovanstar.unstablecore.model.Kit;
@@ -29,12 +30,12 @@ import java.util.UUID;
 /**
  * Three-step duel request GUI:
  * Step 1: Select an arena.
- * Step 2: Select a kit (from challenger's unlocked kits).
+ * Step 2: Select a kit (any kit the challenger has unlocked - this is a for-fun duel, not
+ *         restricted to one fixed loadout).
  * Step 3: Select the wager amount (No Wager, preset coins, or custom chat amount).
  *
- * <p>Every slot is always covered by a border/filler pane so nothing reads as an unfinished
- * inventory - same visual language as BountyBoardGui/DuelHistoryGui (colored border ring, muted
- * gray content background, divider lines and ✔/✘ icons in lore).
+ * <p>Clean layout - no filler glass panes cluttering the background, just a consistent
+ * red-cancel / green-confirm color language plus a stats icon, same idea as DuelQueueGui.
  */
 public final class DuelMapGui implements InventoryHolder {
 
@@ -88,27 +89,20 @@ public final class DuelMapGui implements InventoryHolder {
         }
     }
 
-    /** Covers every slot with border/content panes so nothing is ever left as raw air. */
-    private void fillBackground() {
-        Material borderMat = material(section().getString("border"), Material.MAGENTA_STAINED_GLASS_PANE);
-        Material contentMat = material(section().getString("filler"), Material.GRAY_STAINED_GLASS_PANE);
-        ItemStack border = pane(borderMat);
-        ItemStack content = pane(contentMat);
-        for (int i = 0; i < inventory.getSize(); i++) {
-            // Top row (0-8) and bottom row (27-35) frame the GUI; the two middle rows are the
-            // working content area.
-            boolean frameRow = i < 9 || i >= 27;
-            inventory.setItem(i, frameRow ? border : content);
-        }
-    }
-
-    private ItemStack stepInfo(String label) {
-        return new ItemBuilder(Material.NETHER_STAR)
-                .name("&d&l" + label)
+    private ItemStack statsIcon() {
+        DuelStatsManager stats = plugin.getDuelStatsManager();
+        int wins = stats != null ? stats.getWins(viewer.getUniqueId()) : 0;
+        int losses = stats != null ? stats.getLosses(viewer.getUniqueId()) : 0;
+        int streak = stats != null ? stats.getCurrentStreak(viewer.getUniqueId()) : 0;
+        return new ItemBuilder(Material.COMPASS)
+                .name("&d&lYour Stats")
                 .lore(List.of(
                         DIVIDER,
-                        "&7Step 1&8/&73",
-                        "&f1. Arena  &82. Kit  &83. Wager"
+                        "&7Wins: &a" + wins + "  &7Losses: &c" + losses,
+                        "&7Streak: &e" + streak,
+                        "&8This duel is for fun only - no",
+                        "&8effect on ranked ELO unless you",
+                        "&8queued through &f/duel queue ranked"
                 ))
                 .hideAttributes().build();
     }
@@ -119,11 +113,13 @@ public final class DuelMapGui implements InventoryHolder {
 
     private void fillMap() {
         arenaSlots.clear();
-        fillBackground();
+        inventory.clear();
         ConfigurationSection gui = section();
 
-        inventory.setItem(0, stepInfo("Choose an Arena"));
+        inventory.setItem(0, cancelButton());
+        cancelSlot = 0;
         inventory.setItem(4, buildTargetHead(gui));
+        inventory.setItem(8, statsIcon());
 
         DuelArenaManager arenaManager = plugin.getDuelManager().getDuelArenaManager();
         List<Arena> arenas = arenaManager.eligibleArenas();
@@ -142,9 +138,6 @@ public final class DuelMapGui implements InventoryHolder {
                 arenaSlots.put(positions[i], arena.getId());
             }
         }
-
-        cancelSlot = 8;
-        inventory.setItem(cancelSlot, cancelButton());
     }
 
     // ----------------------------------------------------------------------------------
@@ -153,16 +146,21 @@ public final class DuelMapGui implements InventoryHolder {
 
     private void fillKit() {
         kitSlots.clear();
-        fillBackground();
+        inventory.clear();
         ConfigurationSection gui = section();
 
         backSlot = 0;
         inventory.setItem(backSlot, backButton("Arena Selection", 2));
         inventory.setItem(4, buildTargetHead(gui));
-        cancelSlot = 8;
-        inventory.setItem(cancelSlot, cancelButton());
 
-        // Get kits unlocked by challenger (or all starter kits if none)
+        Arena arena = plugin.getDuelManager().getDuelArenaManager().resolve(selectedArenaId);
+        String arenaName = arena != null ? MessageUtil.strip(arena.getDisplayName()) : String.valueOf(selectedArenaId);
+        inventory.setItem(8, new ItemBuilder(Material.FILLED_MAP)
+                .name("&d&lArena Selected")
+                .lore(List.of(DIVIDER, "&f" + arenaName, "&e▸ Click Back to change"))
+                .hideAttributes().build());
+
+        // Any kit the challenger has unlocked - a casual for-fun duel isn't locked to one loadout.
         List<Kit> unlockedKits = plugin.getKitManager().getUnlockedKits(viewer);
         if (unlockedKits.isEmpty()) {
             for (Kit k : plugin.getKitManager().getKits().values()) {
@@ -190,13 +188,6 @@ public final class DuelMapGui implements InventoryHolder {
                     .hideAttributes().build());
             kitSlots.put(positions[i], kit.getId());
         }
-
-        Arena arena = plugin.getDuelManager().getDuelArenaManager().resolve(selectedArenaId);
-        String arenaName = arena != null ? MessageUtil.strip(arena.getDisplayName()) : String.valueOf(selectedArenaId);
-        inventory.setItem(31, new ItemBuilder(Material.MAP)
-                .name("&d&lArena Selected")
-                .lore(List.of(DIVIDER, "&f" + arenaName, "&7Now pick a kit above"))
-                .hideAttributes().build());
     }
 
     // ----------------------------------------------------------------------------------
@@ -205,7 +196,7 @@ public final class DuelMapGui implements InventoryHolder {
 
     private void fillWager() {
         wagerSlots.clear();
-        fillBackground();
+        inventory.clear();
 
         Arena arena = plugin.getDuelManager().getDuelArenaManager().resolve(selectedArenaId);
         String arenaName = arena != null ? MessageUtil.strip(arena.getDisplayName()) : String.valueOf(selectedArenaId);
@@ -215,14 +206,21 @@ public final class DuelMapGui implements InventoryHolder {
         backSlot = 0;
         inventory.setItem(backSlot, backButton("Kit Selection", 3));
         inventory.setItem(4, buildTargetHead(section()));
-        cancelSlot = 8;
-        inventory.setItem(cancelSlot, cancelButton());
+        inventory.setItem(8, new ItemBuilder(Material.NETHER_STAR)
+                .name("&d&lDuel Summary")
+                .lore(List.of(
+                        DIVIDER,
+                        "&7Arena &8» &f" + arenaName,
+                        "&7Kit &8» &e" + kitName,
+                        "&a✔ &7Ready to send"
+                ))
+                .hideAttributes().build());
 
         double min = Math.max(0, plugin.getConfigManager().getDuels().getDouble("wager.min", 0));
         double max = Math.max(min, plugin.getConfigManager().getDuels().getDouble("wager.max", 1_000_000));
 
-        inventory.setItem(19, new ItemBuilder(Material.EMERALD)
-                .name("&a&lNo Wager")
+        inventory.setItem(19, new ItemBuilder(Material.LIME_DYE)
+                .name("&a&lNo Wager &8(For Fun)")
                 .lore(List.of(
                         DIVIDER,
                         "&7Play for free without betting",
@@ -265,16 +263,6 @@ public final class DuelMapGui implements InventoryHolder {
                         DIVIDER,
                         "&7Type your desired wager in chat",
                         "&e▸ Click to enter an amount"
-                ))
-                .hideAttributes().build());
-
-        inventory.setItem(31, new ItemBuilder(Material.NETHER_STAR)
-                .name("&d&lDuel Summary")
-                .lore(List.of(
-                        DIVIDER,
-                        "&7Arena &8» &f" + arenaName,
-                        "&7Kit &8» &e" + kitName,
-                        "&a✔ &7Ready to send"
                 ))
                 .hideAttributes().build());
     }
@@ -320,10 +308,6 @@ public final class DuelMapGui implements InventoryHolder {
     }
 
     private void handleKitClick(Player player, int slot) {
-        if (slot == cancelSlot) {
-            player.closeInventory();
-            return;
-        }
         if (slot == backSlot) {
             step = Step.MAP;
             selectedArenaId = null;
@@ -340,10 +324,6 @@ public final class DuelMapGui implements InventoryHolder {
     }
 
     private void handleWagerClick(Player player, int slot) {
-        if (slot == cancelSlot) {
-            player.closeInventory();
-            return;
-        }
         if (slot == backSlot) {
             step = Step.KIT;
             selectedKitId = null;
@@ -438,7 +418,7 @@ public final class DuelMapGui implements InventoryHolder {
     }
 
     private ItemStack cancelButton() {
-        return new ItemBuilder(Material.BARRIER)
+        return new ItemBuilder(Material.RED_STAINED_GLASS_PANE)
                 .name("&c&lCancel")
                 .lore(List.of(DIVIDER, "&7Close without sending a request."))
                 .hideAttributes().build();
@@ -469,10 +449,6 @@ public final class DuelMapGui implements InventoryHolder {
         int[] out = new int[len];
         System.arraycopy(rows, 0, out, 0, len);
         return out;
-    }
-
-    private static ItemStack pane(Material material) {
-        return new ItemBuilder(material).name(" ").hideAttributes().build();
     }
 
     private static Material material(String name, Material def) {

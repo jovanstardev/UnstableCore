@@ -6,8 +6,9 @@ request:
   rate-limit-seconds: 3
 
 countdown-seconds: 3
-max-duration-seconds: 600
-# refund = both wagers refunded, no winner recorded | higher-health = whoever has more HP wins
+# 5 minutes - if nobody dies by then it's a draw, both refunded and teleported back.
+max-duration-seconds: 300
+# refund = both wagers refunded, no winner recorded (draw) | higher-health = whoever has more HP wins
 max-duration-outcome: refund
 grace-period-seconds: 0
 
@@ -151,7 +152,9 @@ messages:
   loss-message: "&c✘ &7You lost the duel against &f{winner}&7."
   forfeit-win: "&a✔ &f{opponent} &7disconnected - you win by forfeit."
   forfeit-loss: "&7You disconnected during an active duel and forfeited."
-  timeout-no-contest: "&7The duel timed out - wagers refunded, no winner."
+  timeout-no-contest: "&f&lDraw &8- &7No one died. Wagers refunded, teleporting you back."
+  draw-title: "&f&lDraw"
+  draw-subtitle: "&7No one died"
   timeout-win: "&a✔ &f{winner} &7wins by higher health after the time limit."
   grace-period: "&7Collect your items - the arena is yours for &f{seconds}s&7. Type &f/leave &7to head out early."
   leave-success: "&7You left the duel arena."

@@ -1311,6 +1311,14 @@ public final class DuelManager {
         if (winner == null || result == DuelResult.TIMEOUT_NO_CONTEST) {
             msg(challenger, "timeout-no-contest", Map.of());
             msg(target, "timeout-no-contest", Map.of());
+            String drawTitle = cfg().getString("messages.draw-title", "&f&lDraw");
+            String drawSubtitle = cfg().getString("messages.draw-subtitle", "&7No one died");
+            if (challenger != null && challenger.isOnline()) {
+                MessageUtil.title(challenger, drawTitle, drawSubtitle, 3);
+            }
+            if (target != null && target.isOnline()) {
+                MessageUtil.title(target, drawTitle, drawSubtitle, 3);
+            }
             return;
         }
 
