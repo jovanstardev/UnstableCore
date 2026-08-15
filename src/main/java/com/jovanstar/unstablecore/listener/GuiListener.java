@@ -243,6 +243,9 @@ public final class GuiListener implements Listener {
             if (holder instanceof KitEditGui editGui) {
                 editGui.onClose(player);
             }
+            if (holder instanceof KitAdminEditGui adminEditGui) {
+                adminEditGui.onClose(player);
+            }
             if (holder instanceof KitsGui
                     || holder instanceof KitPreviewGui
                     || holder instanceof ShopGui

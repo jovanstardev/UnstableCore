@@ -109,7 +109,8 @@ public final class DuelQueueManager {
             return false;
         }
         if (plugin.getArenaManager().getPlayerArena(player.getUniqueId()) != null) {
-            MessageUtil.send(player, "&cYou cannot join the queue while inside an arena.");
+            MessageUtil.send(player, plugin.getConfigManager().getDuels().getString(
+                    "messages.queue-in-arena", "&cYou cannot join the queue while inside an arena."));
             return false;
         }
 

@@ -69,10 +69,12 @@ public final class KitAdminEditGui implements InventoryHolder {
         ClickType click = event.getClick();
 
         if (raw >= topSize || raw < 0) {
-            if (action == InventoryAction.MOVE_TO_OTHER_INVENTORY) {
-                event.setCancelled(false);
-                return;
-            }
+            // Bottom-inventory clicks stay allowed on purpose: this is the admin kit builder, and
+            // stocking a kit means moving items out of your own inventory into the template (the
+            // shift-click path especially). Unlike KitEditGui - which only ever rearranges a kit
+            // the player already owns and so blocks the bottom inventory outright - blocking here
+            // would leave no way to add an item to a kit at all. The whole command is gated on
+            // unstablecore.admin, a permission that already implies /give-level item access.
             event.setCancelled(false);
             return;
         }
@@ -107,6 +109,22 @@ public final class KitAdminEditGui implements InventoryHolder {
         }
 
         event.setCancelled(false);
+    }
+
+    /**
+     * Runs on every close path (Save, Cancel, ESC/E, disconnect, server shutdown - all route
+     * through InventoryCloseEvent) and clears any item left on the cursor, matching
+     * KitEditGui.onClose. A click on an editable slot can lift a template item onto the cursor,
+     * and Bukkit's cursor-return-on-close would otherwise hand that clone to the player as a real
+     * item. Only an admin can reach this GUI, so that was item materialization by someone who
+     * already has /give rather than a privilege escalation - but the clone has no business
+     * becoming a real item either way, and clearing it costs nothing.
+     */
+    public void onClose(Player player) {
+        ItemStack cursor = player.getItemOnCursor();
+        if (cursor != null && !cursor.getType().isAir()) {
+            player.setItemOnCursor(null);
+        }
     }
 
     private void save(Player player) {
