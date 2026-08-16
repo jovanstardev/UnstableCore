@@ -87,6 +87,16 @@ public final class SpectatorManager {
             msg(spectator, "spectate-busy", Map.of());
             return false;
         }
+        // The combat-tag check above only catches someone who has recently traded hits. A player
+        // standing inside an FFA arena who hasn't been touched yet is still committed to that
+        // arena, and /spec would teleport them out of it into invulnerable spectator mode - the
+        // same free exit the tag check blocks, just taken a moment earlier. Duel requests and the
+        // duel queue already refuse arena residents for exactly this reason; match that.
+        if (plugin.getArenaManager() != null
+                && plugin.getArenaManager().getPlayerArena(spectator.getUniqueId()) != null) {
+            msg(spectator, "spectate-busy", Map.of());
+            return false;
+        }
         Duel duel = plugin.getDuelManager().getDuelForPlayer(target.getUniqueId());
         if (duel == null || duel.getState() != DuelState.ACTIVE) {
             msg(spectator, "spectate-not-dueling", Map.of("target", target.getName()));

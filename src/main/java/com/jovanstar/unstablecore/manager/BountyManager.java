@@ -25,8 +25,18 @@ public final class BountyManager {
         AMOUNT
     }
 
-    public record Prompt(PromptType type, UUID target, String targetName) {
+    public record Prompt(PromptType type, UUID target, String targetName, long expiresAt) {
+        public Prompt(PromptType type, UUID target, String targetName) {
+            this(type, target, targetName, System.currentTimeMillis() + DEFAULT_PROMPT_MS);
+        }
+
+        boolean isExpired() {
+            return System.currentTimeMillis() > expiresAt;
+        }
     }
+
+    /** Fallback prompt lifetime; the live value comes from config via {@link #promptTimeoutMs()}. */
+    private static final long DEFAULT_PROMPT_MS = 60_000L;
 
     public record Bounty(UUID target, String targetName, double amount, int bountyId, long updatedAt) {
         public DatabaseManager.BountyRow toRow() {
@@ -115,16 +125,44 @@ public final class BountyManager {
         sortedCache = List.copyOf(list);
     }
 
+    /**
+     * How long a pending chat prompt stays armed before it stops capturing chat. The AMOUNT
+     * prompt deliberately re-arms itself when the input won't parse, so without a bound a player
+     * who missed the "type cancel" hint could never send a normal chat message again.
+     */
+    private long promptTimeoutMs() {
+        return Math.max(5_000L, plugin.getConfig().getLong("chat-prompt-timeout-seconds", 60) * 1000L);
+    }
+
     public void beginPrompt(Player player, Prompt prompt) {
-        prompts.put(player.getUniqueId(), prompt);
+        if (prompt == null) {
+            return;
+        }
+        // Re-stamp the deadline from config so a re-armed prompt gets a fresh window rather than
+        // inheriting the original one (and so the record's compile-time default is never binding).
+        prompts.put(player.getUniqueId(), new Prompt(prompt.type(), prompt.target(),
+                prompt.targetName(), System.currentTimeMillis() + promptTimeoutMs()));
     }
 
     public Prompt takePrompt(UUID uuid) {
-        return prompts.remove(uuid);
+        Prompt prompt = prompts.remove(uuid);
+        return (prompt == null || prompt.isExpired()) ? null : prompt;
     }
 
+    /** Reads the pending prompt, discarding it first if it has expired. */
     public Prompt peekPrompt(UUID uuid) {
-        return prompts.get(uuid);
+        if (uuid == null) {
+            return null;
+        }
+        Prompt prompt = prompts.get(uuid);
+        if (prompt == null) {
+            return null;
+        }
+        if (prompt.isExpired()) {
+            prompts.remove(uuid, prompt);
+            return null;
+        }
+        return prompt;
     }
 
     public void clearPrompt(UUID uuid) {

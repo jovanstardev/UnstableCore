@@ -16,6 +16,11 @@ database:
 
 newbie-hours: 6
 
+# How long a chat prompt (duel wager, bounty amount, leaderboard search) keeps capturing
+# what the player types before it gives up. Without a limit, a prompt the player never
+# answered would swallow their chat for the rest of the session.
+chat-prompt-timeout-seconds: 60
+
 kill-reward: 10
 
 combat-sounds:
@@ -142,6 +147,8 @@ arena:
   teleport-sound-pitch: 1.0
   max-nomace-arenas: 2
   rotate-mace-only: true
+  # Cap on remembered player-placed blocks inside arenas. Oldest entries are evicted first.
+  max-placed-blocks: 50000
   newbie:
     enabled: true
     type: nomace

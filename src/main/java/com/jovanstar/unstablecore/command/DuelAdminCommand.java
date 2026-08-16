@@ -350,13 +350,19 @@ public final class DuelAdminCommand implements CommandExecutor, TabCompleter {
         MessageUtil.send(sender, "&d&lArena &f" + arenaId + " &7» &f" + availability);
     }
 
+    /** Non-blocking name lookup - see DuelManager.nameOf for why getOfflinePlayer is avoided here. */
     private String nameOf(UUID uuid) {
         Player online = Bukkit.getPlayer(uuid);
         if (online != null) {
             return online.getName();
         }
-        OfflinePlayer off = Bukkit.getOfflinePlayer(uuid);
-        return off.getName() != null ? off.getName() : uuid.toString().substring(0, 8);
+        if (plugin.getLeaderboardManager() != null) {
+            String cached = plugin.getLeaderboardManager().cachedName(uuid);
+            if (cached != null && !cached.isBlank()) {
+                return cached;
+            }
+        }
+        return uuid.toString().substring(0, 8);
     }
 
     private static String shortId(Duel duel) {

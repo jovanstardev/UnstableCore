@@ -249,7 +249,80 @@ public final class DatabaseManager {
                     """);
             createIndex(st, "idx_duel_history_challenger", "duel_history", "challenger");
             createIndex(st, "idx_duel_history_target", "duel_history", "target");
+            // Pre-duel inventories owed to a player who is currently offline. Held in memory by
+            // DuelManager until they next join; persisted here so a restart in that window - which
+            // is exactly when a mid-duel disconnect is most likely - doesn't silently drop them.
+            st.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS pending_restores (
+                      uuid VARCHAR(36) NOT NULL PRIMARY KEY,
+                      snapshot TEXT NOT NULL,
+                      created_at BIGINT NOT NULL DEFAULT 0
+                    )
+                    """);
         }
+    }
+
+    public record PendingRestoreRow(UUID uuid, String snapshot, long createdAt) {
+    }
+
+    private String upsertPendingRestoreSql() {
+        if (mysql) {
+            return """
+                    INSERT INTO pending_restores (uuid, snapshot, created_at) VALUES (?, ?, ?)
+                    ON DUPLICATE KEY UPDATE snapshot = VALUES(snapshot), created_at = VALUES(created_at)
+                    """;
+        }
+        return """
+                INSERT INTO pending_restores (uuid, snapshot, created_at) VALUES (?, ?, ?)
+                ON CONFLICT(uuid) DO UPDATE SET snapshot = excluded.snapshot, created_at = excluded.created_at
+                """;
+    }
+
+    public void upsertPendingRestore(UUID uuid, String snapshot, long createdAt) {
+        if (!isConnected() || uuid == null || snapshot == null || snapshot.isBlank()) {
+            return;
+        }
+        try (Connection c = getConnection(); PreparedStatement ps = c.prepareStatement(upsertPendingRestoreSql())) {
+            ps.setString(1, uuid.toString());
+            ps.setString(2, snapshot);
+            ps.setLong(3, createdAt);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to persist pending inventory restore for " + uuid, e);
+        }
+    }
+
+    public void deletePendingRestore(UUID uuid) {
+        if (!isConnected() || uuid == null) {
+            return;
+        }
+        try (Connection c = getConnection();
+             PreparedStatement ps = c.prepareStatement("DELETE FROM pending_restores WHERE uuid = ?")) {
+            ps.setString(1, uuid.toString());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to clear pending inventory restore for " + uuid, e);
+        }
+    }
+
+    public List<PendingRestoreRow> loadAllPendingRestores() {
+        List<PendingRestoreRow> out = new ArrayList<>();
+        if (!isConnected()) {
+            return out;
+        }
+        try (Connection c = getConnection();
+             PreparedStatement ps = c.prepareStatement("SELECT uuid, snapshot, created_at FROM pending_restores");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                try {
+                    out.add(new PendingRestoreRow(UUID.fromString(rs.getString(1)), rs.getString(2), rs.getLong(3)));
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to load pending inventory restores", e);
+        }
+        return out;
     }
 
     /**

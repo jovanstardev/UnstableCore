@@ -31,6 +31,9 @@ import java.util.logging.Level;
 
 public final class KitManager {
 
+    /** First slot reserved for the admin kit editor's buttons; contents at or above are not issued. */
+    private static final int RESERVED_BUTTON_SLOT = 52;
+
     private final UnstableCore plugin;
     private final Map<String, Kit> kits = new LinkedHashMap<>();
     private final Map<UUID, String> selected = new ConcurrentHashMap<>();
@@ -72,9 +75,16 @@ public final class KitManager {
                 plugin.getLogger().log(Level.SEVERE, "Could not create kit-data.yml", e);
             }
         }
-        dataConfig = YamlConfiguration.loadConfiguration(dataFile);
-        reloadKitsFromConfig();
-        loadPlayerData();
+        // Re-read and re-parse the player data file under saveLock. savePlayerData() above has
+        // already flushed and cancelled any pending batched save, but a save that was *already
+        // running* only blocks until this method releases the lock - so without holding it here,
+        // it could wake up and run dataConfig.set("players", null) against the freshly-loaded
+        // config while loadPlayerData() was still reading it, wiping unlocks and layouts.
+        synchronized (saveLock) {
+            dataConfig = YamlConfiguration.loadConfiguration(dataFile);
+            reloadKitsFromConfig();
+            loadPlayerData();
+        }
     }
 
     
@@ -157,7 +167,32 @@ public final class KitManager {
             double price = kitConfig.getDouble("price", 0);
             String nameColor = kitConfig.getString("name-color", "&d");
             ItemStack[] contents = readContents(kitConfig.getConfigurationSection("contents"));
+            warnAboutReservedSlots(id, contents);
             kits.put(id, new Kit(id, display, icon, slot, perm, tier, price, nameColor, contents));
+        }
+    }
+
+    /**
+     * Slots 52 and 53 are where {@link com.jovanstar.unstablecore.gui.KitAdminEditGui} puts its
+     * Cancel and Save buttons, so {@link #applyKit} deliberately refuses to hand them out - the
+     * alternative is giving players a dye labelled "Save Kit" whenever an older or hand-written
+     * kit file happens to have something there.
+     *
+     * <p>The editor only ever writes slots 0-51, so this cannot happen through the UI. It can
+     * happen in a hand-edited YAML, where the item was previously dropped in complete silence and
+     * the author had no way to tell why part of their kit never appeared. Say so at load time.
+     */
+    private void warnAboutReservedSlots(String kitId, ItemStack[] contents) {
+        if (contents == null) {
+            return;
+        }
+        for (int slot = 52; slot < Math.min(contents.length, Kit.CONTENTS_SIZE); slot++) {
+            ItemStack stack = contents[slot];
+            if (stack != null && !stack.getType().isAir()) {
+                plugin.getLogger().warning("Kit '" + kitId + "' has " + stack.getType()
+                        + " in slot " + slot + ", which is reserved for the kit editor's buttons"
+                        + " and will not be given to players. Move it to a slot between 0 and 51.");
+            }
         }
     }
 
@@ -792,7 +827,9 @@ public final class KitManager {
             }
         }
         for (int i = 0; i < layout.length; i++) {
-            if (used[i] || i >= 52) {
+            // 52/53 are the admin editor's Cancel/Save button slots and are never issued - see
+            // warnAboutReservedSlots, which logs at load time so this is never a silent drop.
+            if (used[i] || i >= RESERVED_BUTTON_SLOT) {
                 continue;
             }
             ItemStack stack = layout[i];

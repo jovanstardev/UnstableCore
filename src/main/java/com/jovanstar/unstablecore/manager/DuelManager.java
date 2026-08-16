@@ -51,7 +51,10 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class DuelManager {
 
-    public record WagerPrompt(UUID target, String arenaId, String kitId) {
+    public record WagerPrompt(UUID target, String arenaId, String kitId, long expiresAt) {
+        boolean isExpired() {
+            return System.currentTimeMillis() > expiresAt;
+        }
     }
 
     private final UnstableCore plugin;
@@ -93,10 +96,61 @@ public final class DuelManager {
             boundaryTask.cancel();
         }
         duelArenaManager.releaseAll();
+        // Restores still owed from a previous run, before recovering duel rows (which may queue
+        // more). Persisted, so a restart while the owed player is offline no longer loses them.
+        for (DatabaseManager.PendingRestoreRow row : plugin.getDatabaseManager().loadAllPendingRestores()) {
+            DuelInventorySnapshot snapshot = DuelInventorySnapshot.deserialize(row.snapshot());
+            if (snapshot != null) {
+                pendingCrashRestores.put(row.uuid(), snapshot);
+            } else {
+                plugin.getDatabaseManager().deletePendingRestore(row.uuid());
+            }
+        }
+        if (!pendingCrashRestores.isEmpty()) {
+            plugin.getLogger().info("[Duel] " + pendingCrashRestores.size()
+                    + " pre-duel inventory restore(s) still owed from a previous run; each will be"
+                    + " applied when that player next joins.");
+        }
         for (DatabaseManager.DuelRow row : plugin.getDatabaseManager().loadAllDuels()) {
             recoverRow(row);
         }
         boundaryTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickBoundaryCheck, 20L, 20L);
+    }
+
+    /**
+     * Records that {@code uuid} is owed {@code snapshot} the next time they join, in memory and on
+     * disk. The serialization happens on the calling (main) thread so the ItemStacks are read
+     * while nothing else can mutate them; only the write is deferred.
+     */
+    private void queuePersistentRestore(UUID uuid, DuelInventorySnapshot snapshot) {
+        if (uuid == null || snapshot == null) {
+            return;
+        }
+        pendingCrashRestores.put(uuid, snapshot);
+        DatabaseManager db = plugin.getDatabaseManager();
+        if (db == null || !db.isConnected()) {
+            return;
+        }
+        String serialized = snapshot.serialize();
+        long now = System.currentTimeMillis();
+        if (!plugin.isEnabled()) {
+            // Mid-disable: the scheduler rejects new tasks, so write inline rather than lose it.
+            db.upsertPendingRestore(uuid, serialized, now);
+            return;
+        }
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> db.upsertPendingRestore(uuid, serialized, now));
+    }
+
+    private void clearPersistentRestore(UUID uuid) {
+        DatabaseManager db = plugin.getDatabaseManager();
+        if (uuid == null || db == null || !db.isConnected()) {
+            return;
+        }
+        if (!plugin.isEnabled()) {
+            db.deletePendingRestore(uuid);
+            return;
+        }
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> db.deletePendingRestore(uuid));
     }
 
     private void recoverRow(DatabaseManager.DuelRow row) {
@@ -131,7 +185,7 @@ public final class DuelManager {
             plugin.getLogger().info("[Duel] restored pre-duel inventory for " + online.getName()
                     + " immediately (already online during recovery).");
         } else {
-            pendingCrashRestores.put(uuid, snapshot);
+            queuePersistentRestore(uuid, snapshot);
         }
     }
 
@@ -141,6 +195,7 @@ public final class DuelManager {
         if (snapshot == null) {
             return;
         }
+        clearPersistentRestore(player.getUniqueId());
         snapshot.restore(player);
         plugin.getLogger().info("[Duel] restored pre-duel inventory for " + player.getName()
                 + " after a server restart interrupted their duel.");
@@ -192,18 +247,22 @@ public final class DuelManager {
             restoreIfOnline(entry.getKey(), entry.getValue());
         }
         // Restores owed to players who disconnected mid-duel (forfeit loser, winner who dropped
-        // during the victory delay). These live only in memory - they are handed out on next join
-        // - so a shutdown in that window silently drops them. Flush whoever is still online, and
-        // make the rest loud rather than losing an inventory in silence.
+        // during the victory delay). Anyone still online gets theirs now, and their persisted row
+        // is cleared so it isn't applied a second time on next boot. Anyone offline keeps their
+        // row and is picked up by start()'s recovery pass.
+        int owedOffline = 0;
         for (Map.Entry<UUID, DuelInventorySnapshot> entry : pendingCrashRestores.entrySet()) {
             Player online = Bukkit.getPlayer(entry.getKey());
             if (online != null && online.isOnline()) {
                 entry.getValue().restore(online);
+                clearPersistentRestore(entry.getKey());
             } else {
-                plugin.getLogger().severe("[Duel] shutting down while still owing " + entry.getKey()
-                        + " their pre-duel inventory - it could not be restored because they are"
-                        + " offline, and this queue is not persisted. Restore manually if needed.");
+                owedOffline++;
             }
+        }
+        if (owedOffline > 0) {
+            plugin.getLogger().info("[Duel] " + owedOffline + " pre-duel inventory restore(s) still"
+                    + " owed to offline players; persisted and will be applied on their next join.");
         }
         pendingCrashRestores.clear();
         pendingPostDuelRestores.clear();
@@ -307,6 +366,14 @@ public final class DuelManager {
         return Collections.unmodifiableCollection(duels.values());
     }
 
+    /**
+     * Display name for a participant. Goes through the leaderboard's non-blocking name cache
+     * rather than {@code Bukkit.getOfflinePlayer(uuid).getName()}: for a UUID missing from the
+     * local usercache that call issues a blocking Mojang request, and this runs on the main
+     * thread from duel announcements, history rows and the request prompt - i.e. right in the
+     * middle of a fight. An 8-character UUID prefix is a fine fallback for the rare miss, and the
+     * cache repairs itself in the background for next time.
+     */
     private String nameOf(UUID uuid) {
         if (uuid == null) {
             return "?";
@@ -315,8 +382,13 @@ public final class DuelManager {
         if (online != null) {
             return online.getName();
         }
-        OfflinePlayer off = Bukkit.getOfflinePlayer(uuid);
-        return off.getName() != null ? off.getName() : uuid.toString().substring(0, 8);
+        if (plugin.getLeaderboardManager() != null) {
+            String cached = plugin.getLeaderboardManager().cachedName(uuid);
+            if (cached != null && !cached.isBlank()) {
+                return cached;
+            }
+        }
+        return uuid.toString().substring(0, 8);
     }
 
     private void msg(Player player, String key, Map<String, String> placeholders) {
@@ -687,7 +759,8 @@ public final class DuelManager {
 
     public void beginWagerPrompt(Player challenger, Player target, String arenaId, String kitId) {
         String effectiveKit = (kitId != null && !kitId.isBlank()) ? kitId : defaultKitId();
-        wagerPrompts.put(challenger.getUniqueId(), new WagerPrompt(target.getUniqueId(), arenaId, effectiveKit));
+        wagerPrompts.put(challenger.getUniqueId(), new WagerPrompt(
+                target.getUniqueId(), arenaId, effectiveKit, System.currentTimeMillis() + promptTimeoutMs()));
         double min = Math.max(0, cfg().getDouble("wager.min", 0));
         double max = Math.max(min, cfg().getDouble("wager.max", 1_000_000));
         msg(challenger, "wager-prompt", Map.of(
@@ -697,8 +770,35 @@ public final class DuelManager {
         ));
     }
 
+    /**
+     * How long a pending chat prompt stays armed. Without a bound, an unanswered prompt captured
+     * every message the player typed forever: {@code handleChat} intentionally re-arms itself on
+     * unparseable input so a typo doesn't lose the flow, which also meant anyone who missed the
+     * "type cancel" hint simply could not chat again until they stumbled onto a valid number.
+     */
+    private long promptTimeoutMs() {
+        return Math.max(5_000L, plugin.getConfig().getLong("chat-prompt-timeout-seconds", 60) * 1000L);
+    }
+
+    /**
+     * Reads the caller's pending wager prompt, dropping it first if it has expired. This is the
+     * single gate every chat-capture path goes through, so expiry is enforced here rather than
+     * needing a scheduled sweep. Safe to call from the async chat thread - the backing map is
+     * concurrent and the removal is atomic.
+     */
     public WagerPrompt peekWagerPrompt(UUID uuid) {
-        return uuid == null ? null : wagerPrompts.get(uuid);
+        if (uuid == null) {
+            return null;
+        }
+        WagerPrompt prompt = wagerPrompts.get(uuid);
+        if (prompt == null) {
+            return null;
+        }
+        if (prompt.isExpired()) {
+            wagerPrompts.remove(uuid, prompt);
+            return null;
+        }
+        return prompt;
     }
 
     public void clearWagerPrompt(UUID uuid) {
@@ -708,7 +808,7 @@ public final class DuelManager {
     }
 
     public boolean handleChat(Player player, String raw) {
-        WagerPrompt prompt = wagerPrompts.get(player.getUniqueId());
+        WagerPrompt prompt = peekWagerPrompt(player.getUniqueId());
         if (prompt == null) {
             return false;
         }
@@ -1433,8 +1533,9 @@ public final class DuelManager {
                     // Forfeit/timeout loser who is offline or mid-death-screen: without this their
                     // pre-duel inventory is dropped on the floor with the terminal Duel object and
                     // they are left permanently holding the duel kit instead of their own items.
-                    // Same restore-on-next-join path crash recovery uses.
-                    pendingCrashRestores.put(loserUuid, loserSnapshot);
+                    // Same restore-on-next-join path crash recovery uses, persisted so a restart
+                    // before they reconnect can't drop it.
+                    queuePersistentRestore(loserUuid, loserSnapshot);
                 }
             }
 
@@ -1455,8 +1556,9 @@ public final class DuelManager {
                         // Winner disconnected during the 3s victory delay - without this, their
                         // real pre-duel inventory would be silently discarded once this terminal
                         // Duel is garbage-collected, leaving their saved inventory stuck on the
-                        // duel kit. Reuse the same restore-on-next-join path as crash recovery.
-                        pendingCrashRestores.put(winner, winnerSnapshot);
+                        // duel kit. Reuse the same restore-on-next-join path as crash recovery,
+                        // persisted so a restart before they reconnect can't drop it.
+                        queuePersistentRestore(winner, winnerSnapshot);
                     }
                 }, 60L);
             }

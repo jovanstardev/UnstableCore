@@ -25,7 +25,9 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -43,7 +45,19 @@ public final class ArenaManager {
 
     private final Map<String, List<Arena>> arenasByWorld = new HashMap<>();
 
-    private final Set<String> placedBlocks = ConcurrentHashMap.newKeySet();
+    /**
+     * Player-placed block keys inside arenas, in insertion order.
+     *
+     * <p>A {@code ConcurrentHashMap} key set has no order, which mattered because
+     * {@link #savePlacedBlocks} caps the persisted list: taking a sublist of an unordered set
+     * discards an arbitrary subset, so the entries dropped on a full arena were as likely to be
+     * blocks players had just placed as ancient ones. A synchronized {@link LinkedHashSet} keeps
+     * eviction oldest-first and lets the cap be enforced in memory too, rather than only at save
+     * time. Every caller (block place/break/explode events, bucket handlers, the save/load paths)
+     * is main-thread, so the monitor is uncontended; it is kept only so a future off-thread caller
+     * can't corrupt the structure. Iteration still needs the explicit lock - see savePlacedBlocks.
+     */
+    private final Set<String> placedBlocks = Collections.synchronizedSet(new LinkedHashSet<>());
 
     private final Map<UUID, String> playerArena = new ConcurrentHashMap<>();
 
@@ -237,14 +251,23 @@ public final class ArenaManager {
     }
 
     private void savePlacedBlocks() {
-
-        List<String> list = new ArrayList<>(placedBlocks);
-        if (list.size() > 50_000) {
-            list = new ArrayList<>(list.subList(list.size() - 50_000, list.size()));
+        List<String> list;
+        synchronized (placedBlocks) {
+            list = new ArrayList<>(placedBlocks);
+        }
+        int cap = maxPlacedBlocks();
+        if (list.size() > cap) {
+            // Insertion-ordered now, so this keeps the newest entries and drops the oldest,
+            // instead of discarding an arbitrary slice of an unordered set.
+            list = new ArrayList<>(list.subList(list.size() - cap, list.size()));
         }
         plugin.getConfigManager().getData().set("placed-blocks", list);
         plugin.getConfigManager().saveData();
         placedDirty = false;
+    }
+
+    private int maxPlacedBlocks() {
+        return Math.max(1_000, plugin.getConfig().getInt("arena.max-placed-blocks", 50_000));
     }
 
     private void startRotationTask() {
@@ -1260,7 +1283,22 @@ public final class ArenaManager {
     }
 
     public void markPlaced(Location loc) {
-        if (placedBlocks.add(blockKey(loc))) {
+        boolean added;
+        synchronized (placedBlocks) {
+            added = placedBlocks.add(blockKey(loc));
+            // Bound the live set too, not just the persisted copy. It only ever shrinks when a
+            // marked block is actually broken, so on an arena nobody tidies it grew without limit
+            // for the lifetime of the server and was trimmed only on the way to disk.
+            int cap = maxPlacedBlocks();
+            if (added && placedBlocks.size() > cap) {
+                Iterator<String> oldest = placedBlocks.iterator();
+                while (placedBlocks.size() > cap && oldest.hasNext()) {
+                    oldest.next();
+                    oldest.remove();
+                }
+            }
+        }
+        if (added) {
             placedDirty = true;
         }
     }

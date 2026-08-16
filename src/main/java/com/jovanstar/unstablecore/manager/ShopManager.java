@@ -219,7 +219,7 @@ public final class ShopManager {
             if (command == null || command.isBlank()) {
                 continue;
             }
-            String parsed = applyPlayer(command, player, price, displayName);
+            String parsed = applyCommandPlaceholders(command, player, price, displayName);
             Bukkit.dispatchCommand(Bukkit.getConsoleSender(), parsed);
         }
 
@@ -231,6 +231,42 @@ public final class ShopManager {
                 )
         ));
         return true;
+    }
+
+    /**
+     * Placeholder substitution for strings that are about to be executed as console commands.
+     *
+     * <p>Separate from {@link #applyPlayer} on purpose. Vanilla usernames are {@code [A-Za-z0-9_]}
+     * and therefore harmless, but Bedrock bridges such as Floodgate hand out prefixed names that
+     * can contain dots and spaces - and a space inside {@code {player}} silently shifts every
+     * following argument of a reward command by one position, so {@code give {player} diamond 1}
+     * becomes a command operating on a different target with different arguments. Values that
+     * reach a command are restricted to characters that cannot change its shape; the display
+     * variants are left untouched so names still render normally in chat.
+     */
+    private String applyCommandPlaceholders(String input, Player player, double price, String name) {
+        return MessageUtil.apply(input, Map.of(
+                "player", sanitizeForCommand(player.getName()),
+                "uuid", player.getUniqueId().toString(),
+                "price", EconomyManager.formatCommas(price),
+                "coins", EconomyManager.formatCommas(plugin.getEconomyManager().getBalance(player)),
+                "name", sanitizeForCommand(MessageUtil.strip(name == null ? "" : name))
+        ));
+    }
+
+    private static String sanitizeForCommand(String raw) {
+        if (raw == null || raw.isEmpty()) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder(raw.length());
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9') || c == '_' || c == '.' || c == '-') {
+                out.append(c);
+            }
+        }
+        return out.toString();
     }
 
     public String applyPlayer(String input, Player player, double price, String name) {
