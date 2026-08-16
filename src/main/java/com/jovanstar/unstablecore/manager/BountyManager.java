@@ -159,6 +159,20 @@ public final class BountyManager {
             return false;
         }
 
+        // Cap check before the withdrawal, not after. Taking the coins first and refunding on
+        // rejection is a visible, spammable balance round-trip, and every refund used to be
+        // counted as fresh income by the stats layer - so a rejected stack silently inflated the
+        // placer's lifetime coins-earned figure at no cost. Reading the current total here is
+        // safe: the authoritative re-check still happens under claimLock below.
+        Bounty preview = bounties.get(target.getUniqueId());
+        if (preview != null && preview.amount() + rounded > maxAmount()) {
+            msg(placer, "invalid-amount", Map.of(
+                    "min", EconomyManager.format(minAmount()),
+                    "max", EconomyManager.format(maxAmount())
+            ));
+            return false;
+        }
+
         if (!plugin.getEconomyManager().takeExact(placer, rounded)) {
             msg(placer, "not-enough", Map.of("amount", EconomyManager.format(rounded)));
             return false;
@@ -179,8 +193,10 @@ public final class BountyManager {
                 if (newTotal > maxAmount()) {
                     // Individual contributions are validated above, but stacking onto an
                     // existing bounty was never re-checked against the cap - repeated small
-                    // contributions could push the total arbitrarily above max-amount.
-                    plugin.getEconomyManager().deposit(placer, rounded);
+                    // contributions could push the total arbitrarily above max-amount. Still
+                    // needed as the authoritative check: two placers can land between the
+                    // pre-check above and this block.
+                    plugin.getEconomyManager().refund(placer, rounded);
                     msg(placer, "invalid-amount", Map.of(
                             "min", EconomyManager.format(minAmount()),
                             "max", EconomyManager.format(maxAmount())
@@ -357,7 +373,9 @@ public final class BountyManager {
                 }
                 List<Bounty> matches = sortedFiltered(text);
                 if (matches.isEmpty()) {
-                    msg(player, "board-search-empty", Map.of("query", text));
+                    // Raw chat text goes through MiniMessage in the message pipeline - escape it
+                    // so a crafted query can't come back as live markup. See MessageUtil.
+                    msg(player, "board-search-empty", Map.of("query", MessageUtil.escapeUserInput(text)));
                     openBoard(player);
                 } else {
                     openBoard(player, 0, text);
@@ -377,7 +395,7 @@ public final class BountyManager {
                             .orElse(null);
                 }
                 if (online == null) {
-                    msg(player, "not-found-search", Map.of("query", text));
+                    msg(player, "not-found-search", Map.of("query", MessageUtil.escapeUserInput(text)));
                     openPlace(player);
                 } else {
                     player.closeInventory();

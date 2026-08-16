@@ -49,6 +49,10 @@ public final class ArenaManager {
 
     private final Map<String, Deque<long[]>> recentSpawns = new ConcurrentHashMap<>();
 
+    private static final long SPOT_RECACHE_COOLDOWN_MS = 60_000L;
+    /** arena id -> last time teleportToArena rebuilt its spot cache, to keep that off the hot path. */
+    private final Map<String, Long> lastSpotRecache = new ConcurrentHashMap<>();
+
     private final Set<UUID> mineBypass = ConcurrentHashMap.newKeySet();
     private volatile boolean placedDirty;
 
@@ -791,9 +795,19 @@ public final class ArenaManager {
 
         Location spot = pickValidatedSpot(arena);
         if (spot == null) {
-            cacheSafeSpots(arena);
-            save();
-            spot = pickValidatedSpot(arena);
+            // cacheSafeSpots() probes hundreds of columns of blocks and save() then rewrites the
+            // whole of arenas.yml - both on the main thread, both triggered by a plain GUI click.
+            // If an arena has no usable spot (misconfigured centre, world edits) that used to fire
+            // on *every* join attempt, so a handful of players clicking join could hold the server
+            // in a permanent stall loop. Re-cache at most once a minute per arena, and let the
+            // normal autosave persist the result instead of blocking on a file write here.
+            long now = System.currentTimeMillis();
+            Long last = lastSpotRecache.get(arena.getId());
+            if (last == null || now - last >= SPOT_RECACHE_COOLDOWN_MS) {
+                lastSpotRecache.put(arena.getId(), now);
+                cacheSafeSpots(arena);
+                spot = pickValidatedSpot(arena);
+            }
         }
         if (spot == null) {
             Location center = arena.getCenter();
@@ -854,6 +868,14 @@ public final class ArenaManager {
         }
         Kit kit = kitManager.giveRandomUnlockedKit(player);
         if (kit != null) {
+            // Consuming the cooldown is what actually makes the check above mean anything. It used
+            // to only be *read*, never started, so the "safety net" was really an unlimited free
+            // kit dispenser: drop everything, click the arena join button, get a complete kit,
+            // repeat as fast as you can click - which both trivialises the 30-minute cooldown and
+            // mints unbounded quantities of paid-kit gear that can be handed to other players.
+            if (loadoutManager != null) {
+                loadoutManager.markUsed(player);
+            }
             MessageUtil.sendConfig(player, "arena-auto-kit", Map.of("kit", kit.getDisplayName()));
         }
     }

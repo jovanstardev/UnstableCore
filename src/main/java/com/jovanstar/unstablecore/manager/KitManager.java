@@ -544,7 +544,8 @@ public final class KitManager {
             }
             Set<String> set = unlocked.computeIfAbsent(uuid, u -> ConcurrentHashMap.newKeySet());
             if (!set.add(kit.getId().toLowerCase(Locale.ROOT))) {
-                eco.deposit(player, price);
+                // Give-back, not income - see EconomyManager.refund.
+                eco.refund(player, price);
                 return false;
             }
             scheduleSavePlayerData();

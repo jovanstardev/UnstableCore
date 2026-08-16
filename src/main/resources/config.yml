@@ -385,6 +385,11 @@ sword:
 
 loadout:
   cooldown-seconds: 1800
+  # Re-gear a player on respawn when they have a completely empty inventory.
+  # Always respects (and consumes) cooldown-seconds above, so it can't be used to skip it,
+  # and never touches a non-empty inventory. Set to false for a stricter "one kit per
+  # cooldown, dying costs you it" ruleset.
+  give-on-respawn: true
 
 held-shulker:
   enabled: true

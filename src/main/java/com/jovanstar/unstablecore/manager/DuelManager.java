@@ -102,8 +102,8 @@ public final class DuelManager {
     private void recoverRow(DatabaseManager.DuelRow row) {
         if (row.escrowed() && !row.payoutDone() && row.wager() > 0) {
             EconomyManager economy = plugin.getEconomyManager();
-            boolean okC = economy.isReady() && economy.deposit(Bukkit.getOfflinePlayer(row.challenger()), row.wager());
-            boolean okT = economy.isReady() && economy.deposit(Bukkit.getOfflinePlayer(row.target()), row.wager());
+            boolean okC = economy.isReady() && economy.refund(Bukkit.getOfflinePlayer(row.challenger()), row.wager());
+            boolean okT = economy.isReady() && economy.refund(Bukkit.getOfflinePlayer(row.target()), row.wager());
             if (!okC || !okT) {
                 plugin.getLogger().severe("[Duel " + row.duelId() + "] crash-recovery refund FAILED for "
                         + (!okC ? row.challenger() + " " : "") + (!okT ? row.target() : "")
@@ -191,6 +191,21 @@ public final class DuelManager {
         for (Map.Entry<UUID, DuelInventorySnapshot> entry : pendingRespawnSnapshots.entrySet()) {
             restoreIfOnline(entry.getKey(), entry.getValue());
         }
+        // Restores owed to players who disconnected mid-duel (forfeit loser, winner who dropped
+        // during the victory delay). These live only in memory - they are handed out on next join
+        // - so a shutdown in that window silently drops them. Flush whoever is still online, and
+        // make the rest loud rather than losing an inventory in silence.
+        for (Map.Entry<UUID, DuelInventorySnapshot> entry : pendingCrashRestores.entrySet()) {
+            Player online = Bukkit.getPlayer(entry.getKey());
+            if (online != null && online.isOnline()) {
+                entry.getValue().restore(online);
+            } else {
+                plugin.getLogger().severe("[Duel] shutting down while still owing " + entry.getKey()
+                        + " their pre-duel inventory - it could not be restored because they are"
+                        + " offline, and this queue is not persisted. Restore manually if needed.");
+            }
+        }
+        pendingCrashRestores.clear();
         pendingPostDuelRestores.clear();
         pendingRespawnSnapshots.clear();
         duels.clear();
@@ -239,6 +254,35 @@ public final class DuelManager {
     public boolean isInActiveDuel(UUID uuid) {
         Duel duel = getDuelForPlayer(uuid);
         return duel != null && duel.getState().isActiveCombat();
+    }
+
+    /**
+     * True once the players are actually committed to a fight - from accept (escrow/kit/teleport
+     * setup) through the countdown and the fight itself - as opposed to {@link #isInDuel}, which
+     * is already true for a merely <em>requested</em> duel.
+     *
+     * <p>This distinction matters a lot: {@code isInDuel} is the right gate for "don't let them
+     * start a second duel", but using it to gate combat consequences let a player keep a request
+     * permanently pending and thereby suppress their own death handling in FFA entirely (no
+     * killstreak reset, no death counted, no kill reward/bounty for whoever killed them, and
+     * their drops silently voided). Anything that suppresses or redirects normal combat/inventory
+     * behaviour must use this method instead.
+     *
+     * <p>ACCEPTED is included on top of {@link DuelState#isActiveCombat()} deliberately. It is a
+     * transient state today (setup runs synchronously straight through it), but escrow is already
+     * being taken inside it, so if a death ever does land there it must reach DuelManager's own
+     * cancel-and-refund path rather than being processed as an ordinary FFA death with the wagers
+     * still held. isActiveCombat() itself is left alone: it additionally drives PvP isolation,
+     * where treating a not-yet-teleported player as untouchable would make them invincible while
+     * still standing in a live FFA fight.
+     */
+    public boolean isInCombatDuel(UUID uuid) {
+        Duel duel = getDuelForPlayer(uuid);
+        if (duel == null) {
+            return false;
+        }
+        DuelState state = duel.getState();
+        return state == DuelState.ACCEPTED || state.isActiveCombat();
     }
 
     public boolean isInGrace(UUID uuid) {
@@ -783,6 +827,25 @@ public final class DuelManager {
             }
         }
 
+        // The challenger passed isBusy() when they sent the request, but the target can sit on it
+        // for the full request.timeout-seconds. In that window the challenger can walk into an FFA
+        // arena or pick a fight, and accepting would then teleport them straight out of it - the
+        // exact escape isBusy() exists to prevent. Re-check at the only moment that matters.
+        if (isBusy(challenger)) {
+            rollbackSetup(duel, "challenger-busy");
+            return false;
+        }
+
+        // A snapshot is taken a few lines below and restored verbatim when the duel ends. Any
+        // still-open container is a second, live view of items that the snapshot also captures -
+        // most importantly HeldShulkerListener's virtual box, whose staged contents only get
+        // written back into the item on close. Capturing while that session is open records the
+        // box with its *pre-edit* contents while the items already pulled out of it sit loose in
+        // the storage array, so the post-duel restore hands the player both copies. Settle every
+        // open view first so the snapshot describes exactly one authoritative inventory state.
+        settleOpenInventories(challenger);
+        settleOpenInventories(target);
+
         EconomyManager economy = plugin.getEconomyManager();
         if (duel.getWager() > 0) {
             if (!economy.isReady() || !economy.has(challenger, duel.getWager())) {
@@ -836,7 +899,7 @@ public final class DuelManager {
                 return false;
             }
             if (!economy.takeExact(target, duel.getWager())) {
-                economy.deposit(challenger, duel.getWager());
+                economy.refund(challenger, duel.getWager());
                 rollbackSetup(duel, "insufficient-funds-target");
                 return false;
             }
@@ -869,6 +932,22 @@ public final class DuelManager {
         return true;
     }
 
+    /**
+     * Flushes and closes anything the player currently has open so their real inventory is the
+     * single source of truth before {@link DuelInventorySnapshot#capture} runs. The held-shulker
+     * session is settled explicitly (its contents live in a detached Inventory until close), then
+     * the container itself is closed, which also returns/drops any item left on the cursor.
+     */
+    private void settleOpenInventories(Player player) {
+        if (player == null || !player.isOnline()) {
+            return;
+        }
+        if (plugin.getHeldShulkerListener() != null) {
+            plugin.getHeldShulkerListener().forceCloseSession(player);
+        }
+        player.closeInventory();
+    }
+
     private static boolean sameBlock(Location a, Location b) {
         return a.getWorld() != null && a.getWorld().equals(b.getWorld())
                 && a.getBlockX() == b.getBlockX() && a.getBlockY() == b.getBlockY() && a.getBlockZ() == b.getBlockZ();
@@ -895,6 +974,7 @@ public final class DuelManager {
         }
         removeDuelVisibility(duel);
         if (duel.getArenaId() != null) {
+            clearArenaDrops(duel.getArenaId());
             duelArenaManager.release(duel.getArenaId());
         }
         duel.transitionFromAny(DuelState.CANCELLED, DuelState.ACCEPTED, DuelState.STARTING);
@@ -1056,13 +1136,33 @@ public final class DuelManager {
 
         for (Player other : Bukkit.getOnlinePlayers()) {
             UUID uid = other.getUniqueId();
-            // Re-show both duelists to everyone
-            if (c != null) other.showPlayer(plugin, c);
-            if (t != null) other.showPlayer(plugin, t);
-            // Re-show everyone to both duelists
-            if (c != null && !uid.equals(duel.getChallenger())) c.showPlayer(plugin, other);
-            if (t != null && !uid.equals(duel.getTarget())) t.showPlayer(plugin, other);
+            // A blanket show-everyone-to-everyone here used to tear down *other*, still-running
+            // duels' isolation: ending duel A re-showed A's participants to B's participants and
+            // vice-versa, so B's fight suddenly had bystanders rendered in it again. Only lift the
+            // hide where neither side is currently isolated by a different live duel.
+            boolean otherIsolated = isVisibilityIsolated(uid) && !duel.involves(uid);
+            if (c != null && !otherIsolated) other.showPlayer(plugin, c);
+            if (t != null && !otherIsolated) other.showPlayer(plugin, t);
+            if (c != null && !uid.equals(duel.getChallenger()) && !otherIsolated) c.showPlayer(plugin, other);
+            if (t != null && !uid.equals(duel.getTarget()) && !otherIsolated) t.showPlayer(plugin, other);
         }
+    }
+
+    /**
+     * Whether this player is currently fighting in some duel that is still applying its
+     * mutual-hide wall, and so must not have that wall lifted by an unrelated duel ending.
+     *
+     * <p>Deliberately keyed on duel participation only, never on "is spectating". Every pair this
+     * loop touches has one side inside the ending duel, so checking the *other* side for live-duel
+     * membership is already enough to keep every still-running duel sealed, in both directions and
+     * symmetrically (when that duel ends in turn, its own removeDuelVisibility finishes the job).
+     * Treating spectators as isolated would instead strand them: a spectator watching duel A while
+     * duel B ends would be skipped by B's restore and stay mutually invisible to B's players
+     * forever, since nothing re-runs that restore once they stop spectating.
+     */
+    private boolean isVisibilityIsolated(UUID uuid) {
+        Duel other = getDuelForPlayer(uuid);
+        return other != null && other.getState().isActiveCombat();
     }
 
     private void scheduleMaxDuration(Duel duel) {
@@ -1167,6 +1267,7 @@ public final class DuelManager {
 
         removeDuelVisibility(duel);
         if (duel.getArenaId() != null) {
+            clearArenaDrops(duel.getArenaId());
             duelArenaManager.release(duel.getArenaId());
         }
         duel.transitionFromAny(DuelState.CANCELLED, DuelState.ACCEPTED, DuelState.STARTING);
@@ -1324,9 +1425,16 @@ public final class DuelManager {
                 }
             } else {
                 Player lp = Bukkit.getPlayer(loserUuid);
+                DuelInventorySnapshot loserSnapshot = duel.snapshotFor(loserUuid);
                 if (lp != null && lp.isOnline() && !lp.isDead()) {
                     teleportToSpawn(lp);
-                    restorePlayerPostDuel(lp, duel.snapshotFor(loserUuid));
+                    restorePlayerPostDuel(lp, loserSnapshot);
+                } else if (loserSnapshot != null) {
+                    // Forfeit/timeout loser who is offline or mid-death-screen: without this their
+                    // pre-duel inventory is dropped on the floor with the terminal Duel object and
+                    // they are left permanently holding the duel kit instead of their own items.
+                    // Same restore-on-next-join path crash recovery uses.
+                    pendingCrashRestores.put(loserUuid, loserSnapshot);
                 }
             }
 
@@ -1385,6 +1493,7 @@ public final class DuelManager {
         long graceSeconds = Math.max(0L, cfg().getLong("grace-period-seconds", 180));
         if (duel.getArenaId() == null || graceSeconds <= 0) {
             if (duel.getArenaId() != null) {
+                clearArenaDrops(duel.getArenaId());
                 duelArenaManager.release(duel.getArenaId());
             }
             duels.remove(duel.getId());
@@ -1426,8 +1535,12 @@ public final class DuelManager {
 
     /** Deposits are best-effort against Vault - a false return here means real money is owed and unpaid. */
     private void depositOrWarn(Duel duel, UUID recipient, double amount, String reason) {
+        // Only an actual winner payout is income; every other reason here is giving the player
+        // back their own escrowed wager, and counting those as earnings let anyone inflate their
+        // lifetime coins-earned stat for free by accepting and immediately aborting wagered duels.
+        boolean isPayout = "winner-payout".equals(reason);
         boolean ok = plugin.getEconomyManager().isReady()
-                && plugin.getEconomyManager().deposit(Bukkit.getOfflinePlayer(recipient), amount);
+                && plugin.getEconomyManager().deposit(Bukkit.getOfflinePlayer(recipient), amount, isPayout);
         if (!ok) {
             plugin.getLogger().severe("[Duel " + duel.getId() + "] FAILED to deposit " + EconomyManager.format(amount)
                     + " coins to " + recipient + " (reason=" + reason + ") - economy provider rejected the deposit. "
@@ -1620,10 +1733,53 @@ public final class DuelManager {
             return;
         }
         if (duel.getArenaId() != null) {
+            clearArenaDrops(duel.getArenaId());
             duelArenaManager.release(duel.getArenaId());
         }
         duel.cancelAllTasks();
         duels.remove(duel.getId());
+    }
+
+    /**
+     * Removes loose item entities inside a duel arena once the duel is fully over.
+     *
+     * <p>Duel gear is issued by the plugin and every exit path restores the player's real
+     * pre-duel inventory over the top of it, so anything a duelist managed to put on the ground
+     * mid-fight is pure minted material: the arena is a normal world location that anyone can
+     * simply walk into once it is free (and a third party could already stand in it during the
+     * fight - the duel's mutual-hide wall is cosmetic, not a physical barrier). Combined with
+     * DuelListener's drop block this closes both halves of that duplication route: the block
+     * stops the common case, this sweep catches anything that lands there by other means
+     * (kit-apply overflow, a plugin-forced drop, an interrupted restore).
+     */
+    private void clearArenaDrops(String arenaId) {
+        Arena arena = duelArenaManager.resolve(arenaId);
+        if (arena == null || !arena.hasCenter()) {
+            return;
+        }
+        Location center = arena.getCenter();
+        if (center == null || center.getWorld() == null) {
+            return;
+        }
+        double radius = Math.max(1, arena.getRadius()) + 5.0;
+        int removed = 0;
+        // Chunk-bounded query rather than a scan of every entity in the world: arenas are small
+        // relative to a live world, and this runs on the main thread each time a duel resolves.
+        for (org.bukkit.entity.Entity entity : center.getWorld().getNearbyEntities(
+                center, radius, center.getWorld().getMaxHeight(), radius,
+                e -> e instanceof org.bukkit.entity.Item)) {
+            Location loc = entity.getLocation();
+            double dx = loc.getX() - arena.getX();
+            double dz = loc.getZ() - arena.getZ();
+            if ((dx * dx) + (dz * dz) > radius * radius) {
+                continue;
+            }
+            entity.remove();
+            removed++;
+        }
+        if (removed > 0) {
+            plugin.getLogger().info("[Duel] cleared " + removed + " leftover item(s) from arena " + arenaId + ".");
+        }
     }
 
     public void teleportToSpawn(Player player) {
@@ -1672,13 +1828,20 @@ public final class DuelManager {
         if (snapshot != null && !snapshot.isEmpty()) {
             snapshot.restore(player);
         } else {
-            // No snapshot or empty pre-duel inventory -> clear duel kit and apply default kit loadout
+            // No snapshot, or the player entered the duel empty-handed -> take the duel kit back.
             player.getInventory().clear();
             player.getInventory().setArmorContents(null);
             player.getInventory().setItemInOffHand(null);
             if (plugin.getKitManager() != null) {
                 plugin.getKitManager().ensureDefaultKit(player);
-                plugin.getKitManager().applyLoadout(player);
+            }
+            // Re-gear through the cooldown-aware path, not KitManager.applyLoadout directly.
+            // Going straight to applyLoadout handed out a complete free kit at the end of every
+            // duel entered with an empty inventory - and duels are unlimited via the matchmaking
+            // queue, so two cooperating players could mint kits as fast as they could requeue,
+            // with loadout.cooldown-seconds never once consulted.
+            if (plugin.getLoadoutManager() != null) {
+                plugin.getLoadoutManager().tryGive(player, false);
             }
         }
         player.updateInventory();

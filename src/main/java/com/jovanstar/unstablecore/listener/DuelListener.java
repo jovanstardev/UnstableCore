@@ -63,7 +63,12 @@ public final class DuelListener implements Listener {
             return;
         }
         Player victim = event.getEntity();
-        if (!mgr.isInDuel(victim.getUniqueId())) {
+        // isInDuel() is already true for a *pending* request, so keying off it here let anyone
+        // with a duel request open die in FFA with their drops voided and their death message
+        // suppressed - a free "delete my killer's loot and hide the kill" button, available to
+        // any two cooperating players and reusable every 30 seconds. Only an actually-committed
+        // duel (countdown onwards) suppresses normal death handling.
+        if (!mgr.isInCombatDuel(victim.getUniqueId())) {
             return;
         }
         event.deathMessage(null);
@@ -83,19 +88,53 @@ public final class DuelListener implements Listener {
         UUID uuid = player.getUniqueId();
 
         Location loc = mgr.consumePendingRespawnLocation(uuid);
-        if (loc == null && mgr.isInDuel(uuid)) {
+        DuelInventorySnapshot snapshot = mgr.consumePendingRespawnSnapshot(uuid);
+        // A queued location/snapshot is the real signal - every duel exit path that ends in a
+        // respawn queues one. isInCombatDuel is only a belt-and-braces fallback, and must be the
+        // committed-duel check rather than isInDuel(): the latter is true for a merely pending
+        // request, which would put every request-holder straight back into the free-kit path this
+        // guard exists to close.
+        boolean duelRespawn = loc != null || snapshot != null || mgr.isInCombatDuel(uuid);
+        // This hook used to run unconditionally on *every* respawn on the server, duel or not,
+        // and restorePlayerPostDuel with a null snapshot clears the inventory and hands out a
+        // fresh kit. That silently wiped whatever an ordinary FFA player respawned with and gave
+        // out a free full loadout on every death - completely defeating loadout.cooldown-seconds
+        // (30 minutes by default), since dying is faster and cheaper than waiting for it.
+        if (!duelRespawn) {
+            return;
+        }
+        if (loc == null) {
             loc = mgr.resolveJoinSpawn();
         }
         if (loc != null && loc.getWorld() != null) {
             event.setRespawnLocation(loc);
         }
 
-        DuelInventorySnapshot snapshot = mgr.consumePendingRespawnSnapshot(uuid);
         Bukkit.getScheduler().runTask(plugin, () -> {
             if (player.isOnline()) {
                 mgr.restorePlayerPostDuel(player, snapshot);
             }
         });
+    }
+
+    /**
+     * Duel gear is plugin-issued and every exit path overwrites it with the player's real pre-duel
+     * inventory, so anything dropped mid-duel is newly minted material that outlives the duel:
+     * the arena is an ordinary world location, so the dropper can walk back once it frees up, and
+     * a third party can stand in it during the fight (the duel's mutual-hide wall only stops
+     * rendering, not collision or item pickup). Blocking the drop is the clean fix; DuelManager
+     * additionally sweeps the arena when the duel resolves, for anything that lands there by
+     * other means.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDropDuringDuel(org.bukkit.event.player.PlayerDropItemEvent event) {
+        DuelManager mgr = plugin.getDuelManager();
+        if (mgr == null || !mgr.isInCombatDuel(event.getPlayer().getUniqueId())) {
+            return;
+        }
+        event.setCancelled(true);
+        MessageUtil.send(event.getPlayer(), plugin.getConfigManager().getDuels()
+                .getString("messages.drop-blocked", "&cYou can't drop items during a duel."));
     }
 
     /** No damage is permitted before FIGHT, even though both players are already teleported in. */

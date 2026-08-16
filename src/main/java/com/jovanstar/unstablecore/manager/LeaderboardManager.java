@@ -36,6 +36,13 @@ public final class LeaderboardManager {
     private final Map<UUID, Long> lastRefreshMs = new ConcurrentHashMap<>();
     private final Set<UUID> switchingGui = ConcurrentHashMap.newKeySet();
     private final Map<UUID, String> nameCache = new ConcurrentHashMap<>();
+    /**
+     * Lower-cased name -> uuid reverse view of {@link #nameCache}. findUuidByName is on the
+     * command path for /stats, /uc economy and /dueladmin, all of which are reachable often
+     * enough (and, for /stats, by any player) that a linear scan over every player the server has
+     * ever seen is not an acceptable per-call cost.
+     */
+    private final Map<String, UUID> nameToUuid = new ConcurrentHashMap<>();
     // Raw DB rows backing the COINS/PLAYTIME categories, refreshed off-thread on a timer (see
     // refreshDbRowsAsync). compute()/list() only ever read this cache - they never touch the
     // database directly - so a leaderboard-cache-expiry can no longer block the main thread on a
@@ -77,30 +84,34 @@ public final class LeaderboardManager {
 
     public void reloadNameCache() {
         nameCache.clear();
+        nameToUuid.clear();
         DatabaseManager db = plugin.getDatabaseManager();
         if (db == null || !db.isConnected()) {
             return;
         }
-        nameCache.putAll(db.loadAllProfileNames());
+        for (Map.Entry<UUID, String> e : db.loadAllProfileNames().entrySet()) {
+            rememberName(e.getKey(), e.getValue());
+        }
     }
 
     public void rememberName(UUID uuid, String name) {
         if (uuid == null || name == null || name.isBlank()) {
             return;
         }
-        nameCache.put(uuid, name);
+        String previous = nameCache.put(uuid, name);
+        if (previous != null && !previous.equalsIgnoreCase(name)) {
+            // Renamed account: drop the stale reverse entry, but only if it still points at this
+            // uuid - if someone else has since taken the old name, theirs must win.
+            nameToUuid.remove(previous.toLowerCase(Locale.ROOT), uuid);
+        }
+        nameToUuid.put(name.toLowerCase(Locale.ROOT), uuid);
     }
 
     public UUID findUuidByName(String name) {
         if (name == null || name.isBlank()) {
             return null;
         }
-        for (Map.Entry<UUID, String> e : nameCache.entrySet()) {
-            if (e.getValue() != null && e.getValue().equalsIgnoreCase(name)) {
-                return e.getKey();
-            }
-        }
-        return null;
+        return nameToUuid.get(name.toLowerCase(Locale.ROOT));
     }
 
     public void syncProfile(Player player) {
@@ -160,8 +171,28 @@ public final class LeaderboardManager {
         }
         long period = Math.max(20L * 30L, Math.min(20L * 120L, cacheTtlMs() / 50L));
         syncTaskId = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            // One batched write for the whole online set instead of one async task (and one
+            // pooled connection) per player - see DatabaseManager.upsertProfiles. The balance and
+            // playtime reads have to stay on this thread (Vault provider + player statistics are
+            // main-thread APIs), so only the collection happens here.
+            DatabaseManager db = plugin.getDatabaseManager();
+            boolean economyReady = plugin.getEconomyManager() != null && plugin.getEconomyManager().isReady();
+            List<DatabaseManager.ProfileRow> batch = new ArrayList<>();
             for (Player player : Bukkit.getOnlinePlayers()) {
-                syncProfile(player);
+                rememberName(player.getUniqueId(), player.getName());
+                if (db == null || !db.isConnected()) {
+                    continue;
+                }
+                batch.add(new DatabaseManager.ProfileRow(
+                        player.getUniqueId(),
+                        player.getName(),
+                        economyReady ? plugin.getEconomyManager().getBalance(player) : 0D,
+                        plugin.getPlaytimeManager() != null
+                                ? plugin.getPlaytimeManager().getPlaytimeTicks(player) : 0L
+                ));
+            }
+            if (db != null && db.isConnected() && !batch.isEmpty()) {
+                Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> db.upsertProfiles(batch));
             }
             refreshDbRowsAsync();
         }, period, period).getTaskId();

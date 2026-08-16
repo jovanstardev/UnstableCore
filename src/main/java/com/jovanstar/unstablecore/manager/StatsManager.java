@@ -161,6 +161,17 @@ public final class StatsManager {
         return m + "m";
     }
 
+    /**
+     * Name -> account lookup for commands like /stats, /uc economy and /dueladmin.
+     *
+     * <p>Deliberately never walks {@link Bukkit#getOfflinePlayers()}: that call stats and parses
+     * every player data file the server has ever written, on the calling thread. Since it was
+     * reached from a plain, permission-less {@code /stats <name>}, any player could stall the main
+     * thread on demand simply by looking up names that don't exist (the miss is the expensive
+     * path), and the cost grows with the size of the playerdata folder. The profile-name cache and
+     * Paper's non-blocking {@code getOfflinePlayerIfCached} cover every account the server has
+     * actually seen, which is the same set that scan could have found.
+     */
     public OfflinePlayer resolvePlayer(String name) {
         if (name == null || name.isBlank()) {
             return null;
@@ -176,11 +187,6 @@ public final class StatsManager {
                 return Bukkit.getOfflinePlayer(cached);
             }
         }
-        for (OfflinePlayer offline : Bukkit.getOfflinePlayers()) {
-            if (offline.getName() != null && offline.getName().equalsIgnoreCase(name)) {
-                return offline;
-            }
-        }
-        return null;
+        return Bukkit.getOfflinePlayerIfCached(name);
     }
 }

@@ -277,6 +277,23 @@ public final class DatabaseManager {
         }
     }
 
+    /**
+     * Guards the periodic bulk saves against each other. Deliberately a different monitor from
+     * {@link #atomicOpLock}: these transactions touch every tracked player, can run for a long
+     * time once the database is large, and execute on the async autosave task. While they all
+     * shared one lock with the small per-player atomic operations below, a main-thread reward
+     * claim or bounty placement would block behind an in-progress full save - turning background
+     * writes into a main-thread stall that grows with the size of the player base.
+     */
+    private final Object bulkSaveLock = new Object();
+
+    /**
+     * Guards the short read-modify-write operations that must serialise against each other
+     * (claim marking, bounty id allocation). Each is one small transaction, so contention here is
+     * bounded and never waits on bulk work.
+     */
+    private final Object atomicOpLock = new Object();
+
     private String upsertProfileSql() {
         if (mysql) {
             return """
@@ -482,15 +499,30 @@ public final class DatabaseManager {
         }
     }
 
-    public synchronized void saveAllSettings(Map<UUID, Map<String, Boolean>> settings,
-                                             java.util.function.Function<String, Boolean> defaultOf) {
+    /**
+     * Periodic bulk save. Deliberately does NOT wipe the table first: the in-memory map is only a
+     * best-effort mirror of the DB (a failed {@code loadAllSettings()} at boot - a transient
+     * connection blip, a locked SQLite file - silently yields an empty map), and a
+     * DELETE-everything-then-reinsert would turn that transient read failure into permanent,
+     * total data loss for every player on the very next autosave. Every row still reaches its
+     * exact intended state: values that differ from the default are upserted, values that are
+     * back at the default have their row removed individually.
+     */
+    public void saveAllSettings(Map<UUID, Map<String, Boolean>> settings,
+                                java.util.function.Function<String, Boolean> defaultOf) {
+        synchronized (bulkSaveLock) {
+            saveAllSettings0(settings, defaultOf);
+        }
+    }
+
+    private void saveAllSettings0(Map<UUID, Map<String, Boolean>> settings,
+                                  java.util.function.Function<String, Boolean> defaultOf) {
         try (Connection c = getConnection()) {
             c.setAutoCommit(false);
             try {
-                try (Statement clear = c.createStatement()) {
-                    clear.executeUpdate("DELETE FROM player_settings");
-                }
-                try (PreparedStatement ps = c.prepareStatement(upsertSettingsSql())) {
+                try (PreparedStatement ps = c.prepareStatement(upsertSettingsSql());
+                     PreparedStatement del = c.prepareStatement(
+                             "DELETE FROM player_settings WHERE uuid = ? AND setting_key = ?")) {
                     for (Map.Entry<UUID, Map<String, Boolean>> e : settings.entrySet()) {
                         for (Map.Entry<String, Boolean> s : e.getValue().entrySet()) {
                             if (s.getValue() == null) {
@@ -498,6 +530,9 @@ public final class DatabaseManager {
                             }
                             boolean def = defaultOf.apply(s.getKey());
                             if (s.getValue() == def) {
+                                del.setString(1, e.getKey().toString());
+                                del.setString(2, s.getKey());
+                                del.addBatch();
                                 continue;
                             }
                             ps.setString(1, e.getKey().toString());
@@ -506,6 +541,7 @@ public final class DatabaseManager {
                             ps.addBatch();
                         }
                     }
+                    del.executeBatch();
                     ps.executeBatch();
                 }
                 c.commit();
@@ -560,10 +596,19 @@ public final class DatabaseManager {
         }
     }
 
-    public synchronized void saveAllStats(Map<UUID, Integer> kills,
-                                          Map<UUID, Integer> bestStreak,
-                                          Map<UUID, Double> coinsEarned,
-                                          Map<UUID, Double> coinsSpent) {
+    public void saveAllStats(Map<UUID, Integer> kills,
+                             Map<UUID, Integer> bestStreak,
+                             Map<UUID, Double> coinsEarned,
+                             Map<UUID, Double> coinsSpent) {
+        synchronized (bulkSaveLock) {
+            saveAllStats0(kills, bestStreak, coinsEarned, coinsSpent);
+        }
+    }
+
+    private void saveAllStats0(Map<UUID, Integer> kills,
+                               Map<UUID, Integer> bestStreak,
+                               Map<UUID, Double> coinsEarned,
+                               Map<UUID, Double> coinsSpent) {
         java.util.Set<UUID> uuids = new java.util.HashSet<>();
         uuids.addAll(kills.keySet());
         uuids.addAll(bestStreak.keySet());
@@ -573,16 +618,18 @@ public final class DatabaseManager {
         try (Connection c = getConnection()) {
             c.setAutoCommit(false);
             try {
-                try (Statement clear = c.createStatement()) {
-                    clear.executeUpdate("DELETE FROM player_stats");
-                }
-                try (PreparedStatement ps = c.prepareStatement(upsertStatsSql())) {
+                // See saveAllSettings: no DELETE-then-reinsert, so a failed boot-time load can
+                // never escalate into wiping every player's stats on the next autosave.
+                try (PreparedStatement ps = c.prepareStatement(upsertStatsSql());
+                     PreparedStatement del = c.prepareStatement("DELETE FROM player_stats WHERE uuid = ?")) {
                     for (UUID uuid : uuids) {
                         int k = kills.getOrDefault(uuid, 0);
                         int b = bestStreak.getOrDefault(uuid, 0);
                         double earned = coinsEarned.getOrDefault(uuid, 0.0);
                         double spent = coinsSpent.getOrDefault(uuid, 0.0);
                         if (k <= 0 && b <= 0 && earned <= 0 && spent <= 0) {
+                            del.setString(1, uuid.toString());
+                            del.addBatch();
                             continue;
                         }
                         ps.setString(1, uuid.toString());
@@ -592,6 +639,7 @@ public final class DatabaseManager {
                         ps.setDouble(5, spent);
                         ps.addBatch();
                     }
+                    del.executeBatch();
                     ps.executeBatch();
                 }
                 c.commit();
@@ -645,9 +693,17 @@ public final class DatabaseManager {
         }
     }
 
-    public synchronized void saveAllCombat(Map<UUID, Integer> streaks,
-                                           Map<UUID, Integer> deaths,
-                                           Map<UUID, Boolean> titlesEnabled) {
+    public void saveAllCombat(Map<UUID, Integer> streaks,
+                              Map<UUID, Integer> deaths,
+                              Map<UUID, Boolean> titlesEnabled) {
+        synchronized (bulkSaveLock) {
+            saveAllCombat0(streaks, deaths, titlesEnabled);
+        }
+    }
+
+    private void saveAllCombat0(Map<UUID, Integer> streaks,
+                                Map<UUID, Integer> deaths,
+                                Map<UUID, Boolean> titlesEnabled) {
         java.util.Set<UUID> uuids = new java.util.HashSet<>();
         uuids.addAll(streaks.keySet());
         uuids.addAll(deaths.keySet());
@@ -656,15 +712,18 @@ public final class DatabaseManager {
         try (Connection c = getConnection()) {
             c.setAutoCommit(false);
             try {
-                try (Statement clear = c.createStatement()) {
-                    clear.executeUpdate("DELETE FROM player_combat");
-                }
-                try (PreparedStatement ps = c.prepareStatement(upsertCombatSql())) {
+                // See saveAllSettings: no DELETE-then-reinsert (boot-load failure must not
+                // escalate into total data loss). Rows that fall back to the all-default state
+                // are removed individually instead.
+                try (PreparedStatement ps = c.prepareStatement(upsertCombatSql());
+                     PreparedStatement del = c.prepareStatement("DELETE FROM player_combat WHERE uuid = ?")) {
                     for (UUID uuid : uuids) {
                         int streak = streaks.getOrDefault(uuid, 0);
                         int death = deaths.getOrDefault(uuid, 0);
                         boolean titles = titlesEnabled.getOrDefault(uuid, true);
                         if (streak <= 0 && death <= 0 && titles) {
+                            del.setString(1, uuid.toString());
+                            del.addBatch();
                             continue;
                         }
                         ps.setString(1, uuid.toString());
@@ -673,6 +732,7 @@ public final class DatabaseManager {
                         ps.setInt(4, titles ? 1 : 0);
                         ps.addBatch();
                     }
+                    del.executeBatch();
                     ps.executeBatch();
                 }
                 c.commit();
@@ -703,6 +763,46 @@ public final class DatabaseManager {
             ps.executeUpdate();
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Failed to upsert player profile", e);
+        }
+    }
+
+    /**
+     * Batched form of {@link #upsertProfile} for the periodic online-player sync.
+     *
+     * <p>That sync used to schedule one async task - and therefore take one pooled connection and
+     * run one statement - per online player, every cycle. At a few hundred players that is a burst
+     * of hundreds of tasks contending over a pool of 4-20 connections, every 30 seconds, for what
+     * is a single batched write.
+     */
+    public void upsertProfiles(List<ProfileRow> rows) {
+        if (!isConnected() || rows == null || rows.isEmpty()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        try (Connection c = getConnection()) {
+            c.setAutoCommit(false);
+            try (PreparedStatement ps = c.prepareStatement(upsertProfileSql())) {
+                for (ProfileRow row : rows) {
+                    if (row == null || row.uuid() == null) {
+                        continue;
+                    }
+                    ps.setString(1, row.uuid().toString());
+                    ps.setString(2, row.name() == null ? "" : row.name());
+                    ps.setDouble(3, Math.max(0D, row.balance()));
+                    ps.setLong(4, Math.max(0L, row.playtimeTicks()));
+                    ps.setLong(5, now);
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+                c.commit();
+            } catch (SQLException e) {
+                c.rollback();
+                throw e;
+            } finally {
+                c.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to batch-upsert player profiles", e);
         }
     }
 
@@ -815,22 +915,32 @@ public final class DatabaseManager {
         return out;
     }
 
-    public synchronized void saveAllTags(Map<UUID, String> tags) {
+    public void saveAllTags(Map<UUID, String> tags) {
+        synchronized (bulkSaveLock) {
+            saveAllTags0(tags);
+        }
+    }
+
+    private void saveAllTags0(Map<UUID, String> tags) {
         try (Connection c = getConnection()) {
             c.setAutoCommit(false);
             try {
-                try (Statement clear = c.createStatement()) {
-                    clear.executeUpdate("DELETE FROM player_tags");
-                }
-                try (PreparedStatement ps = c.prepareStatement(upsertTagSql())) {
+                // See saveAllSettings for why this no longer wipes the table first. Un-equipping
+                // already issues its own targeted deleteTag(); the per-row delete here covers the
+                // (defensive) case of a blank value left in the map.
+                try (PreparedStatement ps = c.prepareStatement(upsertTagSql());
+                     PreparedStatement del = c.prepareStatement("DELETE FROM player_tags WHERE uuid = ?")) {
                     for (Map.Entry<UUID, String> e : tags.entrySet()) {
                         if (e.getValue() == null || e.getValue().isBlank()) {
+                            del.setString(1, e.getKey().toString());
+                            del.addBatch();
                             continue;
                         }
                         ps.setString(1, e.getKey().toString());
                         ps.setString(2, e.getValue());
                         ps.addBatch();
                     }
+                    del.executeBatch();
                     ps.executeBatch();
                 }
                 c.commit();
@@ -888,13 +998,25 @@ public final class DatabaseManager {
         return out;
     }
 
-    public synchronized void saveAllLoadouts(Map<UUID, Long> lastUse, long cooldownMs) {
+    public void saveAllLoadouts(Map<UUID, Long> lastUse, long cooldownMs) {
+        synchronized (bulkSaveLock) {
+            saveAllLoadouts0(lastUse, cooldownMs);
+        }
+    }
+
+    private void saveAllLoadouts0(Map<UUID, Long> lastUse, long cooldownMs) {
         long now = System.currentTimeMillis();
         try (Connection c = getConnection()) {
             c.setAutoCommit(false);
             try {
-                try (Statement clear = c.createStatement()) {
-                    clear.executeUpdate("DELETE FROM loadout_cooldowns");
+                // See saveAllSettings for why this no longer wipes the table first. Expired
+                // cooldowns are pruned by an explicit age predicate rather than by omission, so a
+                // momentarily-empty in-memory map can't silently clear everyone's cooldown (which
+                // here would hand every player an immediate free re-gear).
+                try (PreparedStatement expire = c.prepareStatement(
+                        "DELETE FROM loadout_cooldowns WHERE last_use <= ?")) {
+                    expire.setLong(1, now - Math.max(0L, cooldownMs));
+                    expire.executeUpdate();
                 }
                 try (PreparedStatement ps = c.prepareStatement(upsertLoadoutSql())) {
                     for (Map.Entry<UUID, Long> e : lastUse.entrySet()) {
@@ -980,13 +1102,24 @@ public final class DatabaseManager {
         return out;
     }
 
-    public synchronized void saveAllLoadoutNoCooldown(Map<UUID, Long> untilMap) {
+    public void saveAllLoadoutNoCooldown(Map<UUID, Long> untilMap) {
+        synchronized (bulkSaveLock) {
+            saveAllLoadoutNoCooldown0(untilMap);
+        }
+    }
+
+    private void saveAllLoadoutNoCooldown0(Map<UUID, Long> untilMap) {
         long now = System.currentTimeMillis();
         try (Connection c = getConnection()) {
             c.setAutoCommit(false);
             try {
-                try (Statement clear = c.createStatement()) {
-                    clear.executeUpdate("DELETE FROM loadout_nocooldown");
+                // See saveAllSettings/saveAllLoadouts: expire by predicate, never by wiping the
+                // table - this one stores paid no-cooldown grants, so a spurious wipe is a direct
+                // loss of purchased value.
+                try (PreparedStatement expire = c.prepareStatement(
+                        "DELETE FROM loadout_nocooldown WHERE until_ms <= ?")) {
+                    expire.setLong(1, now);
+                    expire.executeUpdate();
                 }
                 try (PreparedStatement ps = c.prepareStatement(upsertLoadoutNoCooldownSql())) {
                     for (Map.Entry<UUID, Long> e : untilMap.entrySet()) {
@@ -1322,7 +1455,13 @@ public final class DatabaseManager {
         return RewardsRow.empty();
     }
 
-    public synchronized void saveRewards(UUID uuid, RewardsRow row) {
+    public void saveRewards(UUID uuid, RewardsRow row) {
+        synchronized (atomicOpLock) {
+            saveRewards0(uuid, row);
+        }
+    }
+
+    private void saveRewards0(UUID uuid, RewardsRow row) {
         if (uuid == null || row == null) {
             return;
         }
@@ -1379,7 +1518,13 @@ public final class DatabaseManager {
         }
     }
 
-    public synchronized boolean tryMarkDailyClaim(UUID uuid, RewardsRow proposed, String claimDay) {
+    public boolean tryMarkDailyClaim(UUID uuid, RewardsRow proposed, String claimDay) {
+        synchronized (atomicOpLock) {
+            return tryMarkDailyClaim0(uuid, proposed, claimDay);
+        }
+    }
+
+    private boolean tryMarkDailyClaim0(UUID uuid, RewardsRow proposed, String claimDay) {
         if (uuid == null || proposed == null || claimDay == null) {
             return false;
         }
@@ -1415,7 +1560,14 @@ public final class DatabaseManager {
         }
     }
 
-    public synchronized boolean tryMarkMilestoneClaim(
+    public boolean tryMarkMilestoneClaim(
+            UUID uuid, RewardsRow proposed, boolean weekly, int required) {
+        synchronized (atomicOpLock) {
+            return tryMarkMilestoneClaim0(uuid, proposed, weekly, required);
+        }
+    }
+
+    private boolean tryMarkMilestoneClaim0(
             UUID uuid, RewardsRow proposed, boolean weekly, int required) {
         if (uuid == null || proposed == null || required <= 0) {
             return false;
@@ -1546,7 +1698,13 @@ public final class DatabaseManager {
         return map;
     }
 
-    public synchronized int nextBountyId() {
+    public int nextBountyId() {
+        synchronized (atomicOpLock) {
+            return nextBountyId0();
+        }
+    }
+
+    private int nextBountyId0() {
         String raw = getMeta("next_bounty_id");
         int next = 1;
         if (raw != null && !raw.isBlank()) {
