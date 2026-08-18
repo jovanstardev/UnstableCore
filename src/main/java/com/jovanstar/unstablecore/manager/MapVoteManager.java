@@ -228,6 +228,18 @@ public final class MapVoteManager {
         if (hasVoted(player.getUniqueId())) {
             return;
         }
+        // Re-opening a GUI the player just dismissed is already aggressive; doing it to someone
+        // mid-fight takes their screen away while they are being hit and cannot act. Anyone in a
+        // duel or combat-tagged in FFA is left alone - they simply don't get a forced vote.
+        if (plugin.getDuelManager() != null
+                && (plugin.getDuelManager().isInDuel(player.getUniqueId())
+                || plugin.getDuelManager().isInGrace(player.getUniqueId()))) {
+            return;
+        }
+        if (plugin.getCombatListener() != null
+                && plugin.getCombatListener().isCombatTagged(player.getUniqueId())) {
+            return;
+        }
         if (player.getOpenInventory().getTopInventory().getHolder() instanceof VoteGui) {
             return;
         }

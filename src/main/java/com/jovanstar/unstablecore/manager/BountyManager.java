@@ -25,8 +25,18 @@ public final class BountyManager {
         AMOUNT
     }
 
-    public record Prompt(PromptType type, UUID target, String targetName) {
+    public record Prompt(PromptType type, UUID target, String targetName, long expiresAt) {
+        public Prompt(PromptType type, UUID target, String targetName) {
+            this(type, target, targetName, System.currentTimeMillis() + DEFAULT_PROMPT_MS);
+        }
+
+        boolean isExpired() {
+            return System.currentTimeMillis() > expiresAt;
+        }
     }
+
+    /** Fallback prompt lifetime; the live value comes from config via {@link #promptTimeoutMs()}. */
+    private static final long DEFAULT_PROMPT_MS = 60_000L;
 
     public record Bounty(UUID target, String targetName, double amount, int bountyId, long updatedAt) {
         public DatabaseManager.BountyRow toRow() {
@@ -115,16 +125,44 @@ public final class BountyManager {
         sortedCache = List.copyOf(list);
     }
 
+    /**
+     * How long a pending chat prompt stays armed before it stops capturing chat. The AMOUNT
+     * prompt deliberately re-arms itself when the input won't parse, so without a bound a player
+     * who missed the "type cancel" hint could never send a normal chat message again.
+     */
+    private long promptTimeoutMs() {
+        return Math.max(5_000L, plugin.getConfig().getLong("chat-prompt-timeout-seconds", 60) * 1000L);
+    }
+
     public void beginPrompt(Player player, Prompt prompt) {
-        prompts.put(player.getUniqueId(), prompt);
+        if (prompt == null) {
+            return;
+        }
+        // Re-stamp the deadline from config so a re-armed prompt gets a fresh window rather than
+        // inheriting the original one (and so the record's compile-time default is never binding).
+        prompts.put(player.getUniqueId(), new Prompt(prompt.type(), prompt.target(),
+                prompt.targetName(), System.currentTimeMillis() + promptTimeoutMs()));
     }
 
     public Prompt takePrompt(UUID uuid) {
-        return prompts.remove(uuid);
+        Prompt prompt = prompts.remove(uuid);
+        return (prompt == null || prompt.isExpired()) ? null : prompt;
     }
 
+    /** Reads the pending prompt, discarding it first if it has expired. */
     public Prompt peekPrompt(UUID uuid) {
-        return prompts.get(uuid);
+        if (uuid == null) {
+            return null;
+        }
+        Prompt prompt = prompts.get(uuid);
+        if (prompt == null) {
+            return null;
+        }
+        if (prompt.isExpired()) {
+            prompts.remove(uuid, prompt);
+            return null;
+        }
+        return prompt;
     }
 
     public void clearPrompt(UUID uuid) {
@@ -159,6 +197,20 @@ public final class BountyManager {
             return false;
         }
 
+        // Cap check before the withdrawal, not after. Taking the coins first and refunding on
+        // rejection is a visible, spammable balance round-trip, and every refund used to be
+        // counted as fresh income by the stats layer - so a rejected stack silently inflated the
+        // placer's lifetime coins-earned figure at no cost. Reading the current total here is
+        // safe: the authoritative re-check still happens under claimLock below.
+        Bounty preview = bounties.get(target.getUniqueId());
+        if (preview != null && preview.amount() + rounded > maxAmount()) {
+            msg(placer, "invalid-amount", Map.of(
+                    "min", EconomyManager.format(minAmount()),
+                    "max", EconomyManager.format(maxAmount())
+            ));
+            return false;
+        }
+
         if (!plugin.getEconomyManager().takeExact(placer, rounded)) {
             msg(placer, "not-enough", Map.of("amount", EconomyManager.format(rounded)));
             return false;
@@ -179,8 +231,10 @@ public final class BountyManager {
                 if (newTotal > maxAmount()) {
                     // Individual contributions are validated above, but stacking onto an
                     // existing bounty was never re-checked against the cap - repeated small
-                    // contributions could push the total arbitrarily above max-amount.
-                    plugin.getEconomyManager().deposit(placer, rounded);
+                    // contributions could push the total arbitrarily above max-amount. Still
+                    // needed as the authoritative check: two placers can land between the
+                    // pre-check above and this block.
+                    plugin.getEconomyManager().refund(placer, rounded);
                     msg(placer, "invalid-amount", Map.of(
                             "min", EconomyManager.format(minAmount()),
                             "max", EconomyManager.format(maxAmount())
@@ -200,10 +254,11 @@ public final class BountyManager {
             rebuildSortedCache();
         }
 
-        Bounty finalResult = result;
-        boolean finalStacked = stacked;
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () ->
-                plugin.getDatabaseManager().upsertBounty(finalResult.toRow()));
+        // Persisted synchronously (like nextBountyId() above) so the DB is never behind the
+        // in-memory map. reload() reads straight from the DB and clears the in-memory map, so a
+        // fire-and-forget async write here could lose this bounty (or resurrect a claimed one)
+        // if a reload landed in the gap before the write completed.
+        plugin.getDatabaseManager().upsertBounty(result.toRow());
 
         if (stacked) {
             msg(placer, "stacked", Map.of(
@@ -268,8 +323,10 @@ public final class BountyManager {
             return;
         }
 
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () ->
-                plugin.getDatabaseManager().deleteBounty(target, claimed.bountyId(), claimed.updatedAt()));
+        // Synchronous for the same reason as the upsert in placeOrStack: an async delete that
+        // hasn't landed yet by the time reload() runs would leave the paid-out bounty row in the
+        // DB, letting reload() resurrect it and pay it out a second time to the next killer.
+        plugin.getDatabaseManager().deleteBounty(target, claimed.bountyId(), claimed.updatedAt());
 
         msg(killer, "claimed", Map.of(
                 "amount", EconomyManager.format(reward),
@@ -354,7 +411,9 @@ public final class BountyManager {
                 }
                 List<Bounty> matches = sortedFiltered(text);
                 if (matches.isEmpty()) {
-                    msg(player, "board-search-empty", Map.of("query", text));
+                    // Raw chat text goes through MiniMessage in the message pipeline - escape it
+                    // so a crafted query can't come back as live markup. See MessageUtil.
+                    msg(player, "board-search-empty", Map.of("query", MessageUtil.escapeUserInput(text)));
                     openBoard(player);
                 } else {
                     openBoard(player, 0, text);
@@ -374,7 +433,7 @@ public final class BountyManager {
                             .orElse(null);
                 }
                 if (online == null) {
-                    msg(player, "not-found-search", Map.of("query", text));
+                    msg(player, "not-found-search", Map.of("query", MessageUtil.escapeUserInput(text)));
                     openPlace(player);
                 } else {
                     player.closeInventory();

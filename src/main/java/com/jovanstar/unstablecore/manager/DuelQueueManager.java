@@ -108,6 +108,11 @@ public final class DuelQueueManager {
             MessageUtil.send(player, plugin.getConfigManager().getDuels().getString("messages.challenger-busy", "&cYou cannot join the queue while in combat."));
             return false;
         }
+        if (plugin.getArenaManager().getPlayerArena(player.getUniqueId()) != null) {
+            MessageUtil.send(player, plugin.getConfigManager().getDuels().getString(
+                    "messages.queue-in-arena", "&cYou cannot join the queue while inside an arena."));
+            return false;
+        }
 
         QueueEntry existing = queue.get(player.getUniqueId());
         if (existing != null && existing.type() == type) {
@@ -185,15 +190,22 @@ public final class DuelQueueManager {
             }
             Player p1 = casualPlayers.remove(0);
             Player p2 = casualPlayers.remove(0);
-            queue.remove(p1.getUniqueId());
-            queue.remove(p2.getUniqueId());
 
             Kit randomKit = plugin.getKitManager().getRandomKit();
             String kitId = randomKit != null ? randomKit.getId() : duelMgr.defaultKitId();
             String kitDisplayName = randomKit != null ? MessageUtil.strip(randomKit.getDisplayName()) : kitId;
 
+            // Start the duel first, and only announce and dequeue once it actually took. The old
+            // order messaged both players "Match found!" and pulled them out of the queue before
+            // createQueueMatch had a chance to fail (arena lost, someone became busy), leaving
+            // them with a match that never happened and no place in the queue to be rematched
+            // from. Leaving them queued on failure means the next tick simply retries them.
+            if (!duelMgr.createQueueMatch(p1, p2, arena.getId(), kitId, false)) {
+                continue;
+            }
+            queue.remove(p1.getUniqueId());
+            queue.remove(p2.getUniqueId());
             notifyMatchFound(p1, p2, QueueType.CASUAL, kitDisplayName);
-            duelMgr.createQueueMatch(p1, p2, arena.getId(), kitId, false);
         }
     }
 
@@ -237,15 +249,19 @@ public final class DuelQueueManager {
                     if (arena == null) {
                         return; // No arena available
                     }
-                    queue.remove(e1.uuid());
-                    queue.remove(e2.uuid());
-
                     Kit randomKit = plugin.getKitManager().getRandomKit();
                     String kitId = randomKit != null ? randomKit.getId() : duelMgr.defaultKitId();
                     String kitDisplayName = randomKit != null ? MessageUtil.strip(randomKit.getDisplayName()) : kitId;
 
+                    // Same ordering fix as the casual queue: announce and dequeue only once the
+                    // duel actually started, so a failed setup leaves both players queued for the
+                    // next tick instead of stranded with a phantom match.
+                    if (!duelMgr.createQueueMatch(p1, p2, arena.getId(), kitId, true)) {
+                        continue;
+                    }
+                    queue.remove(e1.uuid());
+                    queue.remove(e2.uuid());
                     notifyMatchFound(p1, p2, QueueType.RANKED, kitDisplayName);
-                    duelMgr.createQueueMatch(p1, p2, arena.getId(), kitId, true);
                     break;
                 }
             }
@@ -260,6 +276,9 @@ public final class DuelQueueManager {
             return false;
         }
         if (plugin.getCombatListener() != null && plugin.getCombatListener().isCombatTagged(p.getUniqueId())) {
+            return false;
+        }
+        if (plugin.getArenaManager().getPlayerArena(p.getUniqueId()) != null) {
             return false;
         }
         return true;

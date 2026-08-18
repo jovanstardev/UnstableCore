@@ -162,9 +162,13 @@ public final class DuelHistoryGui implements InventoryHolder {
     }
 
     public static void open(UnstableCore plugin, Player viewer, UUID owner, int page) {
-        String ownerName = owner.equals(viewer.getUniqueId()) ? viewer.getName()
-                : Bukkit.getOfflinePlayer(owner).getName();
-        String safeName = ownerName == null ? "Unknown" : ownerName;
+        // Non-blocking: getOfflinePlayer(uuid).getName() falls through to a Mojang request for a
+        // UUID that isn't in the local usercache, and this runs on the main thread from a command.
+        String ownerName = owner.equals(viewer.getUniqueId())
+                ? viewer.getName()
+                : (plugin.getLeaderboardManager() != null
+                        ? plugin.getLeaderboardManager().cachedName(owner) : null);
+        String safeName = (ownerName == null || ownerName.isBlank()) ? "Unknown" : ownerName;
         // loadHistoryPageAsync invokes both callbacks back-to-back on the main thread once the
         // single async round trip completes, so this holder is only ever touched from that thread.
         RowsHolder holder = new RowsHolder();

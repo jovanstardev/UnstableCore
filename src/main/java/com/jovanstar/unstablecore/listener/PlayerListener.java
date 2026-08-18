@@ -2,6 +2,7 @@ package com.jovanstar.unstablecore.listener;
 
 import com.jovanstar.unstablecore.UnstableCore;
 import com.jovanstar.unstablecore.gui.KitsGui;
+import com.jovanstar.unstablecore.manager.KitManager;
 import com.jovanstar.unstablecore.manager.SettingsManager;
 import com.jovanstar.unstablecore.util.MessageUtil;
 import org.bukkit.Bukkit;
@@ -182,6 +183,43 @@ public final class PlayerListener implements Listener {
     }
 
     /**
+     * Re-gears a player on respawn, honouring the normal loadout cooldown.
+     *
+     * <p>This behaviour used to happen as a side effect of the duel respawn hook, which ran for
+     * every respawn on the server and unconditionally cleared the inventory before handing out a
+     * kit. That made dying a strictly better way to obtain a loadout than {@code /loadout} itself
+     * - free, instant, and completely bypassing {@code loadout.cooldown-seconds} - and destroyed
+     * whatever an ordinary player happened to respawn holding. Re-homed here and made explicit:
+     * it only fires when the player really has nothing (so it can never delete items, including
+     * on keepInventory setups), it goes through LoadoutManager#tryGive so the cooldown is both
+     * respected and consumed, and it can be switched off entirely in config.
+     *
+     * <p>Runs at MONITOR/one tick later so DuelListener's own duel-respawn restore - which puts
+     * back a real pre-duel inventory and must win - has already been applied.
+     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onRespawn(org.bukkit.event.player.PlayerRespawnEvent event) {
+        if (!plugin.getConfig().getBoolean("loadout.give-on-respawn", true)) {
+            return;
+        }
+        Player player = event.getPlayer();
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            if (!player.isOnline()) {
+                return;
+            }
+            if (plugin.getDuelManager() != null
+                    && (plugin.getDuelManager().isInDuel(player.getUniqueId())
+                    || plugin.getDuelManager().isInGrace(player.getUniqueId()))) {
+                return;
+            }
+            if (plugin.getLoadoutManager() == null || !KitManager.isInventoryEmpty(player)) {
+                return;
+            }
+            plugin.getLoadoutManager().tryGive(player, false);
+        });
+    }
+
+    /**
      * Catches near-misses of /kit and /kits (typos, missing/extra letter) and opens the kits
      * menu instead of letting the server say "unknown command". Exact matches for "kit"/"kits"
      * are left alone since those already resolve to their real commands, and anything that
@@ -202,7 +240,11 @@ public final class PlayerListener implements Listener {
                 return;
             }
         }
-        if (Bukkit.getPluginCommand(label) != null) {
+        // getPluginCommand only resolves commands declared in a plugin.yml, so a label registered
+        // directly into the command map (Brigadier/Paper command API, vanilla commands, aliases
+        // registered at runtime) was invisible here and would be silently swallowed and turned
+        // into a kits menu. Ask the real command map instead, which knows about all of them.
+        if (Bukkit.getCommandMap().getCommand(label) != null) {
             return;
         }
         if (levenshtein(label, "kit") <= 1 || levenshtein(label, "kits") <= 1) {

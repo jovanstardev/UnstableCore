@@ -135,6 +135,18 @@ public final class LoadoutManager {
             return false;
         }
         UUID uuid = player.getUniqueId();
+        // Duels hand both players an identical, plugin-chosen kit; /loadout re-applies the
+        // player's own selected kit straight over the top of it, so without this gate a duelist
+        // could simply out-gear their opponent mid-fight for the price of one loadout cooldown.
+        // Enforced here rather than only in duels.yml's restricted-commands list so it also
+        // covers command aliases and every internal caller (e.g. the /kits auto-equip path).
+        if (plugin.getDuelManager() != null && plugin.getDuelManager().isInCombatDuel(uuid)) {
+            if (sendMessages) {
+                MessageUtil.send(player, plugin.getConfigManager().getDuels()
+                        .getString("messages.loadout-blocked", "&cYou can't change your kit during a duel."));
+            }
+            return false;
+        }
         long remain = remainingMillis(uuid);
         if (remain > 0) {
             if (sendMessages) {
@@ -177,6 +189,26 @@ public final class LoadoutManager {
             MessageUtil.sendConfig(player, "loadout-given", Map.of());
         }
         return true;
+    }
+
+    /**
+     * Starts the normal loadout cooldown for a player who was just handed a full kit through some
+     * path other than {@link #tryGive} (currently only the arena "empty inventory" safety net).
+     * That path checked the cooldown but never consumed it, so re-gearing was free and unlimited:
+     * drop everything, click the arena join button again, receive another complete kit, repeat.
+     * No-op for players who legitimately bypass the cooldown, matching tryGive's behaviour.
+     */
+    public void markUsed(Player player) {
+        if (player == null || bypassesCooldown(player)) {
+            return;
+        }
+        UUID uuid = player.getUniqueId();
+        long now = System.currentTimeMillis();
+        lastUse.put(uuid, now);
+        DatabaseManager db = plugin.getDatabaseManager();
+        if (db != null && db.isConnected()) {
+            Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> db.upsertLoadoutCooldown(uuid, now));
+        }
     }
 
     private void pruneExpired() {

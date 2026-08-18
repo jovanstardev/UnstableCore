@@ -131,41 +131,56 @@ public final class GuiListener implements Listener {
             return;
         }
 
-        if (topHolder instanceof ArenaGui gui) {
-            gui.handleClick(player, event.getSlot());
-        } else if (topHolder instanceof VoteGui gui) {
-            gui.handleClick(player, event.getSlot());
-        } else if (topHolder instanceof SwordGui gui) {
-            gui.handleClick(player, event.getSlot());
-        } else if (topHolder instanceof ShopGui gui) {
-            gui.handleClick(player, event.getSlot());
-        } else if (topHolder instanceof SettingsGui gui) {
-            gui.handleClick(player, event.getSlot());
-        } else if (topHolder instanceof RewardsGui gui) {
-            gui.handleClick(player, event.getSlot());
-        } else if (topHolder instanceof TagsGui gui) {
-            gui.handleClick(player, event.getSlot());
-        } else if (topHolder instanceof BountyBoardGui gui) {
-            gui.handleClick(player, event.getSlot());
-        } else if (topHolder instanceof PlaceBountyGui gui) {
-            gui.handleClick(player, event.getSlot());
-        } else if (topHolder instanceof LeaderboardMenuGui gui) {
-            gui.handleClick(player, event.getSlot());
-        } else if (topHolder instanceof LeaderboardCategoryGui gui) {
-            gui.handleClick(player, event.getSlot());
-        } else if (topHolder instanceof DuelMapGui gui) {
-            gui.handleClick(player, event.getSlot());
-        } else if (topHolder instanceof DuelHistoryGui gui) {
-            gui.handleClick(player, event.getSlot());
-        } else if (topHolder instanceof DuelQueueGui gui) {
-            gui.handleClick(player, event.getSlot());
-        } else if (topHolder instanceof KitsGui gui) {
-            gui.handleClick(player, event.getSlot(), event.getClick());
-            syncCursor(player);
-        } else if (topHolder instanceof KitPreviewGui gui) {
-            gui.handleClick(player, event.getSlot(), event.getClick());
-            syncCursor(player);
-        }
+        // Almost every handler below reacts by opening another inventory (next page, next step,
+        // reopen-after-purchase). Doing that from inside InventoryClickEvent - while the server is
+        // still mid-way through processing the click on the container it is about to replace -
+        // leaves the client's view and the server's container desynced, which shows up as ghost
+        // items and, on the item-bearing screens, as items that appear to survive the swap.
+        // Running the handler on the next tick lets the click finish first; the event is already
+        // cancelled above, and the per-player click cooldown still throttles double-clicks, so
+        // nothing here becomes double-triggerable by deferring it.
+        final int slot = event.getSlot();
+        final org.bukkit.event.inventory.ClickType click = event.getClick();
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            if (!player.isOnline() || player.getOpenInventory().getTopInventory().getHolder() != topHolder) {
+                return;
+            }
+            if (topHolder instanceof ArenaGui gui) {
+                gui.handleClick(player, slot);
+            } else if (topHolder instanceof VoteGui gui) {
+                gui.handleClick(player, slot);
+            } else if (topHolder instanceof SwordGui gui) {
+                gui.handleClick(player, slot);
+            } else if (topHolder instanceof ShopGui gui) {
+                gui.handleClick(player, slot);
+            } else if (topHolder instanceof SettingsGui gui) {
+                gui.handleClick(player, slot);
+            } else if (topHolder instanceof RewardsGui gui) {
+                gui.handleClick(player, slot);
+            } else if (topHolder instanceof TagsGui gui) {
+                gui.handleClick(player, slot);
+            } else if (topHolder instanceof BountyBoardGui gui) {
+                gui.handleClick(player, slot);
+            } else if (topHolder instanceof PlaceBountyGui gui) {
+                gui.handleClick(player, slot);
+            } else if (topHolder instanceof LeaderboardMenuGui gui) {
+                gui.handleClick(player, slot);
+            } else if (topHolder instanceof LeaderboardCategoryGui gui) {
+                gui.handleClick(player, slot);
+            } else if (topHolder instanceof DuelMapGui gui) {
+                gui.handleClick(player, slot);
+            } else if (topHolder instanceof DuelHistoryGui gui) {
+                gui.handleClick(player, slot);
+            } else if (topHolder instanceof DuelQueueGui gui) {
+                gui.handleClick(player, slot);
+            } else if (topHolder instanceof KitsGui gui) {
+                gui.handleClick(player, slot, click);
+                syncCursor(player);
+            } else if (topHolder instanceof KitPreviewGui gui) {
+                gui.handleClick(player, slot, click);
+                syncCursor(player);
+            }
+        });
     }
 
     private static void syncCursor(Player player) {
@@ -242,6 +257,9 @@ public final class GuiListener implements Listener {
             }
             if (holder instanceof KitEditGui editGui) {
                 editGui.onClose(player);
+            }
+            if (holder instanceof KitAdminEditGui adminEditGui) {
+                adminEditGui.onClose(player);
             }
             if (holder instanceof KitsGui
                     || holder instanceof KitPreviewGui

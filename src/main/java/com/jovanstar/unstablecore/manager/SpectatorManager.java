@@ -70,6 +70,33 @@ public final class SpectatorManager {
             msg(spectator, "spectate-self", Map.of());
             return false;
         }
+        // A participant in their own live duel can't sidestep into spectating someone else's -
+        // that would GameMode.SPECTATOR/teleport them out of their own arena (dodging damage,
+        // stranding their opponent) while playerDuel/state still says they're mid-fight. Contrast
+        // with DuelManager.runSetupSequence, which already forces the opposite direction (pulling
+        // a spectator out before letting them start a duel of their own).
+        if (plugin.getDuelManager().isInActiveDuel(spectator.getUniqueId())) {
+            msg(spectator, "spectate-busy", Map.of());
+            return false;
+        }
+        // A player mid-fight in the open world/FFA arena (combat-tagged but not in a duel of
+        // their own) could otherwise type /spec on any active duelist to be instantly set to
+        // GameMode.SPECTATOR and teleported away - dodging their fight for free with immunity
+        // to boot, worse than a plain teleport escape.
+        if (plugin.getCombatListener() != null && plugin.getCombatListener().isCombatTagged(spectator.getUniqueId())) {
+            msg(spectator, "spectate-busy", Map.of());
+            return false;
+        }
+        // The combat-tag check above only catches someone who has recently traded hits. A player
+        // standing inside an FFA arena who hasn't been touched yet is still committed to that
+        // arena, and /spec would teleport them out of it into invulnerable spectator mode - the
+        // same free exit the tag check blocks, just taken a moment earlier. Duel requests and the
+        // duel queue already refuse arena residents for exactly this reason; match that.
+        if (plugin.getArenaManager() != null
+                && plugin.getArenaManager().getPlayerArena(spectator.getUniqueId()) != null) {
+            msg(spectator, "spectate-busy", Map.of());
+            return false;
+        }
         Duel duel = plugin.getDuelManager().getDuelForPlayer(target.getUniqueId());
         if (duel == null || duel.getState() != DuelState.ACTIVE) {
             msg(spectator, "spectate-not-dueling", Map.of("target", target.getName()));

@@ -197,10 +197,16 @@ public final class DuelCommand implements CommandExecutor, TabCompleter {
     @Override
     public @Nullable List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command,
                                                 @NotNull String alias, @NotNull String[] args) {
+        // Bukkit's getOnlinePlayers() returns vanished players regardless of visibility - without
+        // filtering, a regular player could tab-complete their way to the real online name of a
+        // staff member hidden from them (see StatsCommand.onTabComplete for the same fix).
+        Player viewer = sender instanceof Player pl ? pl : null;
         if (args.length == 1) {
             List<String> options = new ArrayList<>(SUBCOMMANDS);
             for (Player p : Bukkit.getOnlinePlayers()) {
-                options.add(p.getName());
+                if ((viewer == null || viewer.canSee(p)) && !p.hasMetadata("vanished")) {
+                    options.add(p.getName());
+                }
             }
             return filter(options, args[0]);
         }
@@ -210,7 +216,9 @@ public final class DuelCommand implements CommandExecutor, TabCompleter {
         if (args.length == 2 && (args[0].equalsIgnoreCase("elo") || args[0].equalsIgnoreCase("stats"))) {
             List<String> players = new ArrayList<>();
             for (Player p : Bukkit.getOnlinePlayers()) {
-                players.add(p.getName());
+                if ((viewer == null || viewer.canSee(p)) && !p.hasMetadata("vanished")) {
+                    players.add(p.getName());
+                }
             }
             return filter(players, args[1]);
         }

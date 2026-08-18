@@ -22,7 +22,10 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class LeaderboardManager {
 
-    public record SearchSession(LeaderboardCategory category, int returnPage) {
+    public record SearchSession(LeaderboardCategory category, int returnPage, long expiresAt) {
+        boolean isExpired() {
+            return System.currentTimeMillis() > expiresAt;
+        }
     }
 
     private record Cache(List<LeaderboardEntry> entries, long createdAtMs) {
@@ -36,6 +39,13 @@ public final class LeaderboardManager {
     private final Map<UUID, Long> lastRefreshMs = new ConcurrentHashMap<>();
     private final Set<UUID> switchingGui = ConcurrentHashMap.newKeySet();
     private final Map<UUID, String> nameCache = new ConcurrentHashMap<>();
+    /**
+     * Lower-cased name -> uuid reverse view of {@link #nameCache}. findUuidByName is on the
+     * command path for /stats, /uc economy and /dueladmin, all of which are reachable often
+     * enough (and, for /stats, by any player) that a linear scan over every player the server has
+     * ever seen is not an acceptable per-call cost.
+     */
+    private final Map<String, UUID> nameToUuid = new ConcurrentHashMap<>();
     // Raw DB rows backing the COINS/PLAYTIME categories, refreshed off-thread on a timer (see
     // refreshDbRowsAsync). compute()/list() only ever read this cache - they never touch the
     // database directly - so a leaderboard-cache-expiry can no longer block the main thread on a
@@ -77,30 +87,34 @@ public final class LeaderboardManager {
 
     public void reloadNameCache() {
         nameCache.clear();
+        nameToUuid.clear();
         DatabaseManager db = plugin.getDatabaseManager();
         if (db == null || !db.isConnected()) {
             return;
         }
-        nameCache.putAll(db.loadAllProfileNames());
+        for (Map.Entry<UUID, String> e : db.loadAllProfileNames().entrySet()) {
+            rememberName(e.getKey(), e.getValue());
+        }
     }
 
     public void rememberName(UUID uuid, String name) {
         if (uuid == null || name == null || name.isBlank()) {
             return;
         }
-        nameCache.put(uuid, name);
+        String previous = nameCache.put(uuid, name);
+        if (previous != null && !previous.equalsIgnoreCase(name)) {
+            // Renamed account: drop the stale reverse entry, but only if it still points at this
+            // uuid - if someone else has since taken the old name, theirs must win.
+            nameToUuid.remove(previous.toLowerCase(Locale.ROOT), uuid);
+        }
+        nameToUuid.put(name.toLowerCase(Locale.ROOT), uuid);
     }
 
     public UUID findUuidByName(String name) {
         if (name == null || name.isBlank()) {
             return null;
         }
-        for (Map.Entry<UUID, String> e : nameCache.entrySet()) {
-            if (e.getValue() != null && e.getValue().equalsIgnoreCase(name)) {
-                return e.getKey();
-            }
-        }
-        return null;
+        return nameToUuid.get(name.toLowerCase(Locale.ROOT));
     }
 
     public void syncProfile(Player player) {
@@ -160,8 +174,28 @@ public final class LeaderboardManager {
         }
         long period = Math.max(20L * 30L, Math.min(20L * 120L, cacheTtlMs() / 50L));
         syncTaskId = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            // One batched write for the whole online set instead of one async task (and one
+            // pooled connection) per player - see DatabaseManager.upsertProfiles. The balance and
+            // playtime reads have to stay on this thread (Vault provider + player statistics are
+            // main-thread APIs), so only the collection happens here.
+            DatabaseManager db = plugin.getDatabaseManager();
+            boolean economyReady = plugin.getEconomyManager() != null && plugin.getEconomyManager().isReady();
+            List<DatabaseManager.ProfileRow> batch = new ArrayList<>();
             for (Player player : Bukkit.getOnlinePlayers()) {
-                syncProfile(player);
+                rememberName(player.getUniqueId(), player.getName());
+                if (db == null || !db.isConnected()) {
+                    continue;
+                }
+                batch.add(new DatabaseManager.ProfileRow(
+                        player.getUniqueId(),
+                        player.getName(),
+                        economyReady ? plugin.getEconomyManager().getBalance(player) : 0D,
+                        plugin.getPlaytimeManager() != null
+                                ? plugin.getPlaytimeManager().getPlaytimeTicks(player) : 0L
+                ));
+            }
+            if (db != null && db.isConnected() && !batch.isEmpty()) {
+                Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> db.upsertProfiles(batch));
             }
             refreshDbRowsAsync();
         }, period, period).getTaskId();
@@ -249,13 +283,35 @@ public final class LeaderboardManager {
         }
     }
 
+    /**
+     * How long a leaderboard search prompt keeps capturing chat. Bounded for the same reason as
+     * the duel and bounty prompts: a search that is re-armed on too-short input would otherwise
+     * swallow the player's chat indefinitely.
+     */
+    private long promptTimeoutMs() {
+        return Math.max(5_000L, plugin.getConfig().getLong("chat-prompt-timeout-seconds", 60) * 1000L);
+    }
+
+    /** Reads the pending search session, discarding it first if it has expired. */
     public SearchSession peekSearch(UUID uuid) {
-        return searchSessions.get(uuid);
+        if (uuid == null) {
+            return null;
+        }
+        SearchSession session = searchSessions.get(uuid);
+        if (session == null) {
+            return null;
+        }
+        if (session.isExpired()) {
+            searchSessions.remove(uuid, session);
+            return null;
+        }
+        return session;
     }
 
     public void beginSearch(Player player, LeaderboardCategory category, int page) {
         nextOpenGeneration(player.getUniqueId());
-        searchSessions.put(player.getUniqueId(), new SearchSession(category, page));
+        searchSessions.put(player.getUniqueId(),
+                new SearchSession(category, page, System.currentTimeMillis() + promptTimeoutMs()));
         msg(player, "search-prompt", Map.of());
     }
 
@@ -453,6 +509,18 @@ public final class LeaderboardManager {
         return List.copyOf(ranked);
     }
 
+    /**
+     * Non-blocking uuid -> name lookup: online player, then the profile-name cache, then nothing.
+     *
+     * <p>Never calls {@code Bukkit.getOfflinePlayer(uuid).getName()}. For a UUID that isn't in the
+     * server's local usercache that call falls through to a blocking Mojang HTTP request, and this
+     * method runs once per leaderboard entry - up to {@code max-entries} (500 by default) of them,
+     * on the main thread, every time a category's cache expires. One cold leaderboard open could
+     * therefore stall the server for as long as 500 sequential web requests take.
+     *
+     * <p>Unknown names are resolved in the background instead (see {@link #resolveNameAsync}) and
+     * simply appear on the next refresh; {@code rank()} already drops entries with no name.
+     */
     private String resolveName(UUID uuid) {
         Player online = Bukkit.getPlayer(uuid);
         if (online != null) {
@@ -463,24 +531,58 @@ public final class LeaderboardManager {
         if (cached != null && !cached.isBlank()) {
             return cached;
         }
-        org.bukkit.OfflinePlayer offline = Bukkit.getOfflinePlayer(uuid);
-        String name = offline.getName();
-        if (name != null && !name.isBlank()) {
+        resolveNameAsync(uuid);
+        return null;
+    }
+
+    /** UUIDs currently being resolved off-thread, or already known to be unresolvable, so a
+     *  repeatedly-refreshed leaderboard doesn't re-queue the same lookups every cycle. */
+    private final Set<UUID> nameLookupsDone = ConcurrentHashMap.newKeySet();
+
+    private void resolveNameAsync(UUID uuid) {
+        if (uuid == null || !nameLookupsDone.add(uuid)) {
+            return;
+        }
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            String name = Bukkit.getOfflinePlayer(uuid).getName();
+            if (name == null || name.isBlank()) {
+                return;
+            }
             rememberName(uuid, name);
             DatabaseManager db = plugin.getDatabaseManager();
             if (db != null && db.isConnected()) {
-                Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> db.upsertProfileName(uuid, name));
+                db.upsertProfileName(uuid, name);
             }
-            return name;
+        });
+    }
+
+    /**
+     * Best-effort, never-blocking name for a UUID - for callers that just need something to show.
+     * Returns null when nothing is cached, leaving the caller to pick its own placeholder.
+     */
+    public String cachedName(UUID uuid) {
+        if (uuid == null) {
+            return null;
         }
+        Player online = Bukkit.getPlayer(uuid);
+        if (online != null) {
+            rememberName(uuid, online.getName());
+            return online.getName();
+        }
+        String cached = nameCache.get(uuid);
+        if (cached != null && !cached.isBlank()) {
+            return cached;
+        }
+        resolveNameAsync(uuid);
         return null;
     }
 
     public boolean handleSearchChat(Player player, String raw) {
-        SearchSession session = searchSessions.remove(player.getUniqueId());
+        SearchSession session = peekSearch(player.getUniqueId());
         if (session == null) {
             return false;
         }
+        searchSessions.remove(player.getUniqueId());
         String text = raw == null ? "" : raw.trim();
         if (text.equalsIgnoreCase("cancel") || text.equalsIgnoreCase("c")) {
             msg(player, "search-cancelled", Map.of());
@@ -489,7 +591,9 @@ public final class LeaderboardManager {
         }
         if (text.length() < 2) {
             msg(player, "search-too-short", Map.of());
-            searchSessions.put(player.getUniqueId(), session);
+            // Re-arm with a fresh window rather than carrying the original deadline forward.
+            searchSessions.put(player.getUniqueId(), new SearchSession(
+                    session.category(), session.returnPage(), System.currentTimeMillis() + promptTimeoutMs()));
             return true;
         }
         String needle = text.toLowerCase(Locale.ROOT);

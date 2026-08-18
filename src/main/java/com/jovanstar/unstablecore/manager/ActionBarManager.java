@@ -15,7 +15,15 @@ public final class ActionBarManager {
     private final UnstableCore plugin;
     private BukkitTask task;
     private final Map<UUID, CachedBalance> balanceCache = new ConcurrentHashMap<>();
-    private static final long BALANCE_TTL_MS = 1500L;
+    /**
+     * A 1500ms TTL against a 1000ms tick meant roughly every other tick fell through to a live
+     * Vault lookup for every online player - and Vault's provider is frequently SQL-backed, so
+     * that is a per-player database round trip on the main thread, several hundred times a second
+     * at a few hundred players. Any deposit/withdrawal already calls invalidate(), so a longer
+     * TTL never shows a stale figure after the player's own balance changes; it only delays
+     * picking up out-of-band edits made by other plugins.
+     */
+    private static final long BALANCE_TTL_MS = 15_000L;
 
     /** uuid → timestamp (ms) until which the normal action-bar is suppressed. */
     private final Map<UUID, Long> suppressUntil = new ConcurrentHashMap<>();

@@ -111,10 +111,26 @@ public final class HeldShulkerListener implements Listener {
         ItemStack[] contents = box.getInventory().getContents();
         inventory.setContents(cloneContents(contents));
 
-        Session session = new Session(hand, item.getType(), inventory);
+        Session session = new Session(hand, player.getInventory().getHeldItemSlot(), item.getType(), inventory);
         sessions.put(player.getUniqueId(), session);
         holder.session = session;
         player.openInventory(inventory);
+    }
+
+    /**
+     * A vanilla client cannot scroll the hotbar while a container screen is open, but a modified
+     * one can still send the held-slot-change packet. Without this, {@link #saveToItem} would
+     * later resolve "the item in hand" to a <em>different</em> shulker box that happens to share
+     * the session's type and write this session's contents into it - duplicating everything the
+     * session held while the original box keeps its own copy. Refusing the slot change (rather
+     * than trying to reconcile it) keeps the session bound to exactly the item it was opened on.
+     */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onHeldSlotChange(org.bukkit.event.player.PlayerItemHeldEvent event) {
+        Session session = sessions.get(event.getPlayer().getUniqueId());
+        if (session != null && session.hand == EquipmentSlot.HAND) {
+            event.setCancelled(true);
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -266,6 +282,14 @@ public final class HeldShulkerListener implements Listener {
     }
 
     private void saveToItem(Player player, Session session) {
+        // The session is bound to one concrete slot, not just to "whatever is in hand now" - see
+        // onHeldSlotChange. If the player somehow ended up on a different hotbar slot anyway
+        // (another plugin, a race with a kit apply), writing into whatever sits there would
+        // duplicate this session's contents into an unrelated box, so bail out instead.
+        if (session.hand == EquipmentSlot.HAND
+                && player.getInventory().getHeldItemSlot() != session.heldSlot) {
+            return;
+        }
         ItemStack item = itemIn(player, session.hand);
         if (!isShulker(item) || item.getType() != session.type || item.getAmount() != 1) {
             return;
@@ -317,11 +341,14 @@ public final class HeldShulkerListener implements Listener {
 
     private static final class Session {
         private final EquipmentSlot hand;
+        /** Hotbar index the box was opened from; meaningless (and unused) for OFF_HAND. */
+        private final int heldSlot;
         private final Material type;
         private final Inventory inventory;
 
-        private Session(EquipmentSlot hand, Material type, Inventory inventory) {
+        private Session(EquipmentSlot hand, int heldSlot, Material type, Inventory inventory) {
             this.hand = hand;
+            this.heldSlot = heldSlot;
             this.type = type;
             this.inventory = inventory;
         }

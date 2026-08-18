@@ -82,15 +82,51 @@ public final class RewardsManager {
         return PlayerRewards.from(db.loadRewards(uuid));
     }
 
+    /**
+     * Called from PlayerQuitEvent. The write goes off-thread (it used to be a synchronous JDBC
+     * round trip on the main thread for every single disconnect - fine one at a time, a stall
+     * proportional to player count during a mass disconnect or restart), but the cache entry is
+     * kept until that write lands: dropping it first would let a fast reconnect re-read the
+     * pre-save row from the database and re-claim an already-claimed reward.
+     */
     public void unload(UUID uuid) {
+        PlayerRewards data;
         synchronized (lockFor(uuid)) {
-            PlayerRewards data = cache.remove(uuid);
-            if (data != null) {
-                save(uuid, data);
-            }
+            data = cache.get(uuid);
             claiming.remove(uuid);
         }
-        locks.remove(uuid);
+        if (data == null) {
+            cache.remove(uuid);
+            locks.remove(uuid);
+            return;
+        }
+        DatabaseManager.RewardsRow snapshot;
+        synchronized (lockFor(uuid)) {
+            snapshot = data.toRow();
+        }
+        if (!plugin.isEnabled()) {
+            // Mid-disable (e.g. a plugin reload kicking players): the scheduler refuses tasks from
+            // a disabled plugin, so deferring here would throw and drop the write entirely. Take
+            // the synchronous path - correctness beats latency on a path that is shutting down.
+            save(uuid, data);
+            cache.remove(uuid);
+            locks.remove(uuid);
+            return;
+        }
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            DatabaseManager db = plugin.getDatabaseManager();
+            if (db != null && db.isConnected()) {
+                db.saveRewards(uuid, snapshot);
+            }
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                // Only evict if they are still gone - a reconnect in the meantime must keep its
+                // (now authoritative) in-memory state rather than fall back to a DB re-read.
+                if (Bukkit.getPlayer(uuid) == null) {
+                    cache.remove(uuid);
+                    locks.remove(uuid);
+                }
+            });
+        });
     }
 
     public void save(UUID uuid, PlayerRewards data) {

@@ -340,7 +340,15 @@ public final class UnstableCoreCommand implements CommandExecutor, TabCompleter 
         String action = args[1].toLowerCase(Locale.ROOT);
 
         if (action.equals("reset")) {
-            OfflinePlayer target = Bukkit.getOfflinePlayer(args[2]);
+            // Resolved via resolvePlayer (known UUID: online, leaderboard cache, or a real prior
+            // join) rather than Bukkit.getOfflinePlayer(String), which fabricates/looks up a UUID
+            // for any name - including one a griefer just renamed into after the real target
+            // renamed away, silently redirecting the command to the wrong account.
+            OfflinePlayer target = plugin.getStatsManager().resolvePlayer(args[2]);
+            if (target == null) {
+                MessageUtil.sendConfig(sender, "player-not-found", Map.of());
+                return;
+            }
             plugin.getEconomyManager().reset(target);
             MessageUtil.sendConfig(sender, "economy-reset", Map.of("player", args[2]));
             return;
@@ -358,7 +366,11 @@ public final class UnstableCoreCommand implements CommandExecutor, TabCompleter 
             MessageUtil.send(sender, "&cInvalid amount.");
             return;
         }
-        OfflinePlayer target = Bukkit.getOfflinePlayer(args[3]);
+        OfflinePlayer target = plugin.getStatsManager().resolvePlayer(args[3]);
+        if (target == null) {
+            MessageUtil.sendConfig(sender, "player-not-found", Map.of());
+            return;
+        }
         String amountStr = EconomyManager.format(amount);
 
         switch (action) {
@@ -466,21 +478,15 @@ public final class UnstableCoreCommand implements CommandExecutor, TabCompleter 
             MessageUtil.send(sender, "&e/uc loadout reset <player> &7- clear loadout cooldown");
             return;
         }
-        Player online = Bukkit.getPlayerExact(args[2]);
-        java.util.UUID uuid;
-        String name;
-        if (online != null) {
-            uuid = online.getUniqueId();
-            name = online.getName();
-        } else {
-            OfflinePlayer off = Bukkit.getOfflinePlayer(args[2]);
-            if (!off.hasPlayedBefore() && off.getName() == null) {
-                MessageUtil.sendConfig(sender, "player-not-found", Map.of());
-                return;
-            }
-            uuid = off.getUniqueId();
-            name = off.getName() != null ? off.getName() : args[2];
+        // Resolved via resolvePlayer rather than Bukkit.getOfflinePlayer(String) - see the same
+        // fix in handleEconomy for why a raw name lookup can land on the wrong UUID.
+        OfflinePlayer off = plugin.getStatsManager().resolvePlayer(args[2]);
+        if (off == null) {
+            MessageUtil.sendConfig(sender, "player-not-found", Map.of());
+            return;
         }
+        java.util.UUID uuid = off.getUniqueId();
+        String name = off.getName() != null ? off.getName() : args[2];
         plugin.getLoadoutManager().resetCooldown(uuid);
         MessageUtil.sendConfig(sender, "loadout-cooldown-reset", Map.of("player", name));
     }

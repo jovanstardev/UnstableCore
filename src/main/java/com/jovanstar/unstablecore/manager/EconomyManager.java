@@ -43,11 +43,27 @@ public final class EconomyManager {
     }
 
     public boolean deposit(OfflinePlayer player, double amount) {
+        return deposit(player, amount, true);
+    }
+
+    /**
+     * Give-back variant that does not touch the lifetime "coins earned" statistic.
+     *
+     * <p>Refunds are not income: counting them let a player inflate their earned-coins stat for
+     * free by repeatedly triggering a take-then-refund path (e.g. offering a bounty stack that
+     * exceeds the configured cap, or accepting and immediately cancelling a wagered duel) - the
+     * balance nets out to zero every time while the statistic only ever climbs.
+     */
+    public boolean refund(OfflinePlayer player, double amount) {
+        return deposit(player, amount, false);
+    }
+
+    public boolean deposit(OfflinePlayer player, double amount, boolean countAsEarned) {
         if (!isReady() || amount <= 0 || !Double.isFinite(amount)) {
             return false;
         }
         boolean ok = economy.depositPlayer(player, amount).transactionSuccess();
-        if (ok && player.getUniqueId() != null && plugin.getStatsManager() != null) {
+        if (ok && countAsEarned && player.getUniqueId() != null && plugin.getStatsManager() != null) {
             plugin.getStatsManager().addCoinsEarned(player.getUniqueId(), amount);
         }
         if (ok && plugin.getLeaderboardManager() != null && player.getUniqueId() != null) {

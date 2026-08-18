@@ -77,6 +77,24 @@ public final class MessageUtil {
         return result;
     }
 
+    /**
+     * Neutralises player-typed text before it is substituted into a message template.
+     *
+     * <p>{@link #parse} runs MiniMessage over the finished string, so raw chat echoed back through
+     * a {@code {placeholder}} is parsed as markup: a search query like
+     * {@code <click:run_command:'/...'>} would come back as a live clickable element, and colour
+     * or {@code <reset>} tags let a player forge message formatting. Stripping the tag-opening
+     * character (and the legacy section sign) leaves the text readable while making it inert.
+     * Only use this for values that originate from a player - config-authored values are trusted
+     * and are supposed to be able to use formatting.
+     */
+    public static String escapeUserInput(String input) {
+        if (input == null || input.isEmpty()) {
+            return "";
+        }
+        return input.replace('§', ' ').replace('<', ' ');
+    }
+
     public static void send(CommandSender sender, String message) {
         if (message == null || message.isEmpty()) {
             return;
