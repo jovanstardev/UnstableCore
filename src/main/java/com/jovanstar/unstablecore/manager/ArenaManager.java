@@ -870,21 +870,28 @@ public final class ArenaManager {
         return true;
     }
 
-    /** Safety net: a player entering an arena with a completely empty inventory gets a random unlocked kit. */
+    /**
+     * Safety net: a player entering an arena with a completely empty inventory gets a random
+     * unlocked kit. Must respect *and consume* the /loadout cooldown - otherwise emptying your
+     * inventory and re-entering the arena re-gears you for free, and repeating it re-rolls the
+     * random pick until a premium kit comes up, defeating the whole point of that cooldown.
+     */
     private void giveRandomKitIfEmpty(Player player) {
         KitManager kitManager = plugin.getKitManager();
         if (kitManager == null || !KitManager.isInventoryEmpty(player)) {
             return;
         }
+        LoadoutManager loadoutManager = plugin.getLoadoutManager();
+        if (loadoutManager != null && loadoutManager.remainingMillis(player.getUniqueId()) > 0) {
+            return;
+        }
         Kit kit = kitManager.giveRandomUnlockedKit(player);
         if (kit != null) {
-            // Consuming the cooldown is what actually makes the check above mean anything. It used
-            // to only be *read*, never started, so the "safety net" was really an unlimited free
-            // kit dispenser: drop everything, click the arena join button, get a complete kit,
-            // repeat as fast as you can click - which both trivialises the 30-minute cooldown and
-            // mints unbounded quantities of paid-kit gear that can be handed to other players.
-            if (plugin.getLoadoutManager() != null) {
-                plugin.getLoadoutManager().markUsed(player);
+            // Consuming the cooldown is what makes the check above mean anything: read-only, the
+            // "safety net" is an unlimited free kit dispenser - drop everything, click join, get
+            // a complete kit, repeat - minting unbounded paid-kit gear for other players.
+            if (loadoutManager != null) {
+                loadoutManager.markUsed(player);
             }
             MessageUtil.sendConfig(player, "arena-auto-kit", Map.of("kit", kit.getDisplayName()));
         }
