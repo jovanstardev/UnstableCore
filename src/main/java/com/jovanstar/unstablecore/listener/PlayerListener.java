@@ -4,6 +4,7 @@ import com.jovanstar.unstablecore.UnstableCore;
 import com.jovanstar.unstablecore.gui.KitsGui;
 import com.jovanstar.unstablecore.manager.KitManager;
 import com.jovanstar.unstablecore.manager.SettingsManager;
+import com.jovanstar.unstablecore.model.Kit;
 import com.jovanstar.unstablecore.util.MessageUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -183,12 +184,21 @@ public final class PlayerListener implements Listener {
     }
 
     /**
-     * Re-gears a player on respawn, honouring the normal loadout cooldown.
+     * Re-gears a player on respawn. What they get is set by {@code loadout.respawn-kit}:
      *
-     * <p>Deliberately explicit rather than a side effect of the duel respawn hook: it fires only
-     * when the player has nothing, so it can never delete items (including on keepInventory
-     * setups), it routes through {@code LoadoutManager#tryGive} so the cooldown is respected and
-     * consumed, and {@code loadout.give-on-respawn} switches it off entirely.
+     * <ul>
+     *   <li>{@code default} - the free starter kit ({@code kits.default-kit}). Ignores the loadout
+     *       cooldown and does not consume it, because this kit is free to claim anyway.</li>
+     *   <li>{@code none} - nothing; the player respawns empty.</li>
+     *   <li>{@code selected} - the player's own selected kit through
+     *       {@link com.jovanstar.unstablecore.manager.LoadoutManager#tryGive}, cooldown-gated.</li>
+     * </ul>
+     *
+     * <p>{@code selected} is not the default because a premium kit is exactly what the cooldown
+     * exists to ration: once it lapses, dying hands the kit straight back, which makes death a
+     * cheaper way to re-gear than waiting. Only ever fires on a completely empty inventory, so it
+     * can never delete items (including on keepInventory setups), and
+     * {@code loadout.give-on-respawn} still switches the whole thing off.
      *
      * <p>Runs at MONITOR, one tick later, so DuelListener's duel-respawn restore - which returns a
      * real pre-duel inventory and must win - has already been applied.
@@ -196,6 +206,11 @@ public final class PlayerListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onRespawn(org.bukkit.event.player.PlayerRespawnEvent event) {
         if (!plugin.getConfig().getBoolean("loadout.give-on-respawn", true)) {
+            return;
+        }
+        String configured = plugin.getConfig().getString("loadout.respawn-kit", "default");
+        final String mode = configured == null ? "default" : configured.trim().toLowerCase(Locale.ROOT);
+        if (mode.equals("none")) {
             return;
         }
         Player player = event.getPlayer();
@@ -208,10 +223,20 @@ public final class PlayerListener implements Listener {
                     || plugin.getDuelManager().isInGrace(player.getUniqueId()))) {
                 return;
             }
-            if (plugin.getLoadoutManager() == null || !KitManager.isInventoryEmpty(player)) {
+            if (!KitManager.isInventoryEmpty(player)) {
                 return;
             }
-            plugin.getLoadoutManager().tryGive(player, false);
+            if (mode.equals("selected")) {
+                if (plugin.getLoadoutManager() != null) {
+                    plugin.getLoadoutManager().tryGive(player, false);
+                }
+                return;
+            }
+            KitManager kits = plugin.getKitManager();
+            Kit starter = kits == null ? null : kits.getDefaultKit();
+            if (starter != null) {
+                kits.applyKit(player, starter);
+            }
         });
     }
 

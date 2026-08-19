@@ -393,10 +393,17 @@ sword:
 loadout:
   cooldown-seconds: 1800
   # Re-gear a player on respawn when they have a completely empty inventory.
-  # Always respects (and consumes) cooldown-seconds above, so it can't be used to skip it,
-  # and never touches a non-empty inventory. Set to false for a stricter "one kit per
-  # cooldown, dying costs you it" ruleset.
+  # Never touches a non-empty inventory. Set to false to disable respawn re-gearing entirely.
   give-on-respawn: true
+  # What that respawn re-gear hands out:
+  #   default  - the free starter kit (kits.default-kit below, normally "law"). Ignores and does
+  #              not consume cooldown-seconds, because that kit is free to claim anyway.
+  #   none     - nothing; players respawn empty and must claim a kit themselves.
+  #   selected - the player's own selected kit, gated on and consuming cooldown-seconds.
+  # Leave this on "default". With "selected", a player whose cooldown has lapsed gets their
+  # premium kit back every time they die, which makes dying a faster way to re-gear than
+  # waiting out the cooldown and defeats the point of having one.
+  respawn-kit: default
 
 held-shulker:
   enabled: true

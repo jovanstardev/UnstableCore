@@ -627,6 +627,24 @@ public final class KitManager {
         return true;
     }
 
+    /**
+     * The free fallback kit: {@code kits.default-kit}, or the first starter-tier kit if that id
+     * is missing from the config. Never a paid or rank-locked kit, so it is safe to hand out on
+     * paths that deliberately bypass the loadout cooldown. Null only if no kit qualifies.
+     */
+    public Kit getDefaultKit() {
+        Kit kit = getKit(plugin.getConfig().getString("kits.default-kit", "law"));
+        if (kit != null) {
+            return kit;
+        }
+        for (Kit candidate : kits.values()) {
+            if (isStarter(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
     public void ensureDefaultKit(Player player) {
         if (player == null) {
             return;
@@ -634,16 +652,7 @@ public final class KitManager {
         if (getSelectedKit(player) != null) {
             return;
         }
-        String defaultId = plugin.getConfig().getString("kits.default-kit", "law");
-        Kit kit = getKit(defaultId);
-        if (kit == null) {
-            for (Kit candidate : kits.values()) {
-                if (isStarter(candidate)) {
-                    kit = candidate;
-                    break;
-                }
-            }
-        }
+        Kit kit = getDefaultKit();
         if (kit == null) {
             return;
         }
