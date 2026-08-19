@@ -328,6 +328,21 @@ public final class DuelManager {
         return state == DuelState.ACCEPTED || state.isActiveCombat();
     }
 
+    /**
+     * True while this plugin still owes the player a post-duel inventory restore - the winner's
+     * victory delay, a loser still on the death screen, or a crash restore waiting on their join.
+     *
+     * <p>Callers that would move the player or change their game mode should wait: the pending
+     * restore reapplies the pre-duel inventory <em>and</em> game mode when it lands, and would
+     * silently undo them.
+     */
+    public boolean hasPendingPostDuelRestore(UUID uuid) {
+        return uuid != null
+                && (pendingPostDuelRestores.containsKey(uuid)
+                || pendingRespawnSnapshots.containsKey(uuid)
+                || pendingCrashRestores.containsKey(uuid));
+    }
+
     public boolean isInGrace(UUID uuid) {
         return uuid != null && playerGrace.containsKey(uuid);
     }
@@ -1911,6 +1926,13 @@ public final class DuelManager {
     public void restorePlayerPostDuel(Player player, DuelInventorySnapshot snapshot) {
         if (player == null || !player.isOnline()) {
             return;
+        }
+        // This can land up to 3s after the duel ended, and the snapshot reapplies the pre-duel
+        // game mode. If the player started spectating another duel in the meantime, restoring
+        // over the top would put them back into survival - fully equipped - inside someone
+        // else's live arena, while still registered as a spectator. End that session first.
+        if (plugin.getSpectatorManager() != null) {
+            plugin.getSpectatorManager().forceExit(player);
         }
         if (snapshot != null && !snapshot.isEmpty()) {
             snapshot.restore(player);

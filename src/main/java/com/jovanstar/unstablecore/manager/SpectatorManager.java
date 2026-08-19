@@ -91,6 +91,14 @@ public final class SpectatorManager {
             msg(spectator, "spectate-busy", Map.of());
             return false;
         }
+        // Their own duel is still unwinding: the restore that lands shortly reapplies their
+        // pre-duel game mode and inventory, which would drop them out of spectator and into
+        // survival inside this arena. forceExit in restorePlayerPostDuel repairs that if it
+        // happens anyway; refusing here keeps them from entering the window at all.
+        if (plugin.getDuelManager().hasPendingPostDuelRestore(spectator.getUniqueId())) {
+            msg(spectator, "spectate-busy", Map.of());
+            return false;
+        }
         Duel duel = plugin.getDuelManager().getDuelForPlayer(target.getUniqueId());
         if (duel == null || duel.getState() != DuelState.ACTIVE) {
             msg(spectator, "spectate-not-dueling", Map.of("target", target.getName()));
@@ -136,6 +144,27 @@ public final class SpectatorManager {
                 "challenger", challenger.getName(), "target", opponent.getName()
         ));
         return true;
+    }
+
+    /**
+     * Ends a spectate session without restoring the player's pre-spectate location or game mode,
+     * for callers that are about to set both themselves.
+     *
+     * <p>The post-duel inventory restore is exactly that caller, and it runs on a delay. A player
+     * who started spectating another duel inside that window would otherwise be dropped back into
+     * survival - by {@link com.jovanstar.unstablecore.model.DuelInventorySnapshot#restore}, which
+     * reapplies the pre-duel game mode - while still registered as a spectator, leaving them a
+     * fully-equipped normal player standing in someone else's live duel arena.
+     */
+    public void forceExit(Player spectator) {
+        if (spectator == null || !isSpectating(spectator.getUniqueId())) {
+            return;
+        }
+        exitCurrent(spectator, false);
+        previousStates.remove(spectator.getUniqueId());
+        if (plugin.getDuelScoreboardManager() != null) {
+            plugin.getDuelScoreboardManager().stopFor(spectator.getUniqueId(), true);
+        }
     }
 
     /** Public exit, e.g. from `/spec` toggled off or `/leave` while spectating. */
