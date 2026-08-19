@@ -887,8 +887,8 @@ public final class ArenaManager {
             // kit dispenser: drop everything, click the arena join button, get a complete kit,
             // repeat as fast as you can click - which both trivialises the 30-minute cooldown and
             // mints unbounded quantities of paid-kit gear that can be handed to other players.
-            if (loadoutManager != null) {
-                loadoutManager.markUsed(player);
+            if (plugin.getLoadoutManager() != null) {
+                plugin.getLoadoutManager().markUsed(player);
             }
             MessageUtil.sendConfig(player, "arena-auto-kit", Map.of("kit", kit.getDisplayName()));
         }

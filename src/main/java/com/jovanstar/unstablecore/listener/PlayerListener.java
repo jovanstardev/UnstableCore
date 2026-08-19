@@ -72,11 +72,6 @@ public final class PlayerListener implements Listener {
         if (plugin.getEventManager().isCoinActive() || plugin.getEventManager().isStreakActive()) {
             plugin.getEventManager().showBossBar(player);
         }
-        if (plugin.getMapVoteManager() != null
-                && plugin.getMapVoteManager().isVoting()
-                && plugin.getConfig().getBoolean("arena.vote.reopen-on-join", true)) {
-            plugin.getMapVoteManager().openFor(player);
-        }
         if (plugin.getRewardsManager() != null) {
             plugin.getRewardsManager().handleJoin(player);
         }

@@ -1638,8 +1638,8 @@ public final class DuelManager {
         }
         UUID loser = duel.opponentOf(winner);
         double wager = duel.getWager();
-        duelStatsManager.recordDuelResult(winner, true, wager, payoutAmount, 0);
-        duelStatsManager.recordDuelResult(loser, false, wager, 0, wager);
+        duelStatsManager.recordDuelResult(winner, true, duel.isRanked(), wager, payoutAmount, 0);
+        duelStatsManager.recordDuelResult(loser, false, duel.isRanked(), wager, 0, wager);
     }
 
     private void insertHistoryRow(Duel duel, UUID winner, DuelResult result, double payoutAmount) {

@@ -98,7 +98,13 @@ public final class DuelScoreboardManager {
         lines.add("  ");
         lines.add("&7Type");
         lines.add(duel.isRanked() ? "&e&lRANKED" : "&7Unranked");
-        lines.add("   ");
+        lines.add("    ");
+        lines.add(duel.isRanked() ? "&7Ranked Win Rate" : "&7Casual Win Rate");
+        double winRate = duel.isRanked()
+                ? plugin.getDuelManager().getDuelStatsManager().getRankedWinRate(viewerUuid)
+                : plugin.getDuelManager().getDuelStatsManager().getCasualWinRate(viewerUuid);
+        lines.add(String.format("&a%.1f%%", winRate));
+        lines.add("     ");
         lines.add("&7Time");
         String timeEntry = "&a0:00";
         lines.add(timeEntry);

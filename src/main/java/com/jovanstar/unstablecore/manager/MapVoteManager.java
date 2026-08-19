@@ -4,11 +4,7 @@ import com.jovanstar.unstablecore.UnstableCore;
 import com.jovanstar.unstablecore.gui.VoteGui;
 import com.jovanstar.unstablecore.model.Arena;
 import com.jovanstar.unstablecore.util.MessageUtil;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.event.ClickEvent;
-import net.kyori.adventure.text.event.HoverEvent;
 import org.bukkit.Bukkit;
-import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.scheduler.BukkitTask;
@@ -35,7 +31,6 @@ public final class MapVoteManager {
     private BukkitTask endTask;
     private BukkitTask refreshTask;
     private long lastCompletedRotation = -1L;
-    private final Map<UUID, Long> lastForceOpenMs = new ConcurrentHashMap<>();
 
     public MapVoteManager(UnstableCore plugin) {
         this.plugin = plugin;
@@ -150,9 +145,6 @@ public final class MapVoteManager {
         voting = true;
         voteEndsAt = System.currentTimeMillis() + duration * 1000L;
 
-        broadcastVoteStart(duration);
-        playSound(plugin.getConfig().getString("arena.vote.start-sound", "BLOCK_NOTE_BLOCK_PLING"));
-
         if (endTask != null) {
             endTask.cancel();
         }
@@ -163,30 +155,6 @@ public final class MapVoteManager {
         }
         long refresh = Math.max(10L, plugin.getConfig().getLong("arena.vote.refresh-ticks", 20L));
         refreshTask = Bukkit.getScheduler().runTaskTimer(plugin, this::refreshOpenGuis, refresh, refresh);
-    }
-
-    /**
-     * Sends a single clickable chat line announcing the vote instead of forcing the GUI open on
-     * everyone's screen. Clicking it runs /mapvote, which opens the map-select GUI for whoever
-     * clicked - the GUI itself is unchanged, only how it's first triggered.
-     */
-    private void broadcastVoteStart(int duration) {
-        String template = plugin.getConfig().getString("arena.vote.start-broadcast", "");
-        if (template.isBlank()) {
-            return;
-        }
-        String hoverTemplate = plugin.getConfig().getString("arena.vote.start-hover", "&7Click to open the map vote menu");
-        Component message = MessageUtil.parse(MessageUtil.apply(template, Map.of("seconds", String.valueOf(duration))))
-                .clickEvent(ClickEvent.runCommand("/mapvote"))
-                .hoverEvent(HoverEvent.showText(MessageUtil.parse(hoverTemplate)));
-
-        java.util.function.Predicate<Player> filter = plugin.getSettingsManager().filter(SettingsManager.ROTATION_ALERTS);
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            if (filter == null || filter.test(player)) {
-                player.sendMessage(message);
-            }
-        }
-        Bukkit.getConsoleSender().sendMessage(message);
     }
 
     public void castVote(Player player, String arenaId) {
@@ -221,42 +189,24 @@ public final class MapVoteManager {
         return uuid != null && votes.containsKey(uuid);
     }
 
-    public void keepOpenUntilVoted(Player player) {
-        if (!voting || player == null || !player.isOnline()) {
-            return;
+    /**
+     * Opens the map-select GUI for a player - used by /mapvote. The vote only concerns the
+     * arena that's about to rotate, so only players currently tracked inside that arena may
+     * open it; everyone else gets a rejection message instead of the GUI.
+     */
+    public boolean openFor(Player player) {
+        if (!voting || player == null) {
+            return false;
         }
-        if (hasVoted(player.getUniqueId())) {
-            return;
+        String tracked = plugin.getArenaManager().getPlayerArena(player.getUniqueId());
+        String active = plugin.getArenaManager().getActiveArenaId();
+        if (tracked == null || active == null || !tracked.equalsIgnoreCase(active)) {
+            MessageUtil.send(player, plugin.getConfig().getString(
+                    "arena.vote.not-in-arena", "&cYou must be inside the arena to vote for the next map."));
+            return false;
         }
-        // Re-opening a GUI the player just dismissed is already aggressive; doing it to someone
-        // mid-fight takes their screen away while they are being hit and cannot act. Anyone in a
-        // duel or combat-tagged in FFA is left alone - they simply don't get a forced vote.
-        if (plugin.getDuelManager() != null
-                && (plugin.getDuelManager().isInDuel(player.getUniqueId())
-                || plugin.getDuelManager().isInGrace(player.getUniqueId()))) {
-            return;
-        }
-        if (plugin.getCombatListener() != null
-                && plugin.getCombatListener().isCombatTagged(player.getUniqueId())) {
-            return;
-        }
-        if (player.getOpenInventory().getTopInventory().getHolder() instanceof VoteGui) {
-            return;
-        }
-        long now = System.currentTimeMillis();
-        Long last = lastForceOpenMs.get(player.getUniqueId());
-        if (last != null && now - last < 750L) {
-            return;
-        }
-        lastForceOpenMs.put(player.getUniqueId(), now);
         VoteGui.open(plugin, player);
-    }
-
-    /** Opens the map-select GUI for a player - used by /mapvote (chat click) and on join mid-vote. */
-    public void openFor(Player player) {
-        if (voting && player != null) {
-            VoteGui.open(plugin, player);
-        }
+        return true;
     }
 
     private void endVote() {
@@ -285,7 +235,6 @@ public final class MapVoteManager {
                     "percent", formatPercent(getPercent(winnerId)),
                     "votes", String.valueOf(getVotes(winnerId))
             ), plugin.getSettingsManager().filter(SettingsManager.ROTATION_ALERTS));
-            playSound(plugin.getConfig().getString("arena.vote.end-sound", "UI_TOAST_CHALLENGE_COMPLETE"));
             plugin.getArenaManager().rotateActive(true, winnerId);
         }
 
@@ -294,7 +243,6 @@ public final class MapVoteManager {
         votes.clear();
         voteWeights.clear();
         voteEndsAt = 0L;
-        lastForceOpenMs.clear();
     }
 
     private String pickWinner() {
@@ -353,7 +301,6 @@ public final class MapVoteManager {
         votes.clear();
         voteWeights.clear();
         voteEndsAt = 0L;
-        lastForceOpenMs.clear();
         if (endTask != null) {
             endTask.cancel();
             endTask = null;
@@ -370,15 +317,5 @@ public final class MapVoteManager {
             return String.valueOf((long) percent);
         }
         return String.format(Locale.US, "%.1f", percent);
-    }
-
-    private void playSound(String name) {
-        try {
-            Sound sound = Sound.valueOf(name);
-            for (Player player : Bukkit.getOnlinePlayers()) {
-                player.playSound(player.getLocation(), sound, 1f, 1f);
-            }
-        } catch (IllegalArgumentException ignored) {
-        }
     }
 }

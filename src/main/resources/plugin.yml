@@ -34,7 +34,7 @@ commands:
     aliases: [unstablekits]
     usage: /kits
   mapvote:
-    description: Opens the map vote GUI (used internally by the clickable chat vote link)
+    description: Opens the map vote GUI for players inside the arena during a vote
     usage: /mapvote
   kit:
     description: Admin kit create/edit commands

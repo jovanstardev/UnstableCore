@@ -248,13 +248,6 @@ public final class GuiListener implements Listener {
             disposal.disposeContents();
         }
         if (event.getPlayer() instanceof Player player) {
-            if (holder instanceof VoteGui
-                    && plugin.getMapVoteManager() != null
-                    && plugin.getMapVoteManager().isVoting()
-                    && !plugin.getMapVoteManager().hasVoted(player.getUniqueId())) {
-                Bukkit.getScheduler().runTask(plugin, () ->
-                        plugin.getMapVoteManager().keepOpenUntilVoted(player));
-            }
             if (holder instanceof KitEditGui editGui) {
                 editGui.onClose(player);
             }

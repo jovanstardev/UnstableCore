@@ -166,6 +166,7 @@ messages:
   teleport-item-blocked: "&cThat item is disabled during this duel."
   drop-blocked: "&cYou can't drop items during a duel."
   loadout-blocked: "&cYou can't change your kit during a duel."
+  loadout-arena-blocked: "&cYou can't change your kit while inside an arena."
   disposal-blocked: "&cYou can't use the disposal during a duel."
   history-empty: "&7No duel history yet."
   admin-list-header: "&d&lActive Duels &7({count})"

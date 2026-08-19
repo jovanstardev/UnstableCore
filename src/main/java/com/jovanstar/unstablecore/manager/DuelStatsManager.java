@@ -30,6 +30,10 @@ public final class DuelStatsManager {
         double coinsLost;
         int duelsPlayed;
         int elo = 1000;
+        int rankedWins;
+        int rankedLosses;
+        int casualWins;
+        int casualLosses;
     }
 
     private final UnstableCore plugin;
@@ -58,6 +62,10 @@ public final class DuelStatsManager {
             m.coinsLost = row.coinsLost();
             m.duelsPlayed = row.duelsPlayed();
             m.elo = row.elo() <= 0 ? 1000 : row.elo();
+            m.rankedWins = row.rankedWins();
+            m.rankedLosses = row.rankedLosses();
+            m.casualWins = row.casualWins();
+            m.casualLosses = row.casualLosses();
             stats.put(e.getKey(), m);
         }
     }
@@ -67,7 +75,7 @@ public final class DuelStatsManager {
     }
 
     /** Records one player's side of a finished duel. Call once per participant, exactly once per duel. */
-    public void recordDuelResult(UUID uuid, boolean won, double wagered, double coinsWon, double coinsLost) {
+    public void recordDuelResult(UUID uuid, boolean won, boolean ranked, double wagered, double coinsWon, double coinsLost) {
         if (uuid == null) {
             return;
         }
@@ -81,9 +89,19 @@ public final class DuelStatsManager {
                 m.wins++;
                 m.currentStreak++;
                 m.bestStreak = Math.max(m.bestStreak, m.currentStreak);
+                if (ranked) {
+                    m.rankedWins++;
+                } else {
+                    m.casualWins++;
+                }
             } else {
                 m.losses++;
                 m.currentStreak = 0;
+                if (ranked) {
+                    m.rankedLosses++;
+                } else {
+                    m.casualLosses++;
+                }
             }
         }
         persistAsync(uuid, snapshot(m));
@@ -94,7 +112,8 @@ public final class DuelStatsManager {
             return new DatabaseManager.DuelStatsRow(
                     m.wins, m.losses, m.currentStreak, m.bestStreak,
                     m.coinsWagered, m.coinsWon, m.coinsLost, m.duelsPlayed,
-                    m.elo <= 0 ? 1000 : m.elo
+                    m.elo <= 0 ? 1000 : m.elo,
+                    m.rankedWins, m.rankedLosses, m.casualWins, m.casualLosses
             );
         }
     }
@@ -151,6 +170,24 @@ public final class DuelStatsManager {
         return (m.wins * 100.0) / m.duelsPlayed;
     }
 
+    public double getRankedWinRate(UUID uuid) {
+        Mutable m = stats.get(uuid);
+        if (m == null) {
+            return 0;
+        }
+        int played = m.rankedWins + m.rankedLosses;
+        return played <= 0 ? 0 : (m.rankedWins * 100.0) / played;
+    }
+
+    public double getCasualWinRate(UUID uuid) {
+        Mutable m = stats.get(uuid);
+        if (m == null) {
+            return 0;
+        }
+        int played = m.casualWins + m.casualLosses;
+        return played <= 0 ? 0 : (m.casualWins * 100.0) / played;
+    }
+
     public int getElo(UUID uuid) {
         if (uuid == null) {
             return 1000;
@@ -171,6 +208,30 @@ public final class DuelStatsManager {
             synchronized (e.getValue()) {
                 if (e.getValue().wins > 0) {
                     out.put(e.getKey(), e.getValue().wins);
+                }
+            }
+        }
+        return out;
+    }
+
+    public Map<UUID, Integer> trackedRankedWins() {
+        Map<UUID, Integer> out = new java.util.HashMap<>();
+        for (Map.Entry<UUID, Mutable> e : stats.entrySet()) {
+            synchronized (e.getValue()) {
+                if (e.getValue().rankedWins > 0) {
+                    out.put(e.getKey(), e.getValue().rankedWins);
+                }
+            }
+        }
+        return out;
+    }
+
+    public Map<UUID, Integer> trackedCasualWins() {
+        Map<UUID, Integer> out = new java.util.HashMap<>();
+        for (Map.Entry<UUID, Mutable> e : stats.entrySet()) {
+            synchronized (e.getValue()) {
+                if (e.getValue().casualWins > 0) {
+                    out.put(e.getKey(), e.getValue().casualWins);
                 }
             }
         }
