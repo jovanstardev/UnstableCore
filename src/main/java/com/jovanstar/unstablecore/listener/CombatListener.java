@@ -64,16 +64,6 @@ public final class CombatListener implements Listener {
             return;
         }
         Player victim = event.getEntity();
-        // Must be the *committed* duel check, not isInDuel(): the latter is already true while a
-        // duel request merely sits pending, so gating on it meant a player with a standing request
-        // (trivially kept alive - requests are free and re-sendable every few seconds) died in FFA
-        // with no killstreak reset, no death recorded, and no kill reward, streak credit or bounty
-        // payout for whoever actually killed them.
-        if (plugin.getDuelManager() != null && plugin.getDuelManager().isInCombatDuel(victim.getUniqueId())) {
-            // Duel deaths are handled entirely by DuelListener/DuelManager - never feed FFA
-            // kill/streak/bounty systems from a duel.
-            return;
-        }
         recentDeathHandled.put(victim.getUniqueId(), System.currentTimeMillis());
         int brokenStreak = plugin.getKillstreakManager().getStreak(victim.getUniqueId());
         Player killer = victim.getKiller();
@@ -137,13 +127,6 @@ public final class CombatListener implements Listener {
      */
     public void handleQuitCombatTag(Player victim) {
         UUID uuid = victim.getUniqueId();
-        // Committed-duel check, not isInDuel() - otherwise a standing duel request also converted
-        // an FFA combat-log into a free escape (see onDeath for the same fix).
-        if (plugin.getDuelManager() != null && plugin.getDuelManager().isInCombatDuel(uuid)) {
-            // Duel disconnects are forfeits handled by DuelManager.handleDisconnect, routed to
-            // duel payout instead of FFA killstreak - never double-credit both systems.
-            return;
-        }
         CombatTag tag = combatTags.remove(uuid);
         if (tag == null || !plugin.getConfig().getBoolean("combat-tag.enabled", true)) {
             return;
@@ -196,7 +179,7 @@ public final class CombatListener implements Listener {
         }
     }
 
-    /** Whether the player is currently within the post-hit combat-tag window (used by duel-request validation). */
+    /** Whether the player is currently within the post-hit combat-tag window. */
     public boolean isCombatTagged(UUID uuid) {
         if (uuid == null || !plugin.getConfig().getBoolean("combat-tag.enabled", true)) {
             return false;
@@ -222,15 +205,7 @@ public final class CombatListener implements Listener {
             return;
         }
 
-        // Combat Tagging. Committed-duel check again: with plain isInDuel(), simply holding a
-        // pending duel request made a player un-taggable, so they could brawl in FFA and still
-        // pass every "not in combat" gate (arena join, /spec, queue join) as an instant escape.
-        boolean inDuel = plugin.getDuelManager() != null
-                && (plugin.getDuelManager().isInCombatDuel(victim.getUniqueId())
-                || plugin.getDuelManager().isInCombatDuel(attacker.getUniqueId()));
-        if (!inDuel) {
-            combatTags.put(victim.getUniqueId(), new CombatTag(attacker.getUniqueId(), System.currentTimeMillis()));
-        }
+        combatTags.put(victim.getUniqueId(), new CombatTag(attacker.getUniqueId(), System.currentTimeMillis()));
 
         // Hit Sound
         if (victim.getHealth() - event.getFinalDamage() > 0) {

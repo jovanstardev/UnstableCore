@@ -4,9 +4,6 @@ import com.jovanstar.unstablecore.UnstableCore;
 import com.jovanstar.unstablecore.gui.ArenaGui;
 import com.jovanstar.unstablecore.gui.BountyBoardGui;
 import com.jovanstar.unstablecore.gui.DisposalGui;
-import com.jovanstar.unstablecore.gui.DuelHistoryGui;
-import com.jovanstar.unstablecore.gui.DuelMapGui;
-import com.jovanstar.unstablecore.gui.DuelQueueGui;
 import com.jovanstar.unstablecore.gui.KitAdminEditGui;
 import com.jovanstar.unstablecore.gui.KitEditGui;
 import com.jovanstar.unstablecore.gui.KitPreviewGui;
@@ -81,10 +78,7 @@ public final class GuiListener implements Listener {
                 || topHolder instanceof KitsGui
                 || topHolder instanceof KitPreviewGui
                 || topHolder instanceof KitEditGui
-                || topHolder instanceof KitAdminEditGui
-                || topHolder instanceof DuelMapGui
-                || topHolder instanceof DuelHistoryGui
-                || topHolder instanceof DuelQueueGui)) {
+                || topHolder instanceof KitAdminEditGui)) {
             return;
         }
 
@@ -115,10 +109,7 @@ public final class GuiListener implements Listener {
                 || topHolder instanceof RewardsGui
                 || topHolder instanceof TagsGui
                 || topHolder instanceof BountyBoardGui
-                || topHolder instanceof PlaceBountyGui
-                || topHolder instanceof DuelMapGui
-                || topHolder instanceof DuelHistoryGui
-                || topHolder instanceof DuelQueueGui) {
+                || topHolder instanceof PlaceBountyGui) {
             syncCursor(player);
         }
 
@@ -166,12 +157,6 @@ public final class GuiListener implements Listener {
             } else if (topHolder instanceof LeaderboardMenuGui gui) {
                 gui.handleClick(player, slot);
             } else if (topHolder instanceof LeaderboardCategoryGui gui) {
-                gui.handleClick(player, slot);
-            } else if (topHolder instanceof DuelMapGui gui) {
-                gui.handleClick(player, slot);
-            } else if (topHolder instanceof DuelHistoryGui gui) {
-                gui.handleClick(player, slot);
-            } else if (topHolder instanceof DuelQueueGui gui) {
                 gui.handleClick(player, slot);
             } else if (topHolder instanceof KitsGui gui) {
                 gui.handleClick(player, slot, click);
@@ -231,9 +216,7 @@ public final class GuiListener implements Listener {
                 || holder instanceof RewardsGui || holder instanceof TagsGui
                 || holder instanceof BountyBoardGui || holder instanceof PlaceBountyGui
                 || holder instanceof LeaderboardMenuGui || holder instanceof LeaderboardCategoryGui
-                || holder instanceof KitsGui || holder instanceof KitPreviewGui
-                || holder instanceof DuelMapGui || holder instanceof DuelHistoryGui
-                || holder instanceof DuelQueueGui) {
+                || holder instanceof KitsGui || holder instanceof KitPreviewGui) {
             event.setCancelled(true);
             if (event.getWhoClicked() instanceof Player player) {
                 syncCursor(player);
@@ -267,10 +250,7 @@ public final class GuiListener implements Listener {
                     || holder instanceof BountyBoardGui
                     || holder instanceof PlaceBountyGui
                     || holder instanceof LeaderboardMenuGui
-                    || holder instanceof LeaderboardCategoryGui
-                    || holder instanceof DuelMapGui
-                    || holder instanceof DuelHistoryGui
-                    || holder instanceof DuelQueueGui) {
+                    || holder instanceof LeaderboardCategoryGui) {
                 if (plugin.getLeaderboardManager() != null
                         && (holder instanceof LeaderboardMenuGui || holder instanceof LeaderboardCategoryGui)) {
                     plugin.getLeaderboardManager().invalidatePendingOpens(player.getUniqueId());

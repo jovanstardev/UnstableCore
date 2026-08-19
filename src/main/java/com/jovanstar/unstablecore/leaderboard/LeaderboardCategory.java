@@ -10,13 +10,7 @@ public enum LeaderboardCategory {
     KILLS("kills"),
     BIGGEST_KILLSTREAK("biggest_killstreak"),
     DEATHS("deaths"),
-    PLAYTIME("playtime"),
-    DUEL_WINS("duel_wins"),
-    DUEL_BEST_STREAK("duel_best_streak"),
-    DUEL_COINS_WON("duel_coins_won"),
-    DUEL_ELO("duel_elo"),
-    RANKED_DUEL_WINS("ranked_duel_wins"),
-    CASUAL_DUEL_WINS("casual_duel_wins");
+    PLAYTIME("playtime");
 
     private final String id;
 
@@ -51,24 +45,6 @@ public enum LeaderboardCategory {
         if (key.equals("time") || key.equals("pt")) {
             return PLAYTIME;
         }
-        if (key.equals("duelwins") || key.equals("duel_win")) {
-            return DUEL_WINS;
-        }
-        if (key.equals("duelstreak") || key.equals("duel_streak") || key.equals("dueleststreak")) {
-            return DUEL_BEST_STREAK;
-        }
-        if (key.equals("duelcoins") || key.equals("duel_coins") || key.equals("duelwinnings")) {
-            return DUEL_COINS_WON;
-        }
-        if (key.equals("elo") || key.equals("rank") || key.equals("duelrank")) {
-            return DUEL_ELO;
-        }
-        if (key.equals("rankedwins") || key.equals("ranked_wins") || key.equals("ranked")) {
-            return RANKED_DUEL_WINS;
-        }
-        if (key.equals("casualwins") || key.equals("casual_wins") || key.equals("casual")) {
-            return CASUAL_DUEL_WINS;
-        }
         for (LeaderboardCategory cat : values()) {
             if (cat.id.equals(key)) {
                 return cat;
@@ -79,7 +55,7 @@ public enum LeaderboardCategory {
 
     public String formatValue(double value) {
         return switch (this) {
-            case COINS, DUEL_COINS_WON -> EconomyManager.formatCommas(value);
+            case COINS -> EconomyManager.formatCommas(value);
             case PLAYTIME -> formatPlaytimeTicks((long) value);
             default -> String.valueOf((long) Math.floor(value));
         };

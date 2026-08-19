@@ -51,7 +51,7 @@ public final class EconomyManager {
      *
      * <p>Refunds are not income: counting them let a player inflate their earned-coins stat for
      * free by repeatedly triggering a take-then-refund path (e.g. offering a bounty stack that
-     * exceeds the configured cap, or accepting and immediately cancelling a wagered duel) - the
+     * exceeds the configured cap, or a refunded purchase) - the
      * balance nets out to zero every time while the statistic only ever climbs.
      */
     public boolean refund(OfflinePlayer player, double amount) {

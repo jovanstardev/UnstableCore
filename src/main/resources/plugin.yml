@@ -95,19 +95,7 @@ commands:
   leaderboard:
     description: Open UnstableCore leaderboards
     aliases: [leaderboards, lb]
-    usage: /leaderboard [coins|kills|biggest_killstreak|deaths|playtime|duel_wins|duel_best_streak|duel_coins_won|duel_elo|reload]
-  leave:
-    description: Leave the post-duel grace period early
-    usage: /leave
-  dueladmin:
-    description: Staff duel inspection/cleanup tools
-    aliases: [duels, duelarena, da]
-    permission: unstablecore.duel.admin
-    usage: /dueladmin <list|inspect|forceend|arena|setspawn1|setspawn2|setcenter|spawns>
-  spec:
-    description: Spectate an active duel
-    aliases: [spectate]
-    usage: /spec <player>
+    usage: /leaderboard [coins|kills|biggest_killstreak|deaths|playtime|reload]
 
 permissions:
   unstablecore.admin:
@@ -130,18 +118,6 @@ permissions:
     default: op
   unstablecore.leaderboard.reload:
     description: Reload leaderboard config
-    default: op
-  unstablecore.duel:
-    description: Access to /duel and /leave
-    default: true
-  unstablecore.duel.admin:
-    description: Access to /dueladmin staff tools and /duel forceend
-    default: op
-  unstablecore.duel.spectate:
-    description: Access to /spec
-    default: true
-  unstablecore.duel.arena.bypass:
-    description: Walk into a duel arena while a duel is live (staff moderation)
     default: op
   tags.emoji:
     description: Access to emoji tags

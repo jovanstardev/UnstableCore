@@ -135,21 +135,9 @@ public final class LoadoutManager {
             return false;
         }
         UUID uuid = player.getUniqueId();
-        // Duels hand both players an identical, plugin-chosen kit; /loadout re-applies the
-        // player's own selected kit straight over the top of it, so without this gate a duelist
-        // could simply out-gear their opponent mid-fight for the price of one loadout cooldown.
-        // Enforced here rather than only in duels.yml's restricted-commands list so it also
-        // covers command aliases and every internal caller (e.g. the /kits auto-equip path).
-        if (plugin.getDuelManager() != null && plugin.getDuelManager().isInCombatDuel(uuid)) {
-            if (sendMessages) {
-                MessageUtil.send(player, plugin.getConfigManager().getDuels()
-                        .getString("messages.loadout-blocked", "&cYou can't change your kit during a duel."));
-            }
-            return false;
-        }
         if (plugin.getArenaManager() != null && plugin.getArenaManager().getPlayerArena(uuid) != null) {
             if (sendMessages) {
-                MessageUtil.send(player, plugin.getConfigManager().getDuels()
+                MessageUtil.send(player, plugin.getConfig()
                         .getString("messages.loadout-arena-blocked", "&cYou can't change your kit while inside an arena."));
             }
             return false;

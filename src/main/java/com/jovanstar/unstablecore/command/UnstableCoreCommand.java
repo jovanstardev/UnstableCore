@@ -242,34 +242,6 @@ public final class UnstableCoreCommand implements CommandExecutor, TabCompleter 
             return;
         }
 
-        if (args.length >= 3 && (args[2].equalsIgnoreCase("setspawn1") || args[2].equalsIgnoreCase("spawn1"))) {
-            if (!(sender instanceof Player player)) {
-                MessageUtil.sendConfig(sender, "player-only", Map.of());
-                return;
-            }
-            String name = args[1];
-            if (plugin.getArenaManager().setSpawn1(name, player.getLocation())) {
-                MessageUtil.send(sender, "&aSet &fSpawn 1 &afor arena &f" + name + " &aat your location.");
-            } else {
-                MessageUtil.sendConfig(sender, "arena-not-found", Map.of());
-            }
-            return;
-        }
-
-        if (args.length >= 3 && (args[2].equalsIgnoreCase("setspawn2") || args[2].equalsIgnoreCase("spawn2"))) {
-            if (!(sender instanceof Player player)) {
-                MessageUtil.sendConfig(sender, "player-only", Map.of());
-                return;
-            }
-            String name = args[1];
-            if (plugin.getArenaManager().setSpawn2(name, player.getLocation())) {
-                MessageUtil.send(sender, "&aSet &fSpawn 2 &afor arena &f" + name + " &aat your location.");
-            } else {
-                MessageUtil.sendConfig(sender, "arena-not-found", Map.of());
-            }
-            return;
-        }
-
         if (args.length >= 4 && args[2].equalsIgnoreCase("center")) {
             if (!(sender instanceof Player player)) {
                 MessageUtil.sendConfig(sender, "player-only", Map.of());

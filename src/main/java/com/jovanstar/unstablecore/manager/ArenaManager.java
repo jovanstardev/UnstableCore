@@ -362,26 +362,6 @@ public final class ArenaManager {
         return true;
     }
 
-    public boolean setSpawn1(String name, Location loc) {
-        Arena arena = getArena(name);
-        if (arena == null) {
-            return false;
-        }
-        arena.setSpawn1(loc);
-        save();
-        return true;
-    }
-
-    public boolean setSpawn2(String name, Location loc) {
-        Arena arena = getArena(name);
-        if (arena == null) {
-            return false;
-        }
-        arena.setSpawn2(loc);
-        save();
-        return true;
-    }
-
     public void setPermanent(String name, boolean permanent) {
         Arena arena = arenas.get(name.toLowerCase(Locale.ROOT));
         if (arena != null) {
@@ -512,13 +492,6 @@ public final class ArenaManager {
     }
 
     private boolean shouldTransferOnRotate(Player player, Arena from) {
-        if (plugin.getDuelManager() != null) {
-            UUID uuid = player.getUniqueId();
-            if (plugin.getDuelManager().isInDuel(uuid) || plugin.getDuelManager().isInGrace(uuid)) {
-                return false;
-            }
-        }
-
         String tracked = playerArena.get(player.getUniqueId());
 
         if ("newbie".equalsIgnoreCase(tracked)) {
@@ -797,14 +770,6 @@ public final class ArenaManager {
     }
 
     public boolean teleportToArena(Player player, String arenaKey) {
-        if (plugin.getDuelManager() != null) {
-            UUID uuid = player.getUniqueId();
-            if (plugin.getDuelManager().isInDuel(uuid) || plugin.getDuelManager().isInGrace(uuid)) {
-                MessageUtil.send(player, "&cYou cannot join an arena while in a duel.");
-                return false;
-            }
-        }
-
         Arena arena;
         if ("newbie".equalsIgnoreCase(arenaKey)) {
             arena = newbieArena;
@@ -845,8 +810,8 @@ public final class ArenaManager {
             Bukkit.getScheduler().runTask(plugin, () -> {
                 // Quitting between the teleport completing and this task would re-add the arena
                 // tag after quit cleanup removed it, so every "is this player busy in an arena"
-                // check - duel requests, the queue, /spec, build protection - would answer yes
-                // for someone who is not on the server.
+                // check - build protection included - would answer yes for someone who is not
+                // on the server.
                 if (!player.isOnline()) {
                     return;
                 }
@@ -919,7 +884,7 @@ public final class ArenaManager {
     }
 
     /**
-     * Public entry point for other systems (e.g. duels) that need a single safe teleport spot
+     * Public entry point for other systems that need a single safe teleport spot
      * inside an arena without going through the FFA-specific {@link #teleportToArena} flow
      * (which sends FFA messages/sounds and auto-gives a random kit on empty inventory). Reuses
      * the exact same spot-picking/validation logic FFA rotation relies on.
