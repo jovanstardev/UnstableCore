@@ -854,6 +854,14 @@ public final class ArenaManager {
                 return;
             }
             Bukkit.getScheduler().runTask(plugin, () -> {
+                // Quitting between the teleport completing and this task running would otherwise
+                // re-add the arena tag *after* PlayerListener's quit cleanup already removed it,
+                // leaving a stale entry for an offline player. Anything that asks "is this player
+                // busy in an arena" (duel requests, the duel queue, /spec, build protection) then
+                // answers yes for someone who is not even here.
+                if (!player.isOnline()) {
+                    return;
+                }
                 playerArena.put(player.getUniqueId(), arena.getId());
                 MessageUtil.sendConfig(player, "arena-teleported", Map.of("map", arena.getDisplayName()));
                 giveRandomKitIfEmpty(player);

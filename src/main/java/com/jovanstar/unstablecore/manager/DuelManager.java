@@ -240,12 +240,13 @@ public final class DuelManager {
         // the loop above skips it (restoring there would clobber a live inventory), and the row is
         // gone, so next boot won't recover it either. Flush whatever is still owed here, or the
         // player keeps the duel kit and their real inventory is lost.
-        for (Map.Entry<UUID, DuelInventorySnapshot> entry : pendingPostDuelRestores.entrySet()) {
-            restoreIfOnline(entry.getKey(), entry.getValue());
-        }
-        for (Map.Entry<UUID, DuelInventorySnapshot> entry : pendingRespawnSnapshots.entrySet()) {
-            restoreIfOnline(entry.getKey(), entry.getValue());
-        }
+        // restoreIfOnline alone silently dropped these for anyone already offline (a winner who
+        // disconnected inside the 3s victory delay, a loser still on the death screen who quit),
+        // which is exactly the case that cannot be recovered any other way: the duel's DB row is
+        // already deleted, so start() has nothing to replay. Persist those instead so the next
+        // join hands the inventory back.
+        flushOwedRestores(pendingPostDuelRestores);
+        flushOwedRestores(pendingRespawnSnapshots);
         // Restores owed to players who disconnected mid-duel (forfeit loser, winner who dropped
         // during the victory delay). Anyone still online gets theirs now, and their persisted row
         // is cleared so it isn't applied a second time on next boot. Anyone offline keeps their
@@ -521,7 +522,12 @@ public final class DuelManager {
         duels.put(duel.getId(), duel);
         playerDuel.put(challenger.getUniqueId(), duel.getId());
         playerDuel.put(target.getUniqueId(), duel.getId());
-        lastRequestSentAt.put(challenger.getUniqueId(), System.currentTimeMillis());
+        // Same unbounded-growth problem as pairCooldownUntil: one permanent entry per player who
+        // ever sent a request, for a value that is dead after request.rate-limit-seconds.
+        long requestedAt = System.currentTimeMillis();
+        long rateLimitMs = Math.max(0L, cfg().getLong("request.rate-limit-seconds", 3) * 1000L);
+        lastRequestSentAt.values().removeIf(sentAt -> sentAt == null || requestedAt - sentAt >= rateLimitMs);
+        lastRequestSentAt.put(challenger.getUniqueId(), requestedAt);
 
         if (plugin.getDuelQueueManager() != null) {
             plugin.getDuelQueueManager().removeSilent(challenger.getUniqueId());
@@ -746,7 +752,15 @@ public final class DuelManager {
         if (ms <= 0) {
             return;
         }
-        pairCooldownUntil.put(pairKey(a, b), System.currentTimeMillis() + ms);
+        long now = System.currentTimeMillis();
+        // Entries were only ever inserted, never removed, so this map grew for the whole uptime
+        // of the server: one permanent entry per distinct pair of players that ever declined,
+        // expired or cancelled a request, even though every entry is dead within
+        // request.cooldown-seconds (5s by default). Sweeping the expired ones on each write keeps
+        // it to just the live window - the sweep is O(size), and because it runs on every write
+        // the size it walks stays small rather than being allowed to accumulate.
+        pairCooldownUntil.values().removeIf(until -> until == null || until <= now);
+        pairCooldownUntil.put(pairKey(a, b), now + ms);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -1549,9 +1563,19 @@ public final class DuelManager {
                 }
                 Bukkit.getScheduler().runTaskLater(plugin, () -> {
                     pendingPostDuelRestores.remove(winner);
-                    if (wp.isOnline()) {
-                        teleportToSpawn(wp);
-                        restorePlayerPostDuel(wp, winnerSnapshot);
+                    // Re-resolve by UUID rather than reusing the captured `wp` handle. A Player
+                    // object is bound to one connection: if the winner disconnects and reconnects
+                    // inside this 3s window, `wp.isOnline()` is false for the *stale* object even
+                    // though the player is online again. That sent a live player down the
+                    // restore-on-next-join branch, so they stood at spawn still wearing the
+                    // plugin-issued duel kit with their real inventory owed until some later
+                    // relog - and duel gear is only ever taken back by this restore. Dropping the
+                    // kit and then relogging to collect the pre-duel inventory minted a full kit
+                    // per duel, repeatable indefinitely through the matchmaking queue.
+                    Player online = Bukkit.getPlayer(winner);
+                    if (online != null && online.isOnline()) {
+                        teleportToSpawn(online);
+                        restorePlayerPostDuel(online, winnerSnapshot);
                     } else if (winnerSnapshot != null) {
                         // Winner disconnected during the 3s victory delay - without this, their
                         // real pre-duel inventory would be silently discarded once this terminal
@@ -1658,6 +1682,11 @@ public final class DuelManager {
         double wager = duel.getWager();
         duelStatsManager.recordDuelResult(winner, true, wager, payoutAmount, 0);
         duelStatsManager.recordDuelResult(loser, false, wager, 0, wager);
+        // Guarded by markStatsRecorded upstream, so this runs exactly once per decided duel, and
+        // - unlike its previous home inside recordRankedResult - it now sees wagered duels too.
+        // Those are always unranked (the ranked queue only ever creates zero-wager duels), so
+        // win-trading for duel_coins_won/duel_wins previously raised no flag whatsoever.
+        duelStatsManager.checkFarming(winner, loser);
     }
 
     private void insertHistoryRow(Duel duel, UUID winner, DuelResult result, double payoutAmount) {
@@ -1770,6 +1799,28 @@ public final class DuelManager {
                 .append(button);
 
         player.sendMessage(msg);
+    }
+
+    /**
+     * Shutdown-time drain for a map of owed pre-duel inventories: hand it straight back to anyone
+     * still online, and persist it for anyone who is not so their next join applies it. Used for
+     * the two windows whose duel row is already deleted, where losing the snapshot here would
+     * leave the player permanently holding the plugin-issued duel kit instead of their own items.
+     */
+    private void flushOwedRestores(Map<UUID, DuelInventorySnapshot> owed) {
+        for (Map.Entry<UUID, DuelInventorySnapshot> entry : owed.entrySet()) {
+            UUID uuid = entry.getKey();
+            DuelInventorySnapshot snapshot = entry.getValue();
+            if (uuid == null || snapshot == null) {
+                continue;
+            }
+            Player online = Bukkit.getPlayer(uuid);
+            if (online != null && online.isOnline()) {
+                snapshot.restore(online);
+            } else {
+                queuePersistentRestore(uuid, snapshot);
+            }
+        }
     }
 
     private void restoreIfOnline(UUID uuid, DuelInventorySnapshot snapshot) {

@@ -142,7 +142,12 @@ public final class EventManager {
 
     public void startCoinEvent(double multi, int durationSeconds, boolean automatic) {
         cancelTask(coinEndTask);
-        coinMultiplier = Math.max(1.0, multi);
+        // Math.max(1.0, NaN) is NaN, so an unparseable-but-numeric argument ("NaN", "Infinity" -
+        // both of which Double.parseDouble accepts) would propagate straight into the kill reward:
+        // EconomyManager.rewardKill computes floor(base * multi) = NaN, the "amount <= 0" bail-out
+        // is false for NaN, deposit() then rejects the non-finite value, and every kill for the
+        // whole event silently pays nothing while still telling the player they earned "NaN".
+        coinMultiplier = Double.isFinite(multi) ? Math.max(1.0, multi) : 1.0;
         coinActive = true;
         coinDurationMs = Math.max(1, durationSeconds) * 1000L;
         coinEndsAt = System.currentTimeMillis() + coinDurationMs;
@@ -166,7 +171,10 @@ public final class EventManager {
 
     public void startStreakEvent(double multi, int durationSeconds, boolean automatic) {
         cancelTask(streakEndTask);
-        streakMultiplier = Math.max(1.0, multi);
+        // Same non-finite guard as startCoinEvent: streakMultiplier feeds Math.round() in
+        // streakMultiplierInt(), and Math.round(NaN) is 0, which Math.max(1, ...) then masks -
+        // leaving the event "active" but with no effect and a "NaNx" broadcast.
+        streakMultiplier = Double.isFinite(multi) ? Math.max(1.0, multi) : 1.0;
         streakActive = true;
         streakDurationMs = Math.max(1, durationSeconds) * 1000L;
         streakEndsAt = System.currentTimeMillis() + streakDurationMs;

@@ -269,7 +269,9 @@ public final class DuelStatsManager {
         persistAsync(winner, snapshot(mw));
         persistAsync(loser, snapshot(ml));
 
-        checkFarming(winner, loser);
+        // Farming detection deliberately does NOT live here any more - see checkFarming. It is
+        // driven from DuelManager.recordStats so it covers every decided duel, not only the
+        // ranked ones that reach this method.
 
         return new EloChange(winnerOld, winnerNew, winnerDelta, loserOld, loserNew, loserDelta);
     }
@@ -299,7 +301,24 @@ public final class DuelStatsManager {
         return a.compareTo(b) <= 0 ? a + "|" + b : b + "|" + a;
     }
 
-    private void checkFarming(UUID winner, UUID loser) {
+    /**
+     * Records a decided duel against the winner/loser pair and raises a staff-visible flag when
+     * the pattern looks like farming. Called once per decided duel from DuelManager.recordStats.
+     *
+     * <p>This used to be invoked from {@link #recordRankedResult}, i.e. only for ranked duels -
+     * but a duel is never both ranked and wagered: the ranked queue always creates duels with a
+     * wager of 0, and the /duel request flow (the only path that carries a wager) always creates
+     * them unranked. So the entire *economic* half of duelling - repeated high-value wagers
+     * traded back and forth between two cooperating accounts, which with the default
+     * house-cut-percent of 0 and no daily limit costs the pair nothing per round while pushing
+     * duel_coins_won, duel_wins and duel_best_streak up the leaderboards - produced no signal at
+     * all, and /dueladmin flags stayed empty no matter how blatant it got. Driving it from the
+     * shared terminal path covers both kinds.
+     */
+    public void checkFarming(UUID winner, UUID loser) {
+        if (winner == null || loser == null || winner.equals(loser)) {
+            return;
+        }
         if (!plugin.getConfigManager().getDuels().getBoolean("anti-farm.enabled", true)) {
             return;
         }
@@ -316,14 +335,14 @@ public final class DuelStatsManager {
             int maxInWindow = Math.max(1, plugin.getConfigManager().getDuels().getInt("anti-farm.max-duels-per-window", 5));
             if (rec.recent.size() >= maxInWindow) {
                 flag(rec, winner, loser, "high-frequency", rec.recent.size()
-                        + " ranked duels between this pair in the last " + (windowMs / 60_000L) + "m");
+                        + " duels between this pair in the last " + (windowMs / 60_000L) + "m");
                 return;
             }
 
             int altThreshold = Math.max(2, plugin.getConfigManager().getDuels().getInt("anti-farm.alternating-threshold", 4));
             if (rec.recent.size() >= altThreshold && isAlternating(rec.recent, altThreshold)) {
                 flag(rec, winner, loser, "alternating-wins", "last " + altThreshold
-                        + " ranked duels between this pair alternated winners - possible win-trading");
+                        + " duels between this pair alternated winners - possible win-trading");
             }
         }
     }
@@ -348,7 +367,7 @@ public final class DuelStatsManager {
         rec.flagReason = reasonCode + ": " + detail;
         rec.flaggedAt = System.currentTimeMillis();
         if (!wasAlreadyFlagged) {
-            plugin.getLogger().warning("[Duel][AntiFarm] Possible ELO farming between " + a + " and " + b
+            plugin.getLogger().warning("[Duel][AntiFarm] Possible duel farming between " + a + " and " + b
                     + " - " + rec.flagReason + " - see /dueladmin flags");
         }
     }
