@@ -69,7 +69,7 @@ public final class RewardsManager {
         }
     }
 
-    
+
     public PlayerRewards peek(UUID uuid) {
         return cache.get(uuid);
     }
@@ -83,11 +83,10 @@ public final class RewardsManager {
     }
 
     /**
-     * Called from PlayerQuitEvent. The write goes off-thread (it used to be a synchronous JDBC
-     * round trip on the main thread for every single disconnect - fine one at a time, a stall
-     * proportional to player count during a mass disconnect or restart), but the cache entry is
-     * kept until that write lands: dropping it first would let a fast reconnect re-read the
-     * pre-save row from the database and re-claim an already-claimed reward.
+     * Called from PlayerQuitEvent. The write goes off-thread - synchronous JDBC here is fine for
+     * one disconnect but stalls proportionally to player count on a mass disconnect or restart.
+     * The cache entry survives until that write lands: evicting first would let a fast reconnect
+     * re-read the pre-save row and claim an already-claimed reward again.
      */
     public void unload(UUID uuid) {
         PlayerRewards data;

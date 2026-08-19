@@ -330,16 +330,17 @@ public final class DuelStatsManager {
         persistAsync(winner, snapshot(mw));
         persistAsync(loser, snapshot(ml));
 
-        checkFarming(winner, loser);
+        // Farming detection deliberately does NOT live here any more - see checkFarming. It is
+        // driven from DuelManager.recordStats so it covers every decided duel, not only the
+        // ranked ones that reach this method.
 
         return new EloChange(winnerOld, winnerNew, winnerDelta, loserOld, loserNew, loserDelta);
     }
 
     // -----------------------------------------------------------------------------------
-    // ELO-farming detection - "flag, don't auto-punish" per DUELS.md. Purely in-memory and
-    // resets on restart, same as dailyWagerTracking below: this is a staff-visible signal
-    // (surfaced via /dueladmin flags), not an economic safety boundary, so it doesn't need
-    // to survive a restart the way escrow/payout state does.
+    // Farming detection - "flag, don't auto-punish" per DUELS.md. In-memory and reset on
+    // restart by design: this is a staff-visible signal surfaced through /dueladmin flags,
+    // not an economic safety boundary like escrow and payout state.
     // -----------------------------------------------------------------------------------
 
     private record RankedMatch(long atMs, UUID winner) {
@@ -360,7 +361,20 @@ public final class DuelStatsManager {
         return a.compareTo(b) <= 0 ? a + "|" + b : b + "|" + a;
     }
 
-    private void checkFarming(UUID winner, UUID loser) {
+    /**
+     * Records a decided duel against the winner/loser pair and raises a staff-visible flag when
+     * the pattern looks like farming. Called once per decided duel from DuelManager.recordStats.
+     *
+     * <p>Driven from the shared terminal path rather than from {@link #recordRankedResult},
+     * because a duel is never both ranked and wagered: the ranked queue always wagers 0, and the
+     * /duel request flow always creates unranked duels. Hooking it to the ranked path alone would
+     * leave the economic half unwatched - two accounts trading a wager back and forth, free at
+     * the default house cut, climbing duel_coins_won, duel_wins and duel_best_streak.
+     */
+    public void checkFarming(UUID winner, UUID loser) {
+        if (winner == null || loser == null || winner.equals(loser)) {
+            return;
+        }
         if (!plugin.getConfigManager().getDuels().getBoolean("anti-farm.enabled", true)) {
             return;
         }
@@ -377,14 +391,14 @@ public final class DuelStatsManager {
             int maxInWindow = Math.max(1, plugin.getConfigManager().getDuels().getInt("anti-farm.max-duels-per-window", 5));
             if (rec.recent.size() >= maxInWindow) {
                 flag(rec, winner, loser, "high-frequency", rec.recent.size()
-                        + " ranked duels between this pair in the last " + (windowMs / 60_000L) + "m");
+                        + " duels between this pair in the last " + (windowMs / 60_000L) + "m");
                 return;
             }
 
             int altThreshold = Math.max(2, plugin.getConfigManager().getDuels().getInt("anti-farm.alternating-threshold", 4));
             if (rec.recent.size() >= altThreshold && isAlternating(rec.recent, altThreshold)) {
                 flag(rec, winner, loser, "alternating-wins", "last " + altThreshold
-                        + " ranked duels between this pair alternated winners - possible win-trading");
+                        + " duels between this pair alternated winners - possible win-trading");
             }
         }
     }
@@ -409,7 +423,7 @@ public final class DuelStatsManager {
         rec.flagReason = reasonCode + ": " + detail;
         rec.flaggedAt = System.currentTimeMillis();
         if (!wasAlreadyFlagged) {
-            plugin.getLogger().warning("[Duel][AntiFarm] Possible ELO farming between " + a + " and " + b
+            plugin.getLogger().warning("[Duel][AntiFarm] Possible duel farming between " + a + " and " + b
                     + " - " + rec.flagReason + " - see /dueladmin flags");
         }
     }

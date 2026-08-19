@@ -4,6 +4,7 @@ import com.jovanstar.unstablecore.UnstableCore;
 import com.jovanstar.unstablecore.gui.KitsGui;
 import com.jovanstar.unstablecore.manager.KitManager;
 import com.jovanstar.unstablecore.manager.SettingsManager;
+import com.jovanstar.unstablecore.model.Kit;
 import com.jovanstar.unstablecore.util.MessageUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -211,23 +212,33 @@ public final class PlayerListener implements Listener {
     }
 
     /**
-     * Re-gears a player on respawn, honouring the normal loadout cooldown.
+     * Re-gears a player on respawn. What they get is set by {@code loadout.respawn-kit}:
      *
-     * <p>This behaviour used to happen as a side effect of the duel respawn hook, which ran for
-     * every respawn on the server and unconditionally cleared the inventory before handing out a
-     * kit. That made dying a strictly better way to obtain a loadout than {@code /loadout} itself
-     * - free, instant, and completely bypassing {@code loadout.cooldown-seconds} - and destroyed
-     * whatever an ordinary player happened to respawn holding. Re-homed here and made explicit:
-     * it only fires when the player really has nothing (so it can never delete items, including
-     * on keepInventory setups), it goes through LoadoutManager#tryGive so the cooldown is both
-     * respected and consumed, and it can be switched off entirely in config.
+     * <ul>
+     *   <li>{@code default} - the free starter kit ({@code kits.default-kit}). Ignores the loadout
+     *       cooldown and does not consume it, because this kit is free to claim anyway.</li>
+     *   <li>{@code none} - nothing; the player respawns empty.</li>
+     *   <li>{@code selected} - the player's own selected kit through
+     *       {@link com.jovanstar.unstablecore.manager.LoadoutManager#tryGive}, cooldown-gated.</li>
+     * </ul>
      *
-     * <p>Runs at MONITOR/one tick later so DuelListener's own duel-respawn restore - which puts
-     * back a real pre-duel inventory and must win - has already been applied.
+     * <p>{@code selected} is not the default because a premium kit is exactly what the cooldown
+     * exists to ration: once it lapses, dying hands the kit straight back, which makes death a
+     * cheaper way to re-gear than waiting. Only ever fires on a completely empty inventory, so it
+     * can never delete items (including on keepInventory setups), and
+     * {@code loadout.give-on-respawn} still switches the whole thing off.
+     *
+     * <p>Runs at MONITOR, one tick later, so DuelListener's duel-respawn restore - which returns a
+     * real pre-duel inventory and must win - has already been applied.
      */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onRespawn(org.bukkit.event.player.PlayerRespawnEvent event) {
         if (!plugin.getConfig().getBoolean("loadout.give-on-respawn", true)) {
+            return;
+        }
+        String configured = plugin.getConfig().getString("loadout.respawn-kit", "default");
+        final String mode = configured == null ? "default" : configured.trim().toLowerCase(Locale.ROOT);
+        if (mode.equals("none")) {
             return;
         }
         Player player = event.getPlayer();
@@ -235,15 +246,29 @@ public final class PlayerListener implements Listener {
             if (!player.isOnline()) {
                 return;
             }
+            // hasPendingPostDuelRestore covers the post-duel end phase: the duel is terminal by
+            // then, but the player is a spectator awaiting their real inventory - gearing them
+            // here would just be overwritten by that restore.
             if (plugin.getDuelManager() != null
                     && (plugin.getDuelManager().isInDuel(player.getUniqueId())
-                    || plugin.getDuelManager().isInGrace(player.getUniqueId()))) {
+                    || plugin.getDuelManager().isInGrace(player.getUniqueId())
+                    || plugin.getDuelManager().hasPendingPostDuelRestore(player.getUniqueId()))) {
                 return;
             }
-            if (plugin.getLoadoutManager() == null || !KitManager.isInventoryEmpty(player)) {
+            if (!KitManager.isInventoryEmpty(player)) {
                 return;
             }
-            plugin.getLoadoutManager().tryGive(player, false);
+            if (mode.equals("selected")) {
+                if (plugin.getLoadoutManager() != null) {
+                    plugin.getLoadoutManager().tryGive(player, false);
+                }
+                return;
+            }
+            KitManager kits = plugin.getKitManager();
+            Kit starter = kits == null ? null : kits.getDefaultKit();
+            if (starter != null) {
+                kits.applyKit(player, starter);
+            }
         });
     }
 

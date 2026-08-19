@@ -818,6 +818,11 @@ public final class ArenaManager {
 
         Location spot = pickFixedCachedSpot(arena);
         if (spot == null) {
+            // cacheSafeSpots() probes hundreds of block columns and save() rewrites the whole of
+            // arenas.yml, both on the main thread and both reachable from a plain GUI click. An
+            // arena with no usable spot would hit this on every join attempt, so a few players
+            // spamming join could hold the server in a stall loop. Re-cache at most once a minute
+            // per arena and let the normal autosave persist it rather than blocking on a write.
             long now = System.currentTimeMillis();
             Long last = lastSpotRecache.get(arena.getId());
             if (last == null || now - last >= SPOT_RECACHE_COOLDOWN_MS) {
@@ -838,6 +843,13 @@ public final class ArenaManager {
                 return;
             }
             Bukkit.getScheduler().runTask(plugin, () -> {
+                // Quitting between the teleport completing and this task would re-add the arena
+                // tag after quit cleanup removed it, so every "is this player busy in an arena"
+                // check - duel requests, the queue, /spec, build protection - would answer yes
+                // for someone who is not on the server.
+                if (!player.isOnline()) {
+                    return;
+                }
                 playerArena.put(player.getUniqueId(), arena.getId());
                 MessageUtil.sendConfig(player, "arena-teleported", Map.of("map", arena.getDisplayName()));
                 giveRandomKitIfEmpty(player);

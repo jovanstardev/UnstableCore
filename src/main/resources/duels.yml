@@ -11,6 +11,10 @@ max-duration-seconds: 300
 # refund = both wagers refunded, no winner recorded (draw) | higher-health = whoever has more HP wins
 max-duration-outcome: refund
 grace-period-seconds: 0
+# How long the win/lose end phase lasts after a duel is decided: the loser watches from
+# spectator mode where they fell, the winner stays standing in the arena, both under their
+# result title, before being sent to spawn with their inventories. 0 disables the phase.
+end-phase-seconds: 5
 
 wager:
   min: 0
@@ -157,7 +161,11 @@ messages:
   draw-title: "&f&lDraw"
   draw-subtitle: "&7No one died"
   timeout-win: "&a✔ &f{winner} &7wins by higher health after the time limit."
-  grace-period: "&7Collect your items - the arena is yours for &f{seconds}s&7. Type &f/leave &7to head out early."
+  arena-occupied: "&cThat arena is hosting a duel - use &f/spec &cto watch."
+  victory-title: "&a&lVICTORY"
+  victory-subtitle: "&7You defeated &f{opponent}"
+  defeat-title: "&c&lDEFEAT"
+  defeat-subtitle: "&7Better luck next time"
   leave-success: "&7You left the duel arena."
   not-in-grace: "&cYou're not in a post-duel grace period."
   toggle-on: "&a✔ &7You are now accepting duel requests."

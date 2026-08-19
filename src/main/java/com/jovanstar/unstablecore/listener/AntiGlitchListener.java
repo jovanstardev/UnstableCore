@@ -19,6 +19,8 @@ import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.inventory.ItemStack;
 
+import java.util.Map;
+
 public final class AntiGlitchListener implements Listener {
 
     private final UnstableCore plugin;
@@ -74,8 +76,18 @@ public final class AntiGlitchListener implements Listener {
         if (to == null || to.getWorld() == null) {
             return;
         }
-
+        // A pearl outlives its thrower being moved to another map (rotation transfer, arena
+        // join, duel setup), and when it lands it drags them back to wherever it fell -
+        // typically the just-rotated-out map, empty but for them. A pearl never legitimately
+        // crosses worlds (the teleport only does when the *player* changed world mid-flight),
+        // and one landing in an arena may only complete for a player still in that arena.
         Player player = event.getPlayer();
+        if (!to.getWorld().equals(player.getWorld())) {
+            event.setCancelled(true);
+            MessageUtil.sendConfig(player, "pearl-stale", Map.of());
+            return;
+        }
+
         // Arena containment was previously just a build/break permission tag - nothing stopped
         // an ender pearl or chorus fruit from carrying a player straight through the boundary,
         // since both teleport clean through solid blocks instead of colliding with them the way
@@ -98,6 +110,13 @@ public final class AntiGlitchListener implements Listener {
         }
         Arena arena = plugin.getArenaManager().resolveArenaAt(to);
         if (arena == null) {
+            return;
+        }
+        String tracked = plugin.getArenaManager().getPlayerArena(player.getUniqueId());
+        boolean trackedHere = tracked != null && tracked.equalsIgnoreCase(arena.getId());
+        if (!trackedHere && !arena.contains(player.getLocation())) {
+            event.setCancelled(true);
+            MessageUtil.sendConfig(player, "pearl-stale", Map.of());
             return;
         }
 

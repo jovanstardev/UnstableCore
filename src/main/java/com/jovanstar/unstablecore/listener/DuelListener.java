@@ -9,6 +9,7 @@ import com.jovanstar.unstablecore.util.MessageUtil;
 import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -20,13 +21,16 @@ import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Duel-specific event wiring: the wager chat prompt (mirrors {@link BountyListener}), death
@@ -35,10 +39,90 @@ import java.util.UUID;
  */
 public final class DuelListener implements Listener {
 
+    /** Rate limit for the "arena in use" bounce message, so walking the edge can't spam chat. */
+    private static final long INTRUDER_MESSAGE_COOLDOWN_MS = 3_000L;
+
     private final UnstableCore plugin;
+    private final Map<UUID, Long> lastIntruderNotice = new ConcurrentHashMap<>();
 
     public DuelListener(UnstableCore plugin) {
         this.plugin = plugin;
+    }
+
+    /**
+     * Keeps everyone who isn't fighting in a duel out of its arena while it is live.
+     *
+     * <p>The duel's mutual-hide wall only stops rendering - it has never stopped collision, damage
+     * or item pickup - so a third party could walk into an active duel arena and body-block,
+     * interfere, or stand on the floor loot. Spectators are exempt because {@code /spec} puts them
+     * in {@link GameMode#SPECTATOR} before teleporting, which cannot touch anything, and staff can
+     * be exempted with {@code unstablecore.duel.arena.bypass}.
+     *
+     * <p>This covers walking; {@link #onTeleportIntoDuelArena} covers pearls and teleports, which
+     * dispatch on {@code PlayerTeleportEvent}'s own handler list and never reach this handler.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onMoveIntoDuelArena(PlayerMoveEvent event) {
+        Location to = event.getTo();
+        Location from = event.getFrom();
+        if (to == null
+                || (from.getBlockX() == to.getBlockX()
+                && from.getBlockY() == to.getBlockY()
+                && from.getBlockZ() == to.getBlockZ())) {
+            return;
+        }
+        if (blocksArenaEntry(event.getPlayer(), to)) {
+            event.setTo(from);
+            notifyIntruder(event.getPlayer());
+        }
+    }
+
+    /**
+     * Teleports need their own handler: {@code PlayerTeleportEvent} declares its own
+     * {@code HandlerList}, so a {@code PlayerMoveEvent} listener never sees them. Without this,
+     * ender pearls and teleport commands sailed straight through the walk-in guard above.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onTeleportIntoDuelArena(org.bukkit.event.player.PlayerTeleportEvent event) {
+        Location to = event.getTo();
+        if (to == null) {
+            return;
+        }
+        if (blocksArenaEntry(event.getPlayer(), to)) {
+            event.setCancelled(true);
+            notifyIntruder(event.getPlayer());
+        }
+    }
+
+    /** True when {@code to} is inside a live duel arena that this player has no business in. */
+    private boolean blocksArenaEntry(Player player, Location to) {
+        DuelManager mgr = plugin.getDuelManager();
+        if (mgr == null) {
+            return false;
+        }
+        if (player.getGameMode() == GameMode.SPECTATOR
+                || player.hasPermission("unstablecore.duel.arena.bypass")) {
+            return false;
+        }
+        Duel duel = mgr.activeDuelAt(to);
+        return duel != null && !duel.involves(player.getUniqueId());
+    }
+
+    private void notifyIntruder(Player player) {
+        UUID uuid = player.getUniqueId();
+        long now = System.currentTimeMillis();
+        Long last = lastIntruderNotice.get(uuid);
+        if (last != null && now - last < INTRUDER_MESSAGE_COOLDOWN_MS) {
+            return;
+        }
+        // Swept only on the message path, not on every bounce: someone held against the wall
+        // fires this handler every block-move, and that is not the place for an O(size) scan.
+        lastIntruderNotice.values().removeIf(
+                at -> at == null || now - at > INTRUDER_MESSAGE_COOLDOWN_MS * 10);
+        lastIntruderNotice.put(uuid, now);
+        MessageUtil.send(player, plugin.getConfigManager().getDuels()
+                .getString("messages.arena-occupied",
+                        "&cThat arena is hosting a duel - use &f/spec &cto watch."));
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
@@ -63,11 +147,9 @@ public final class DuelListener implements Listener {
             return;
         }
         Player victim = event.getEntity();
-        // isInDuel() is already true for a *pending* request, so keying off it here let anyone
-        // with a duel request open die in FFA with their drops voided and their death message
-        // suppressed - a free "delete my killer's loot and hide the kill" button, available to
-        // any two cooperating players and reusable every 30 seconds. Only an actually-committed
-        // duel (countdown onwards) suppresses normal death handling.
+        // Only a committed duel suppresses normal death handling. isInDuel() is already true for
+        // a merely pending request, so gating here would hand any two cooperating players a
+        // reusable "void my drops and hide the kill" button.
         if (!mgr.isInCombatDuel(victim.getUniqueId())) {
             return;
         }
@@ -89,17 +171,13 @@ public final class DuelListener implements Listener {
 
         Location loc = mgr.consumePendingRespawnLocation(uuid);
         DuelInventorySnapshot snapshot = mgr.consumePendingRespawnSnapshot(uuid);
-        // A queued location/snapshot is the real signal - every duel exit path that ends in a
-        // respawn queues one. isInCombatDuel is only a belt-and-braces fallback, and must be the
-        // committed-duel check rather than isInDuel(): the latter is true for a merely pending
-        // request, which would put every request-holder straight back into the free-kit path this
-        // guard exists to close.
+        // A queued location or snapshot is the real signal; every duel exit path that ends in a
+        // respawn queues one. isInCombatDuel is a fallback, and must be the committed-duel check:
+        // isInDuel() would readmit every request-holder to the free-kit path below.
         boolean duelRespawn = loc != null || snapshot != null || mgr.isInCombatDuel(uuid);
-        // This hook used to run unconditionally on *every* respawn on the server, duel or not,
-        // and restorePlayerPostDuel with a null snapshot clears the inventory and hands out a
-        // fresh kit. That silently wiped whatever an ordinary FFA player respawned with and gave
-        // out a free full loadout on every death - completely defeating loadout.cooldown-seconds
-        // (30 minutes by default), since dying is faster and cheaper than waiting for it.
+        // Non-duel respawns must not reach restorePlayerPostDuel: with a null snapshot it clears
+        // the inventory and issues a fresh kit, which would wipe whatever an ordinary FFA player
+        // respawned holding and make dying a free, instant bypass of loadout.cooldown-seconds.
         if (!duelRespawn) {
             return;
         }
@@ -110,6 +188,12 @@ public final class DuelListener implements Listener {
             event.setRespawnLocation(loc);
         }
 
+        // A loser marked for the end phase respawns in the arena as a spectator and gets their
+        // restore when the phase ends; everyone else is restored immediately.
+        if (mgr.beginLoserEndPhaseIfPending(player, null)) {
+            return;
+        }
+
         Bukkit.getScheduler().runTask(plugin, () -> {
             if (player.isOnline()) {
                 mgr.restorePlayerPostDuel(player, snapshot);
@@ -118,13 +202,10 @@ public final class DuelListener implements Listener {
     }
 
     /**
-     * Duel gear is plugin-issued and every exit path overwrites it with the player's real pre-duel
-     * inventory, so anything dropped mid-duel is newly minted material that outlives the duel:
-     * the arena is an ordinary world location, so the dropper can walk back once it frees up, and
-     * a third party can stand in it during the fight (the duel's mutual-hide wall only stops
-     * rendering, not collision or item pickup). Blocking the drop is the clean fix; DuelManager
-     * additionally sweeps the arena when the duel resolves, for anything that lands there by
-     * other means.
+     * Duel gear is plugin-issued and every exit path overwrites it with the player's real
+     * inventory, so anything dropped mid-duel outlives the duel as minted material: the arena is
+     * an ordinary world location the dropper can walk back into, and the mutual-hide wall stops
+     * rendering, not collision or pickup. DuelManager additionally sweeps the arena on resolve.
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onDropDuringDuel(org.bukkit.event.player.PlayerDropItemEvent event) {

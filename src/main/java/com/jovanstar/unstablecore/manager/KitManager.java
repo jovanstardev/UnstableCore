@@ -87,7 +87,7 @@ public final class KitManager {
         }
     }
 
-    
+
     private void migrateLegacyKitsYml() {
         File legacy = new File(plugin.getDataFolder(), "kits.yml");
         if (!legacy.exists()) {
@@ -178,9 +178,9 @@ public final class KitManager {
      * alternative is giving players a dye labelled "Save Kit" whenever an older or hand-written
      * kit file happens to have something there.
      *
-     * <p>The editor only ever writes slots 0-51, so this cannot happen through the UI. It can
-     * happen in a hand-edited YAML, where the item was previously dropped in complete silence and
-     * the author had no way to tell why part of their kit never appeared. Say so at load time.
+     * <p>The editor only writes slots 0-51, so the UI cannot produce this. A hand-edited YAML
+     * can, and dropping the item silently leaves the author no way to tell why part of their kit
+     * never appears - so name the kit and slot at load time.
      */
     private void warnAboutReservedSlots(String kitId, ItemStack[] contents) {
         if (contents == null) {
@@ -388,7 +388,7 @@ public final class KitManager {
         return out;
     }
 
-    
+
     private static ItemStack readSimpleItem(ConfigurationSection sec) {
         if (sec == null) {
             return null;
@@ -627,6 +627,24 @@ public final class KitManager {
         return true;
     }
 
+    /**
+     * The free fallback kit: {@code kits.default-kit}, or the first starter-tier kit if that id
+     * is missing from the config. Never a paid or rank-locked kit, so it is safe to hand out on
+     * paths that deliberately bypass the loadout cooldown. Null only if no kit qualifies.
+     */
+    public Kit getDefaultKit() {
+        Kit kit = getKit(plugin.getConfig().getString("kits.default-kit", "law"));
+        if (kit != null) {
+            return kit;
+        }
+        for (Kit candidate : kits.values()) {
+            if (isStarter(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
     public void ensureDefaultKit(Player player) {
         if (player == null) {
             return;
@@ -634,16 +652,7 @@ public final class KitManager {
         if (getSelectedKit(player) != null) {
             return;
         }
-        String defaultId = plugin.getConfig().getString("kits.default-kit", "law");
-        Kit kit = getKit(defaultId);
-        if (kit == null) {
-            for (Kit candidate : kits.values()) {
-                if (isStarter(candidate)) {
-                    kit = candidate;
-                    break;
-                }
-            }
-        }
+        Kit kit = getDefaultKit();
         if (kit == null) {
             return;
         }
@@ -845,7 +854,7 @@ public final class KitManager {
         return true;
     }
 
-    
+
     private static boolean isPreviewOnly(Material type) {
         return type == Material.GRAY_STAINED_GLASS_PANE
                 || type == Material.BLACK_STAINED_GLASS_PANE
@@ -889,7 +898,7 @@ public final class KitManager {
         return out;
     }
 
-    
+
     public static ItemStack[] snapshotStorage(Player player) {
         ItemStack[] out = new ItemStack[Kit.CONTENTS_SIZE];
         PlayerInventory inv = player.getInventory();

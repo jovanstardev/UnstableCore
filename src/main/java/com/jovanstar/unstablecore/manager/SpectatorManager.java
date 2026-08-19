@@ -70,30 +70,32 @@ public final class SpectatorManager {
             msg(spectator, "spectate-self", Map.of());
             return false;
         }
-        // A participant in their own live duel can't sidestep into spectating someone else's -
-        // that would GameMode.SPECTATOR/teleport them out of their own arena (dodging damage,
-        // stranding their opponent) while playerDuel/state still says they're mid-fight. Contrast
-        // with DuelManager.runSetupSequence, which already forces the opposite direction (pulling
-        // a spectator out before letting them start a duel of their own).
+        // A participant in a live duel must not sidestep into spectating another one: that would
+        // teleport them out of their own arena in GameMode.SPECTATOR, dodging damage and
+        // stranding their opponent, while the duel state still says they are mid-fight.
         if (plugin.getDuelManager().isInActiveDuel(spectator.getUniqueId())) {
             msg(spectator, "spectate-busy", Map.of());
             return false;
         }
-        // A player mid-fight in the open world/FFA arena (combat-tagged but not in a duel of
-        // their own) could otherwise type /spec on any active duelist to be instantly set to
-        // GameMode.SPECTATOR and teleported away - dodging their fight for free with immunity
-        // to boot, worse than a plain teleport escape.
+        // Without this, anyone combat-tagged could /spec an active duelist to be teleported away
+        // in invulnerable spectator mode - a free escape from a losing fight.
         if (plugin.getCombatListener() != null && plugin.getCombatListener().isCombatTagged(spectator.getUniqueId())) {
             msg(spectator, "spectate-busy", Map.of());
             return false;
         }
-        // The combat-tag check above only catches someone who has recently traded hits. A player
-        // standing inside an FFA arena who hasn't been touched yet is still committed to that
-        // arena, and /spec would teleport them out of it into invulnerable spectator mode - the
-        // same free exit the tag check blocks, just taken a moment earlier. Duel requests and the
-        // duel queue already refuse arena residents for exactly this reason; match that.
+        // The tag check only catches someone who has already traded hits; an untouched player
+        // standing in an FFA arena is just as committed to it. Duel requests and the queue refuse
+        // arena residents for the same reason.
         if (plugin.getArenaManager() != null
                 && plugin.getArenaManager().getPlayerArena(spectator.getUniqueId()) != null) {
+            msg(spectator, "spectate-busy", Map.of());
+            return false;
+        }
+        // Their own duel is still unwinding: the restore that lands shortly reapplies their
+        // pre-duel game mode and inventory, which would drop them out of spectator and into
+        // survival inside this arena. forceExit in restorePlayerPostDuel repairs that if it
+        // happens anyway; refusing here keeps them from entering the window at all.
+        if (plugin.getDuelManager().hasPendingPostDuelRestore(spectator.getUniqueId())) {
             msg(spectator, "spectate-busy", Map.of());
             return false;
         }
@@ -142,6 +144,27 @@ public final class SpectatorManager {
                 "challenger", challenger.getName(), "target", opponent.getName()
         ));
         return true;
+    }
+
+    /**
+     * Ends a spectate session without restoring the player's pre-spectate location or game mode,
+     * for callers that are about to set both themselves.
+     *
+     * <p>The post-duel inventory restore is exactly that caller, and it runs on a delay. A player
+     * who started spectating another duel inside that window would otherwise be dropped back into
+     * survival - by {@link com.jovanstar.unstablecore.model.DuelInventorySnapshot#restore}, which
+     * reapplies the pre-duel game mode - while still registered as a spectator, leaving them a
+     * fully-equipped normal player standing in someone else's live duel arena.
+     */
+    public void forceExit(Player spectator) {
+        if (spectator == null || !isSpectating(spectator.getUniqueId())) {
+            return;
+        }
+        exitCurrent(spectator, false);
+        previousStates.remove(spectator.getUniqueId());
+        if (plugin.getDuelScoreboardManager() != null) {
+            plugin.getDuelScoreboardManager().stopFor(spectator.getUniqueId(), true);
+        }
     }
 
     /** Public exit, e.g. from `/spec` toggled off or `/leave` while spectating. */

@@ -46,10 +46,10 @@ public final class LeaderboardManager {
      * ever seen is not an acceptable per-call cost.
      */
     private final Map<String, UUID> nameToUuid = new ConcurrentHashMap<>();
-    // Raw DB rows backing the COINS/PLAYTIME categories, refreshed off-thread on a timer (see
-    // refreshDbRowsAsync). compute()/list() only ever read this cache - they never touch the
-    // database directly - so a leaderboard-cache-expiry can no longer block the main thread on a
-    // JDBC round-trip (previously up to the full 10s Hikari connection timeout under DB latency).
+    // Raw DB rows backing the COINS/PLAYTIME categories, refreshed off-thread on a timer by
+    // refreshDbRowsAsync. compute() and list() only read this cache and never touch the database,
+    // so a cache expiry cannot block the main thread on a JDBC round trip - which under load
+    // means the full 10s Hikari connection timeout.
     private final Map<LeaderboardCategory, List<DatabaseManager.ProfileRow>> dbRowsCache = new ConcurrentHashMap<>();
     private volatile boolean dbRefreshInFlight = false;
     private int syncTaskId = -1;

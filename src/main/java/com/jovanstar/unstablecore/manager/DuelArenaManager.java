@@ -32,9 +32,9 @@ public final class DuelArenaManager {
     private final Map<String, UUID> reservedBy = new ConcurrentHashMap<>();
     private final Map<String, Long> graceEndsAt = new ConcurrentHashMap<>();
 
-    // duels.yml's arena list is re-parsed into a Set on first use and cached - a GUI refresh
-    // tick was previously re-reading and re-lowercasing this YAML list on every single
-    // availability() check (once per arena, every ~2s per open map GUI). reload() invalidates it.
+    // duels.yml's arena list, parsed and lower-cased once on first use. Without the cache every
+    // availability() call re-reads it - once per arena, every couple of seconds per open map GUI.
+    // reload() invalidates it.
     private volatile Set<String> configuredIdsCache;
 
     public DuelArenaManager(UnstableCore plugin) {

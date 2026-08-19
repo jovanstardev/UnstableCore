@@ -143,6 +143,9 @@ permissions:
   unstablecore.duel.spectate:
     description: Access to /spec
     default: true
+  unstablecore.duel.arena.bypass:
+    description: Walk into a duel arena while a duel is live (staff moderation)
+    default: op
   tags.emoji:
     description: Access to emoji tags
     default: false
