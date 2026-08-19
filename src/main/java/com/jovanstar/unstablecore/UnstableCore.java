@@ -4,7 +4,6 @@ import com.jovanstar.unstablecore.command.ArenasCommand;
 import com.jovanstar.unstablecore.command.BountyCommand;
 import com.jovanstar.unstablecore.command.DisposalCommand;
 import com.jovanstar.unstablecore.command.DuelAdminCommand;
-import com.jovanstar.unstablecore.command.DuelCommand;
 import com.jovanstar.unstablecore.command.KillstreakCommand;
 import com.jovanstar.unstablecore.command.KitCommand;
 import com.jovanstar.unstablecore.command.KitsCommand;
@@ -22,6 +21,7 @@ import com.jovanstar.unstablecore.command.TagsCommand;
 import com.jovanstar.unstablecore.command.UnstableCoreCommand;
 import com.jovanstar.unstablecore.listener.ArenaListener;
 import com.jovanstar.unstablecore.listener.AntiGlitchListener;
+import com.jovanstar.unstablecore.listener.CommandWhitelistListener;
 import com.jovanstar.unstablecore.listener.BountyListener;
 import com.jovanstar.unstablecore.listener.CombatListener;
 import com.jovanstar.unstablecore.listener.DuelListener;
@@ -350,10 +350,6 @@ public final class UnstableCore extends JavaPlugin {
         getCommand("leaderboard").setExecutor(leaderboard);
         getCommand("leaderboard").setTabCompleter(leaderboard);
 
-        DuelCommand duel = new DuelCommand(this);
-        getCommand("duel").setExecutor(duel);
-        getCommand("duel").setTabCompleter(duel);
-
         getCommand("leave").setExecutor(new LeaveCommand(this));
 
         DuelAdminCommand duelAdmin = new DuelAdminCommand(this);
@@ -374,6 +370,7 @@ public final class UnstableCore extends JavaPlugin {
         this.arenaListener = new ArenaListener(this);
         Bukkit.getPluginManager().registerEvents(arenaListener, this);
         Bukkit.getPluginManager().registerEvents(new AntiGlitchListener(this), this);
+        Bukkit.getPluginManager().registerEvents(new CommandWhitelistListener(this), this);
         this.heldShulkerListener = new HeldShulkerListener(this);
         Bukkit.getPluginManager().registerEvents(heldShulkerListener, this);
         Bukkit.getPluginManager().registerEvents(new GuiListener(this), this);

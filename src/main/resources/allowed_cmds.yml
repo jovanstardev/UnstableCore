@@ -1,0 +1,37 @@
+# Global command whitelist. When enabled, a player without the bypass permission (OPs have it
+# by default) can only run commands whose base label appears in this list - every other command,
+# including ones from other plugins and vanilla commands, is blocked before it runs.
+#
+# List only the base label, lowercase, no leading slash and no arguments (e.g. "kit", not
+# "/kit <name>"). An alias is a different label from the command's main name, so list aliases
+# separately if you want them usable too.
+enabled: true
+bypass-permission: unstablecore.admin
+blocked-message: "&c&l(!) &r&cThat command isn't allowed on this server."
+commands:
+  - arenas
+  - sword
+  - loadout
+  - kits
+  - kit
+  - mapvote
+  - shop
+  - stats
+  - settings
+  - rewards
+  - daily
+  - trash
+  - disposal
+  - killstreak
+  - killstreaktoggle
+  - resetkillstreak
+  - tags
+  - emojitags
+  - ranktags
+  - auratags
+  - bounty
+  - leaderboard
+  - leave
+  - spec
+  - skin
+  - skins

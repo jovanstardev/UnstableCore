@@ -20,6 +20,7 @@ public final class ConfigManager {
     private FileConfiguration bountyConfig;
     private FileConfiguration leaderboardConfig;
     private FileConfiguration duelsConfig;
+    private FileConfiguration allowedCmdsConfig;
     private FileConfiguration dataConfig;
 
     private File afkFile;
@@ -30,6 +31,7 @@ public final class ConfigManager {
     private File bountyFile;
     private File leaderboardFile;
     private File duelsFile;
+    private File allowedCmdsFile;
     private File dataFile;
 
     public ConfigManager(UnstableCore plugin) {
@@ -49,6 +51,7 @@ public final class ConfigManager {
         bountyFile = saveResourceIfMissing("bounty.yml");
         leaderboardFile = saveResourceIfMissing("leaderboard.yml");
         duelsFile = saveResourceIfMissing("duels.yml");
+        allowedCmdsFile = saveResourceIfMissing("allowed_cmds.yml");
         dataFile = new File(plugin.getDataFolder(), "data.yml");
 
         afkConfig = YamlConfiguration.loadConfiguration(afkFile);
@@ -59,6 +62,7 @@ public final class ConfigManager {
         bountyConfig = YamlConfiguration.loadConfiguration(bountyFile);
         leaderboardConfig = YamlConfiguration.loadConfiguration(leaderboardFile);
         duelsConfig = YamlConfiguration.loadConfiguration(duelsFile);
+        allowedCmdsConfig = YamlConfiguration.loadConfiguration(allowedCmdsFile);
         if (!dataFile.exists()) {
             try {
                 dataFile.getParentFile().mkdirs();
@@ -151,6 +155,10 @@ public final class ConfigManager {
         duelsConfig = YamlConfiguration.loadConfiguration(duelsFile);
     }
 
+    public void reloadAllowedCmds() {
+        allowedCmdsConfig = YamlConfiguration.loadConfiguration(allowedCmdsFile);
+    }
+
     private void save(FileConfiguration config, File file) {
         try {
             config.save(file);
@@ -189,6 +197,10 @@ public final class ConfigManager {
 
     public FileConfiguration getDuels() {
         return duelsConfig;
+    }
+
+    public FileConfiguration getAllowedCmds() {
+        return allowedCmdsConfig;
     }
 
     public FileConfiguration getData() {
