@@ -85,6 +85,16 @@ public final class AntiGlitchListener implements Listener {
             MessageUtil.sendConfig(player, "pearl-stale", Map.of());
             return;
         }
+        // The pearl entity flies straight through the world border - vanilla only constrains
+        // player movement, not the entity or its landing teleport. Completing this teleport puts
+        // the player outside the border: invisible to most of the server, effectively softlocked,
+        // and free to act where nobody can reach them. Cancel instead of clamping - a clamped
+        // landing on the border edge is exactly the "stand on the border" spot cheats want.
+        if (!to.getWorld().getWorldBorder().isInside(to)) {
+            event.setCancelled(true);
+            MessageUtil.sendConfig(player, "pearl-border", Map.of());
+            return;
+        }
         if (!plugin.getArenaManager().hasArenasInWorld(to.getWorld().getName())) {
             return;
         }
