@@ -64,7 +64,7 @@ public final class ArenaManager {
     private final Map<String, Deque<long[]>> recentSpawns = new ConcurrentHashMap<>();
 
     private static final long SPOT_RECACHE_COOLDOWN_MS = 60_000L;
-    /** arena id -> last time teleportToArena rebuilt its spot cache, to keep that off the hot path. */
+    /** arena id -> last time a join recached spots because none of the saved ones were usable. */
     private final Map<String, Long> lastSpotRecache = new ConcurrentHashMap<>();
 
     private final Set<UUID> mineBypass = ConcurrentHashMap.newKeySet();
@@ -816,33 +816,17 @@ public final class ArenaManager {
             return false;
         }
 
-        Location spot = pickValidatedSpot(arena);
+        Location spot = pickFixedCachedSpot(arena);
         if (spot == null) {
-            // cacheSafeSpots() probes hundreds of columns of blocks and save() then rewrites the
-            // whole of arenas.yml - both on the main thread, both triggered by a plain GUI click.
-            // If an arena has no usable spot (misconfigured centre, world edits) that used to fire
-            // on *every* join attempt, so a handful of players clicking join could hold the server
-            // in a permanent stall loop. Re-cache at most once a minute per arena, and let the
-            // normal autosave persist the result instead of blocking on a file write here.
             long now = System.currentTimeMillis();
             Long last = lastSpotRecache.get(arena.getId());
             if (last == null || now - last >= SPOT_RECACHE_COOLDOWN_MS) {
                 lastSpotRecache.put(arena.getId(), now);
                 cacheSafeSpots(arena);
-                spot = pickValidatedSpot(arena);
+                spot = pickFixedCachedSpot(arena);
             }
         }
         if (spot == null) {
-            Location center = arena.getCenter();
-            if (center != null
-                    && isSafe(center.getWorld(), center.getBlockX(), center.getBlockY(), center.getBlockZ())
-                    && isInsideArenaBounds(center.getWorld(), center, arena.getRadius(),
-                    center.getBlockX(), center.getBlockY(), center.getBlockZ())) {
-                spot = center.clone().add(0.5, 0, 0.5);
-            }
-        }
-        if (spot == null || !isInsideArenaBounds(spot.getWorld(), arena.getCenter(), arena.getRadius(),
-                spot.getBlockX(), spot.getBlockY(), spot.getBlockZ())) {
             MessageUtil.sendConfig(player, "arena-no-spots", Map.of());
             return false;
         }
@@ -923,6 +907,41 @@ public final class ArenaManager {
      */
     public Location findSafeSpot(Arena arena) {
         return pickValidatedSpot(arena);
+    }
+
+    /**
+     * Always the same cached RTP spot for this map: first still-valid entry in the
+     * saved spots list (the ones generated when the arena center was set).
+     */
+    private Location pickFixedCachedSpot(Arena arena) {
+        Location center = arena.getCenter();
+        if (center == null) {
+            return null;
+        }
+        World world = center.getWorld();
+        if (world == null) {
+            return null;
+        }
+        int radius = Math.max(5, arena.getRadius());
+        List<int[]> spots = arena.getSpots();
+        if (spots.isEmpty()) {
+            return null;
+        }
+        int[] chosen = spots.get(0);
+        if (isSafeOpenSpot(world, chosen[0], chosen[1], chosen[2])
+                && isInsideArenaBounds(world, center, radius, chosen[0], chosen[1], chosen[2])) {
+            return new Location(world, chosen[0] + 0.5, chosen[1], chosen[2] + 0.5,
+                    center.getYaw(), center.getPitch());
+        }
+        for (int i = 1; i < spots.size(); i++) {
+            int[] s = spots.get(i);
+            if (!isSafeOpenSpot(world, s[0], s[1], s[2])
+                    || !isInsideArenaBounds(world, center, radius, s[0], s[1], s[2])) {
+                continue;
+            }
+            return new Location(world, s[0] + 0.5, s[1], s[2] + 0.5, center.getYaw(), center.getPitch());
+        }
+        return null;
     }
 
     private Location pickValidatedSpot(Arena arena) {
