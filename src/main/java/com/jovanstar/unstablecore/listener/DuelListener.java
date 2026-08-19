@@ -9,6 +9,7 @@ import com.jovanstar.unstablecore.util.MessageUtil;
 import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -20,13 +21,16 @@ import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Duel-specific event wiring: the wager chat prompt (mirrors {@link BountyListener}), death
@@ -35,10 +39,66 @@ import java.util.UUID;
  */
 public final class DuelListener implements Listener {
 
+    /** Rate limit for the "arena in use" bounce message, so walking the edge can't spam chat. */
+    private static final long INTRUDER_MESSAGE_COOLDOWN_MS = 3_000L;
+
     private final UnstableCore plugin;
+    private final Map<UUID, Long> lastIntruderNotice = new ConcurrentHashMap<>();
 
     public DuelListener(UnstableCore plugin) {
         this.plugin = plugin;
+    }
+
+    /**
+     * Keeps everyone who isn't fighting in a duel out of its arena while it is live.
+     *
+     * <p>The duel's mutual-hide wall only stops rendering - it has never stopped collision, damage
+     * or item pickup - so a third party could walk into an active duel arena and body-block,
+     * interfere, or stand on the floor loot. Spectators are exempt because {@code /spec} puts them
+     * in {@link GameMode#SPECTATOR} before teleporting, which cannot touch anything, and staff can
+     * be exempted with {@code unstablecore.duel.arena.bypass}.
+     *
+     * <p>{@code PlayerTeleportEvent} extends {@code PlayerMoveEvent} and shares its handler list,
+     * so this also covers ender pearls and teleport commands into the arena.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onMoveIntoDuelArena(PlayerMoveEvent event) {
+        Location to = event.getTo();
+        Location from = event.getFrom();
+        if (to == null
+                || (from.getBlockX() == to.getBlockX()
+                && from.getBlockY() == to.getBlockY()
+                && from.getBlockZ() == to.getBlockZ())) {
+            return;
+        }
+        DuelManager mgr = plugin.getDuelManager();
+        if (mgr == null) {
+            return;
+        }
+        Player player = event.getPlayer();
+        if (player.getGameMode() == GameMode.SPECTATOR
+                || player.hasPermission("unstablecore.duel.arena.bypass")) {
+            return;
+        }
+        Duel duel = mgr.activeDuelAt(to);
+        if (duel == null || duel.involves(player.getUniqueId())) {
+            return;
+        }
+        event.setTo(from);
+        UUID uuid = player.getUniqueId();
+        long now = System.currentTimeMillis();
+        Long last = lastIntruderNotice.get(uuid);
+        if (last != null && now - last < INTRUDER_MESSAGE_COOLDOWN_MS) {
+            return;
+        }
+        // Swept only on the message path, not on every bounce: someone held against the wall
+        // fires this handler every block-move, and that is not the place for an O(size) scan.
+        lastIntruderNotice.values().removeIf(
+                at -> at == null || now - at > INTRUDER_MESSAGE_COOLDOWN_MS * 10);
+        lastIntruderNotice.put(uuid, now);
+        MessageUtil.send(player, plugin.getConfigManager().getDuels()
+                .getString("messages.arena-occupied",
+                        "&cThat arena is hosting a duel - use &f/spec &cto watch."));
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)

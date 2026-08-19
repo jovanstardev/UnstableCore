@@ -159,7 +159,7 @@ messages:
   draw-title: "&f&lDraw"
   draw-subtitle: "&7No one died"
   timeout-win: "&a✔ &f{winner} &7wins by higher health after the time limit."
-  grace-period: "&7Collect your items - the arena is yours for &f{seconds}s&7. Type &f/leave &7to head out early."
+  arena-occupied: "&cThat arena is hosting a duel - use &f/spec &cto watch."
   leave-success: "&7You left the duel arena."
   not-in-grace: "&cYou're not in a post-duel grace period."
   toggle-on: "&a✔ &7You are now accepting duel requests."

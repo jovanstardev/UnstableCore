@@ -1565,6 +1565,11 @@ public final class DuelManager {
     /**
      * Locks the arena out of new duels for grace-period-seconds so leftover items and mobs can't
      * bleed into the next fight, then frees it and drops the Duel from the map.
+     *
+     * <p>The lock is on the <em>arena</em> only. finishDuel has already teleported both players
+     * back to spawn by this point, so also holding them in a player-side grace state just blocked
+     * them from duelling, queueing, joining an arena and map-voting while they stood at spawn with
+     * the duel over - and reported it as "you're already in a duel".
      */
     private void startGracePeriod(Duel duel) {
         long graceSeconds = Math.max(0L, cfg().getLong("grace-period-seconds", 180));
@@ -1577,9 +1582,6 @@ public final class DuelManager {
             return;
         }
         duelArenaManager.enterGrace(duel.getArenaId(), System.currentTimeMillis() + graceSeconds * 1000L);
-        playerGrace.put(duel.getChallenger(), duel.getId());
-        playerGrace.put(duel.getTarget(), duel.getId());
-        sendGraceMessage(duel);
         BukkitTask task = Bukkit.getScheduler().runTaskLater(plugin, () -> endGrace(duel.getId()), graceSeconds * 20L);
         duel.setGraceTask(task);
     }
@@ -1711,14 +1713,6 @@ public final class DuelManager {
                 + " target=" + duel.getTarget() + " wager=" + duel.getWager());
     }
 
-    private void sendGraceMessage(Duel duel) {
-        long seconds = Math.max(0L, cfg().getLong("grace-period-seconds", 180));
-        Player challenger = Bukkit.getPlayer(duel.getChallenger());
-        Player target = Bukkit.getPlayer(duel.getTarget());
-        msg(challenger, "grace-period", Map.of("seconds", String.valueOf(seconds)));
-        msg(target, "grace-period", Map.of("seconds", String.valueOf(seconds)));
-    }
-
     private void sendRematchHint(Duel duel) {
         if (!cfg().getBoolean("rematch.enabled", true)) {
             return;
@@ -1811,21 +1805,15 @@ public final class DuelManager {
         }
     }
 
+    /**
+     * Frees the arena once its grace window expires. Deliberately does not touch the players:
+     * they were returned to spawn when the duel ended and are free to do anything since, so
+     * teleporting them here would yank them out of whatever fight they had moved on to.
+     */
     private void endGrace(UUID duelId) {
         Duel duel = duels.get(duelId);
         if (duel == null) {
             return;
-        }
-        for (UUID uuid : List.of(duel.getChallenger(), duel.getTarget())) {
-            if (duel.getLeftGrace().contains(uuid)) {
-                continue;
-            }
-            duel.markLeftGrace(uuid);
-            playerGrace.remove(uuid);
-            Player player = Bukkit.getPlayer(uuid);
-            if (player != null && player.isOnline()) {
-                teleportBack(player, duel.snapshotFor(uuid));
-            }
         }
         releaseGraceArena(duel);
     }
@@ -2012,6 +2000,40 @@ public final class DuelManager {
     // ---------------------------------------------------------------------------------------
     // Arena boundary enforcement
     // ---------------------------------------------------------------------------------------
+
+    /**
+     * The duel being fought in the arena containing {@code loc}, or null if that spot isn't inside
+     * a live duel arena.
+     *
+     * <p>Used to keep non-participants physically out. The duel's mutual-hide wall is cosmetic -
+     * it stops rendering, not collision, damage or item pickup - so without this an outsider can
+     * simply walk in, body-block, and pick up anything on the floor.
+     *
+     * <p>Iterates live duels rather than indexing by chunk: there are only ever a handful at once,
+     * and callers already gate on the player having crossed a block boundary.
+     */
+    public Duel activeDuelAt(Location loc) {
+        if (loc == null || loc.getWorld() == null) {
+            return null;
+        }
+        for (Duel duel : duels.values()) {
+            if (!duel.getState().isActiveCombat()) {
+                continue;
+            }
+            Arena arena = duelArenaManager.resolve(duel.getArenaId());
+            if (arena == null || !arena.hasCenter()
+                    || !loc.getWorld().getName().equalsIgnoreCase(arena.getWorldName())) {
+                continue;
+            }
+            double dx = loc.getX() - arena.getX();
+            double dz = loc.getZ() - arena.getZ();
+            double r = arena.getRadius();
+            if ((dx * dx) + (dz * dz) <= r * r) {
+                return duel;
+            }
+        }
+        return null;
+    }
 
     private void tickBoundaryCheck() {
         for (Duel duel : duels.values()) {
