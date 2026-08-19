@@ -58,8 +58,8 @@ public final class DuelListener implements Listener {
      * in {@link GameMode#SPECTATOR} before teleporting, which cannot touch anything, and staff can
      * be exempted with {@code unstablecore.duel.arena.bypass}.
      *
-     * <p>{@code PlayerTeleportEvent} extends {@code PlayerMoveEvent} and shares its handler list,
-     * so this also covers ender pearls and teleport commands into the arena.
+     * <p>This covers walking; {@link #onTeleportIntoDuelArena} covers pearls and teleports, which
+     * dispatch on {@code PlayerTeleportEvent}'s own handler list and never reach this handler.
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onMoveIntoDuelArena(PlayerMoveEvent event) {
@@ -71,20 +71,44 @@ public final class DuelListener implements Listener {
                 && from.getBlockZ() == to.getBlockZ())) {
             return;
         }
+        if (blocksArenaEntry(event.getPlayer(), to)) {
+            event.setTo(from);
+            notifyIntruder(event.getPlayer());
+        }
+    }
+
+    /**
+     * Teleports need their own handler: {@code PlayerTeleportEvent} declares its own
+     * {@code HandlerList}, so a {@code PlayerMoveEvent} listener never sees them. Without this,
+     * ender pearls and teleport commands sailed straight through the walk-in guard above.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onTeleportIntoDuelArena(org.bukkit.event.player.PlayerTeleportEvent event) {
+        Location to = event.getTo();
+        if (to == null) {
+            return;
+        }
+        if (blocksArenaEntry(event.getPlayer(), to)) {
+            event.setCancelled(true);
+            notifyIntruder(event.getPlayer());
+        }
+    }
+
+    /** True when {@code to} is inside a live duel arena that this player has no business in. */
+    private boolean blocksArenaEntry(Player player, Location to) {
         DuelManager mgr = plugin.getDuelManager();
         if (mgr == null) {
-            return;
+            return false;
         }
-        Player player = event.getPlayer();
         if (player.getGameMode() == GameMode.SPECTATOR
                 || player.hasPermission("unstablecore.duel.arena.bypass")) {
-            return;
+            return false;
         }
         Duel duel = mgr.activeDuelAt(to);
-        if (duel == null || duel.involves(player.getUniqueId())) {
-            return;
-        }
-        event.setTo(from);
+        return duel != null && !duel.involves(player.getUniqueId());
+    }
+
+    private void notifyIntruder(Player player) {
         UUID uuid = player.getUniqueId();
         long now = System.currentTimeMillis();
         Long last = lastIntruderNotice.get(uuid);

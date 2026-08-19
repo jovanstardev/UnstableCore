@@ -485,6 +485,7 @@ anti-bush:
 
 messages:
   no-permission: "&cYou don't have permission."
+  pearl-stale: "&7Your ender pearl fizzled - you were moved to another map while it was in the air."
   player-only: "&cPlayers only."
   player-not-found: "&cPlayer not found."
   reload: "&aUnstableCore reloaded."
