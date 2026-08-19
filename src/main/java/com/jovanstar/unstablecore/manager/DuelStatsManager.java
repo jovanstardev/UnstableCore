@@ -277,10 +277,9 @@ public final class DuelStatsManager {
     }
 
     // -----------------------------------------------------------------------------------
-    // ELO-farming detection - "flag, don't auto-punish" per DUELS.md. Purely in-memory and
-    // resets on restart, same as dailyWagerTracking below: this is a staff-visible signal
-    // (surfaced via /dueladmin flags), not an economic safety boundary, so it doesn't need
-    // to survive a restart the way escrow/payout state does.
+    // Farming detection - "flag, don't auto-punish" per DUELS.md. In-memory and reset on
+    // restart by design: this is a staff-visible signal surfaced through /dueladmin flags,
+    // not an economic safety boundary like escrow and payout state.
     // -----------------------------------------------------------------------------------
 
     private record RankedMatch(long atMs, UUID winner) {
@@ -305,15 +304,11 @@ public final class DuelStatsManager {
      * Records a decided duel against the winner/loser pair and raises a staff-visible flag when
      * the pattern looks like farming. Called once per decided duel from DuelManager.recordStats.
      *
-     * <p>This used to be invoked from {@link #recordRankedResult}, i.e. only for ranked duels -
-     * but a duel is never both ranked and wagered: the ranked queue always creates duels with a
-     * wager of 0, and the /duel request flow (the only path that carries a wager) always creates
-     * them unranked. So the entire *economic* half of duelling - repeated high-value wagers
-     * traded back and forth between two cooperating accounts, which with the default
-     * house-cut-percent of 0 and no daily limit costs the pair nothing per round while pushing
-     * duel_coins_won, duel_wins and duel_best_streak up the leaderboards - produced no signal at
-     * all, and /dueladmin flags stayed empty no matter how blatant it got. Driving it from the
-     * shared terminal path covers both kinds.
+     * <p>Driven from the shared terminal path rather than from {@link #recordRankedResult},
+     * because a duel is never both ranked and wagered: the ranked queue always wagers 0, and the
+     * /duel request flow always creates unranked duels. Hooking it to the ranked path alone would
+     * leave the economic half unwatched - two accounts trading a wager back and forth, free at
+     * the default house cut, climbing duel_coins_won, duel_wins and duel_best_streak.
      */
     public void checkFarming(UUID winner, UUID loser) {
         if (winner == null || loser == null || winner.equals(loser)) {

@@ -197,11 +197,9 @@ public final class BountyManager {
             return false;
         }
 
-        // Cap check before the withdrawal, not after. Taking the coins first and refunding on
-        // rejection is a visible, spammable balance round-trip, and every refund used to be
-        // counted as fresh income by the stats layer - so a rejected stack silently inflated the
-        // placer's lifetime coins-earned figure at no cost. Reading the current total here is
-        // safe: the authoritative re-check still happens under claimLock below.
+        // Cap-check before the withdrawal, not after: taking the coins and refunding on rejection
+        // is a spammable balance round-trip that the stats layer would count as fresh income.
+        // Reading the total unlocked is safe - the authoritative re-check runs under claimLock.
         Bounty preview = bounties.get(target.getUniqueId());
         if (preview != null && preview.amount() + rounded > maxAmount()) {
             msg(placer, "invalid-amount", Map.of(

@@ -70,28 +70,22 @@ public final class SpectatorManager {
             msg(spectator, "spectate-self", Map.of());
             return false;
         }
-        // A participant in their own live duel can't sidestep into spectating someone else's -
-        // that would GameMode.SPECTATOR/teleport them out of their own arena (dodging damage,
-        // stranding their opponent) while playerDuel/state still says they're mid-fight. Contrast
-        // with DuelManager.runSetupSequence, which already forces the opposite direction (pulling
-        // a spectator out before letting them start a duel of their own).
+        // A participant in a live duel must not sidestep into spectating another one: that would
+        // teleport them out of their own arena in GameMode.SPECTATOR, dodging damage and
+        // stranding their opponent, while the duel state still says they are mid-fight.
         if (plugin.getDuelManager().isInActiveDuel(spectator.getUniqueId())) {
             msg(spectator, "spectate-busy", Map.of());
             return false;
         }
-        // A player mid-fight in the open world/FFA arena (combat-tagged but not in a duel of
-        // their own) could otherwise type /spec on any active duelist to be instantly set to
-        // GameMode.SPECTATOR and teleported away - dodging their fight for free with immunity
-        // to boot, worse than a plain teleport escape.
+        // Without this, anyone combat-tagged could /spec an active duelist to be teleported away
+        // in invulnerable spectator mode - a free escape from a losing fight.
         if (plugin.getCombatListener() != null && plugin.getCombatListener().isCombatTagged(spectator.getUniqueId())) {
             msg(spectator, "spectate-busy", Map.of());
             return false;
         }
-        // The combat-tag check above only catches someone who has recently traded hits. A player
-        // standing inside an FFA arena who hasn't been touched yet is still committed to that
-        // arena, and /spec would teleport them out of it into invulnerable spectator mode - the
-        // same free exit the tag check blocks, just taken a moment earlier. Duel requests and the
-        // duel queue already refuse arena residents for exactly this reason; match that.
+        // The tag check only catches someone who has already traded hits; an untouched player
+        // standing in an FFA arena is just as committed to it. Duel requests and the queue refuse
+        // arena residents for the same reason.
         if (plugin.getArenaManager() != null
                 && plugin.getArenaManager().getPlayerArena(spectator.getUniqueId()) != null) {
             msg(spectator, "spectate-busy", Map.of());

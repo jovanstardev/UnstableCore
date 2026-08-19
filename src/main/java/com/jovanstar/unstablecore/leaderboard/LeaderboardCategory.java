@@ -91,7 +91,7 @@ public enum LeaderboardCategory {
         return Math.max(0, m) + "m";
     }
 
-    
+
     public static String formatPlaytimeOfflineTicks(long ticks) {
         return formatPlaytimeTicks(ticks);
     }

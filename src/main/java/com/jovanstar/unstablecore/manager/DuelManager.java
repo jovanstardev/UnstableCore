@@ -38,16 +38,16 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Orchestrates the entire duel lifecycle: request -> accept -> countdown -> active -> end ->
- * grace period, plus disconnect/timeout/forceend side-exits. See DUELS.md for the full spec.
+ * Orchestrates the duel lifecycle: request -> accept -> countdown -> active -> end -> grace
+ * period, plus the disconnect, timeout and force-end side exits. See DUELS.md for the full spec.
  *
- * <p>Every state-mutating method here is only ever called from the main server thread (command
- * execution, GUI clicks, and scheduled Bukkit tasks all run there); DB work always hops onto an
- * async task and, where it needs to touch this manager's state again, hops back via
- * {@code runTask}. Every terminal operation (escrow, payout, stats, inventory restore, grace
- * release) is guarded by an idempotency flag on {@link Duel} so it can never run twice, and every
- * state change goes through {@link Duel#transition} so exactly one of two racing callers ever
- * wins a given transition.
+ * <p><b>Threading.</b> Every state-mutating method runs on the main thread; commands, GUI clicks
+ * and scheduled tasks all land there. Database work hops to an async task and back via
+ * {@code runTask} before touching manager state again.
+ *
+ * <p><b>Invariants.</b> State changes go through {@link Duel#transition}, so exactly one of two
+ * racing callers wins. Terminal operations - escrow, payout, stats, inventory restore, grace
+ * release - each sit behind an idempotency flag on {@link Duel} and can never run twice.
  */
 public final class DuelManager {
 
@@ -72,10 +72,8 @@ public final class DuelManager {
     private final Map<UUID, Location> pendingRespawnLocations = new ConcurrentHashMap<>();
     private final Map<UUID, DuelInventorySnapshot> pendingRespawnSnapshots = new ConcurrentHashMap<>();
     /**
-     * Restores that finishDuel scheduled but that haven't run yet - currently the winner's 3s
-     * victory delay. The duel is already terminal and its DB crash-recovery row already deleted
-     * by then, so shutdown() has no other way to know a restore is still owed; see the flush at
-     * the end of shutdown().
+     * Restores scheduled by finishDuel but not yet run - the winner's 3s victory delay. The duel
+     * is terminal and its crash-recovery row deleted by then, so shutdown() drains this map.
      */
     private final Map<UUID, DuelInventorySnapshot> pendingPostDuelRestores = new ConcurrentHashMap<>();
     private BukkitTask boundaryTask;
@@ -211,11 +209,9 @@ public final class DuelManager {
         for (Duel duel : new ArrayList<>(duels.values())) {
             duel.cancelAllTasks();
             DuelState state = duel.getState();
-            // REQUESTED never had a snapshot/escrow to touch, and a terminal duel (FINISHED/
-            // FORFEITED, still sitting here only because it's mid grace-period) already ran its
-            // real payout/inventory resolution through finishDuel - re-running the crash-recovery
-            // restore below would clobber whatever the player currently has with their stale
-            // pre-duel snapshot. releaseAll() on next start() reclaims its arena regardless.
+            // REQUESTED holds no snapshot or escrow; a terminal duel (here only for its grace
+            // period) already resolved through finishDuel, so restoring below would overwrite a
+            // live inventory with a stale snapshot. start() reclaims their arenas either way.
             if (state == DuelState.REQUESTED || state.isTerminal()) {
                 continue;
             }
@@ -234,23 +230,15 @@ public final class DuelManager {
             }
             plugin.getDatabaseManager().deleteDuel(duel.getId().toString());
         }
-        // finishDuel hands both players back their pre-duel inventory on a delay - the winner
-        // after a 3s victory pause, the loser on respawn - and deletes the duel's DB
-        // crash-recovery row immediately. A duel sitting in either window is already terminal, so
-        // the loop above skips it (restoring there would clobber a live inventory), and the row is
-        // gone, so next boot won't recover it either. Flush whatever is still owed here, or the
-        // player keeps the duel kit and their real inventory is lost.
-        // restoreIfOnline alone silently dropped these for anyone already offline (a winner who
-        // disconnected inside the 3s victory delay, a loser still on the death screen who quit),
-        // which is exactly the case that cannot be recovered any other way: the duel's DB row is
-        // already deleted, so start() has nothing to replay. Persist those instead so the next
-        // join hands the inventory back.
+        // finishDuel returns both inventories on a delay - the winner after a 3s pause, the loser
+        // on respawn - and deletes the crash-recovery row immediately. Duels in either window are
+        // terminal, so the loop above skips them and next boot has nothing to replay: this is the
+        // only chance to settle them, and dropping one costs the player their real inventory.
         flushOwedRestores(pendingPostDuelRestores);
         flushOwedRestores(pendingRespawnSnapshots);
-        // Restores owed to players who disconnected mid-duel (forfeit loser, winner who dropped
-        // during the victory delay). Anyone still online gets theirs now, and their persisted row
-        // is cleared so it isn't applied a second time on next boot. Anyone offline keeps their
-        // row and is picked up by start()'s recovery pass.
+        // Restores owed to players who disconnected mid-duel. Anyone online gets theirs now and
+        // has their persisted row cleared so it isn't applied twice; anyone offline keeps their
+        // row for start()'s recovery pass.
         int owedOffline = 0;
         for (Map.Entry<UUID, DuelInventorySnapshot> entry : pendingCrashRestores.entrySet()) {
             Player online = Bukkit.getPlayer(entry.getKey());
@@ -317,24 +305,19 @@ public final class DuelManager {
     }
 
     /**
-     * True once the players are actually committed to a fight - from accept (escrow/kit/teleport
-     * setup) through the countdown and the fight itself - as opposed to {@link #isInDuel}, which
-     * is already true for a merely <em>requested</em> duel.
+     * True once both players are committed to a fight - from accept (escrow, kit, teleport)
+     * through the countdown and the fight itself. Contrast {@link #isInDuel}, which is already
+     * true for a merely <em>requested</em> duel.
      *
-     * <p>This distinction matters a lot: {@code isInDuel} is the right gate for "don't let them
-     * start a second duel", but using it to gate combat consequences let a player keep a request
-     * permanently pending and thereby suppress their own death handling in FFA entirely (no
-     * killstreak reset, no death counted, no kill reward/bounty for whoever killed them, and
-     * their drops silently voided). Anything that suppresses or redirects normal combat/inventory
-     * behaviour must use this method instead.
+     * <p>Use this, not {@code isInDuel}, to gate anything that suppresses or redirects normal
+     * combat and inventory behaviour. Gating those on {@code isInDuel} lets a player hold a
+     * request open to switch off their own FFA death handling: no killstreak reset, no death
+     * recorded, no kill reward or bounty for their killer, drops voided.
      *
-     * <p>ACCEPTED is included on top of {@link DuelState#isActiveCombat()} deliberately. It is a
-     * transient state today (setup runs synchronously straight through it), but escrow is already
-     * being taken inside it, so if a death ever does land there it must reach DuelManager's own
-     * cancel-and-refund path rather than being processed as an ordinary FFA death with the wagers
-     * still held. isActiveCombat() itself is left alone: it additionally drives PvP isolation,
-     * where treating a not-yet-teleported player as untouchable would make them invincible while
-     * still standing in a live FFA fight.
+     * <p>ACCEPTED counts on top of {@link DuelState#isActiveCombat()} because escrow is already
+     * held there, so a death in that window must reach the cancel-and-refund path rather than
+     * resolve as an ordinary FFA death. {@code isActiveCombat} stays narrower: it also drives PvP
+     * isolation, where a not-yet-teleported player must not become invincible mid-fight.
      */
     public boolean isInCombatDuel(UUID uuid) {
         Duel duel = getDuelForPlayer(uuid);
@@ -368,12 +351,10 @@ public final class DuelManager {
     }
 
     /**
-     * Display name for a participant. Goes through the leaderboard's non-blocking name cache
-     * rather than {@code Bukkit.getOfflinePlayer(uuid).getName()}: for a UUID missing from the
-     * local usercache that call issues a blocking Mojang request, and this runs on the main
-     * thread from duel announcements, history rows and the request prompt - i.e. right in the
-     * middle of a fight. An 8-character UUID prefix is a fine fallback for the rare miss, and the
-     * cache repairs itself in the background for next time.
+     * Display name for a participant, resolved through the leaderboard's non-blocking name cache.
+     * {@code Bukkit.getOfflinePlayer(uuid).getName()} would issue a blocking Mojang request for
+     * any UUID missing from the local usercache, and this runs on the main thread mid-fight. A
+     * UUID prefix is an acceptable fallback; the cache repairs itself in the background.
      */
     private String nameOf(UUID uuid) {
         if (uuid == null) {
@@ -522,8 +503,8 @@ public final class DuelManager {
         duels.put(duel.getId(), duel);
         playerDuel.put(challenger.getUniqueId(), duel.getId());
         playerDuel.put(target.getUniqueId(), duel.getId());
-        // Same unbounded-growth problem as pairCooldownUntil: one permanent entry per player who
-        // ever sent a request, for a value that is dead after request.rate-limit-seconds.
+        // Swept on write: entries are dead after request.rate-limit-seconds, and without this the
+        // map keeps one permanent entry per player who ever sent a request.
         long requestedAt = System.currentTimeMillis();
         long rateLimitMs = Math.max(0L, cfg().getLong("request.rate-limit-seconds", 3) * 1000L);
         lastRequestSentAt.values().removeIf(sentAt -> sentAt == null || requestedAt - sentAt >= rateLimitMs);
@@ -546,11 +527,9 @@ public final class DuelManager {
     }
 
     /**
-     * Sends the clickable accept/deny block exactly once (no more re-sending the whole message
-     * every few seconds and burying the buttons in chat), then keeps the "expires in Ns" promise
-     * from DUELS.md alive via a cheap per-second actionbar tick to both sides instead - one short
-     * Component with no click/hover events, versus rebuilding and re-sending the full multi-line
-     * block repeatedly.
+     * Sends the clickable accept/deny block once, then satisfies DUELS.md's "expires in Ns"
+     * countdown with a per-second action bar to both sides - a short Component with no click or
+     * hover events, rather than rebuilding and re-sending the whole block on a timer.
      */
     private void sendRequestPrompt(Duel duel) {
         Player target = Bukkit.getPlayer(duel.getTarget());
@@ -753,12 +732,9 @@ public final class DuelManager {
             return;
         }
         long now = System.currentTimeMillis();
-        // Entries were only ever inserted, never removed, so this map grew for the whole uptime
-        // of the server: one permanent entry per distinct pair of players that ever declined,
-        // expired or cancelled a request, even though every entry is dead within
-        // request.cooldown-seconds (5s by default). Sweeping the expired ones on each write keeps
-        // it to just the live window - the sweep is O(size), and because it runs on every write
-        // the size it walks stays small rather than being allowed to accumulate.
+        // Swept on write, same as lastRequestSentAt: entries die after request.cooldown-seconds,
+        // and the map would otherwise keep one entry per pair that ever declined a request.
+        // Sweeping on every write keeps the scanned size at roughly the live window.
         pairCooldownUntil.values().removeIf(until -> until == null || until <= now);
         pairCooldownUntil.put(pairKey(a, b), now + ms);
     }
@@ -785,10 +761,9 @@ public final class DuelManager {
     }
 
     /**
-     * How long a pending chat prompt stays armed. Without a bound, an unanswered prompt captured
-     * every message the player typed forever: {@code handleChat} intentionally re-arms itself on
-     * unparseable input so a typo doesn't lose the flow, which also meant anyone who missed the
-     * "type cancel" hint simply could not chat again until they stumbled onto a valid number.
+     * How long a pending chat prompt stays armed. The bound matters because {@code handleChat}
+     * re-arms itself on unparseable input so a typo doesn't lose the flow; unbounded, a player who
+     * missed the "type cancel" hint would have every subsequent message swallowed.
      */
     private long promptTimeoutMs() {
         return Math.max(5_000L, plugin.getConfig().getLong("chat-prompt-timeout-seconds", 60) * 1000L);
@@ -895,11 +870,9 @@ public final class DuelManager {
         if (isInDuel(challenger.getUniqueId()) || isInDuel(target.getUniqueId())) {
             return false;
         }
-        // Matchmaking re-validates candidates every tick (DuelQueueManager#isValidQueuedPlayer),
-        // but that check never covered arena residency - only isInDuel/isInGrace/dead/combat-tag.
-        // Without isBusy() here too, a player standing in a live FFA arena fight could still be
-        // matched and instantly teleported out via runSetupSequence below, the same escape this
-        // isBusy() gate already blocks for the direct /duel request+accept flow.
+        // isValidQueuedPlayer covers isInDuel/isInGrace/dead/combat-tag but not arena residency,
+        // so without isBusy() here a player in a live FFA fight could be matched and teleported
+        // straight out of it - the same escape this gate blocks on the /duel request flow.
         if (isBusy(challenger) || isBusy(target)) {
             return false;
         }
@@ -929,9 +902,8 @@ public final class DuelManager {
             rollbackSetup(duel, "player-offline");
             return false;
         }
-        // A player about to fight in their own duel can't still be sitting in spectator mode
-        // watching a different one - force them out first so kit application/teleport below
-        // don't run on a player stuck in GameMode.SPECTATOR.
+        // Force both out of spectator mode first, so the kit apply and teleport below never run
+        // on a player still stuck in GameMode.SPECTATOR watching someone else's duel.
         if (plugin.getSpectatorManager() != null) {
             if (plugin.getSpectatorManager().isSpectating(challenger.getUniqueId())) {
                 plugin.getSpectatorManager().stopSpectating(challenger, false);
@@ -941,22 +913,18 @@ public final class DuelManager {
             }
         }
 
-        // The challenger passed isBusy() when they sent the request, but the target can sit on it
-        // for the full request.timeout-seconds. In that window the challenger can walk into an FFA
-        // arena or pick a fight, and accepting would then teleport them straight out of it - the
-        // exact escape isBusy() exists to prevent. Re-check at the only moment that matters.
+        // The challenger passed isBusy() when they sent the request, but the target may sit on it
+        // for the full timeout - long enough to walk into an FFA arena or start a fight. Re-check
+        // at the only moment that matters, or accepting becomes a free escape from that fight.
         if (isBusy(challenger)) {
             rollbackSetup(duel, "challenger-busy");
             return false;
         }
 
-        // A snapshot is taken a few lines below and restored verbatim when the duel ends. Any
-        // still-open container is a second, live view of items that the snapshot also captures -
-        // most importantly HeldShulkerListener's virtual box, whose staged contents only get
-        // written back into the item on close. Capturing while that session is open records the
-        // box with its *pre-edit* contents while the items already pulled out of it sit loose in
-        // the storage array, so the post-duel restore hands the player both copies. Settle every
-        // open view first so the snapshot describes exactly one authoritative inventory state.
+        // Settle every open container before capturing, so the snapshot describes exactly one
+        // inventory state. An open HeldShulkerListener session is a second live view of the same
+        // items - it stages contents outside the box until close, so capturing mid-session records
+        // the box pre-edit *and* the extracted items loose, and the restore returns both copies.
         settleOpenInventories(challenger);
         settleOpenInventories(target);
 
@@ -1047,10 +1015,9 @@ public final class DuelManager {
     }
 
     /**
-     * Flushes and closes anything the player currently has open so their real inventory is the
-     * single source of truth before {@link DuelInventorySnapshot#capture} runs. The held-shulker
-     * session is settled explicitly (its contents live in a detached Inventory until close), then
-     * the container itself is closed, which also returns/drops any item left on the cursor.
+     * Closes anything the player has open so their real inventory is the single source of truth
+     * before {@link DuelInventorySnapshot#capture}. The held-shulker session is settled explicitly
+     * because its contents live in a detached Inventory until close.
      */
     private void settleOpenInventories(Player player) {
         if (player == null || !player.isOnline()) {
@@ -1250,10 +1217,8 @@ public final class DuelManager {
 
         for (Player other : Bukkit.getOnlinePlayers()) {
             UUID uid = other.getUniqueId();
-            // A blanket show-everyone-to-everyone here used to tear down *other*, still-running
-            // duels' isolation: ending duel A re-showed A's participants to B's participants and
-            // vice-versa, so B's fight suddenly had bystanders rendered in it again. Only lift the
-            // hide where neither side is currently isolated by a different live duel.
+            // Only lift the hide where neither side belongs to another live duel; a blanket
+            // show-everyone would tear down the isolation of every duel still in progress.
             boolean otherIsolated = isVisibilityIsolated(uid) && !duel.involves(uid);
             if (c != null && !otherIsolated) other.showPlayer(plugin, c);
             if (t != null && !otherIsolated) other.showPlayer(plugin, t);
@@ -1263,16 +1228,13 @@ public final class DuelManager {
     }
 
     /**
-     * Whether this player is currently fighting in some duel that is still applying its
-     * mutual-hide wall, and so must not have that wall lifted by an unrelated duel ending.
+     * Whether this player is fighting in a duel that still applies its mutual-hide wall, and so
+     * must not have that wall lifted by an unrelated duel ending.
      *
-     * <p>Deliberately keyed on duel participation only, never on "is spectating". Every pair this
-     * loop touches has one side inside the ending duel, so checking the *other* side for live-duel
-     * membership is already enough to keep every still-running duel sealed, in both directions and
-     * symmetrically (when that duel ends in turn, its own removeDuelVisibility finishes the job).
-     * Treating spectators as isolated would instead strand them: a spectator watching duel A while
-     * duel B ends would be skipped by B's restore and stay mutually invisible to B's players
-     * forever, since nothing re-runs that restore once they stop spectating.
+     * <p>Keyed on duel participation only, never on "is spectating". Every pair this loop touches
+     * has one side inside the ending duel, so testing the other side is enough to keep every live
+     * duel sealed symmetrically. Treating spectators as isolated would strand them instead:
+     * nothing re-runs the restore once they stop spectating, so they would stay invisible.
      */
     private boolean isVisibilityIsolated(UUID uuid) {
         Duel other = getDuelForPlayer(uuid);
@@ -1322,14 +1284,11 @@ public final class DuelManager {
         }
         DuelState state = duel.getState();
         if (state == DuelState.ACCEPTED || state == DuelState.STARTING) {
-            // Nobody has actually fought yet (pre-FIGHT countdown damage is cancelled, so this
-            // can only happen via /leave's forced setHealth(0)). Previously this was silently
-            // ignored: the countdown task kept running, the duel later flipped to ACTIVE with
-            // one participant already dead/respawned elsewhere, and the honest opponent was
-            // stranded - unable to queue/duel again - until max-duration-seconds (default 600s)
-            // elapsed. Worse, with max-duration-outcome=higher-health the fled player could even
-            // be awarded a TIMEOUT_WIN. Resolve it immediately as a clean, no-fault cancellation
-            // instead, matching how a genuine disconnect during STARTING is already handled.
+            // Nobody has fought yet - countdown damage is cancelled, so this is only reachable
+            // via /leave's forced setHealth(0). Ignoring it would let the countdown run on and
+            // flip the duel ACTIVE with one side already dead elsewhere, stranding the opponent
+            // until max-duration-seconds and even handing the fled player a TIMEOUT_WIN under
+            // max-duration-outcome=higher-health. Cancel cleanly, as a STARTING disconnect does.
             handleStartingDeath(duel, victim.getUniqueId());
             return;
         }
@@ -1347,12 +1306,13 @@ public final class DuelManager {
     }
 
     /**
-     * Cancels a duel whose countdown was interrupted by a participant's death (only reachable via
-     * /leave today). Shares rollbackSetup's idempotency flag so a death arriving alongside a
-     * disconnect for the same duel can't double-cancel. The opponent is still alive and standing
-     * in the arena, so their inventory is restored immediately; the victim is mid-death-screen, so
-     * their restore is deferred through the normal post-duel respawn hook (restoring straight into
-     * a not-yet-cleared death inventory would just be overwritten by vanilla death handling).
+     * Cancels a duel whose countdown was interrupted by a participant's death. Shares
+     * rollbackSetup's idempotency flag, so a death arriving alongside a disconnect for the same
+     * duel cannot double-cancel.
+     *
+     * <p>The opponent is alive in the arena and restored immediately. The victim is mid-death
+     * screen, so their restore defers to the respawn hook - writing into a not-yet-cleared death
+     * inventory would simply be overwritten by vanilla death handling.
      */
     private void handleStartingDeath(Duel duel, UUID victimUuid) {
         if (!duel.markRollbackDone()) {
@@ -1563,25 +1523,19 @@ public final class DuelManager {
                 }
                 Bukkit.getScheduler().runTaskLater(plugin, () -> {
                     pendingPostDuelRestores.remove(winner);
-                    // Re-resolve by UUID rather than reusing the captured `wp` handle. A Player
-                    // object is bound to one connection: if the winner disconnects and reconnects
-                    // inside this 3s window, `wp.isOnline()` is false for the *stale* object even
-                    // though the player is online again. That sent a live player down the
-                    // restore-on-next-join branch, so they stood at spawn still wearing the
-                    // plugin-issued duel kit with their real inventory owed until some later
-                    // relog - and duel gear is only ever taken back by this restore. Dropping the
-                    // kit and then relogging to collect the pre-duel inventory minted a full kit
-                    // per duel, repeatable indefinitely through the matchmaking queue.
+                    // Re-resolve by UUID; never reuse a captured handle here. A Player is bound
+                    // to one connection, so for a winner who reconnects inside this window the
+                    // old handle reports offline and sends a live player down the restore-on-join
+                    // branch - leaving them wearing the duel kit, which only this restore takes
+                    // back. Dropping it and relogging then mints a kit per duel.
                     Player online = Bukkit.getPlayer(winner);
                     if (online != null && online.isOnline()) {
                         teleportToSpawn(online);
                         restorePlayerPostDuel(online, winnerSnapshot);
                     } else if (winnerSnapshot != null) {
-                        // Winner disconnected during the 3s victory delay - without this, their
-                        // real pre-duel inventory would be silently discarded once this terminal
-                        // Duel is garbage-collected, leaving their saved inventory stuck on the
-                        // duel kit. Reuse the same restore-on-next-join path as crash recovery,
-                        // persisted so a restart before they reconnect can't drop it.
+                        // Genuinely offline: hand the snapshot to the restore-on-next-join path,
+                        // persisted so a restart before they reconnect cannot drop it. Otherwise
+                        // it dies with this terminal Duel and they keep the duel kit for good.
                         queuePersistentRestore(winner, winnerSnapshot);
                     }
                 }, 60L);
@@ -1609,11 +1563,8 @@ public final class DuelManager {
     }
 
     /**
-     * Locks the arena out from new duels for grace-period-seconds so leftover items/mobs from
-     * this duel can't bleed into the next one, then frees it. Without this, finishDuel() never
-     * released the arena reservation at all (enterGrace/releaseGraceArena were dead code), so a
-     * finished duel's arena would stay permanently unusable and the Duel object would never be
-     * removed from the duels map.
+     * Locks the arena out of new duels for grace-period-seconds so leftover items and mobs can't
+     * bleed into the next fight, then frees it and drops the Duel from the map.
      */
     private void startGracePeriod(Duel duel) {
         long graceSeconds = Math.max(0L, cfg().getLong("grace-period-seconds", 180));
@@ -1661,9 +1612,9 @@ public final class DuelManager {
 
     /** Deposits are best-effort against Vault - a false return here means real money is owed and unpaid. */
     private void depositOrWarn(Duel duel, UUID recipient, double amount, String reason) {
-        // Only an actual winner payout is income; every other reason here is giving the player
-        // back their own escrowed wager, and counting those as earnings let anyone inflate their
-        // lifetime coins-earned stat for free by accepting and immediately aborting wagered duels.
+        // Only a winner payout is income. Every other reason returns the player their own
+        // escrowed wager, and counting those as earnings would let anyone inflate their lifetime
+        // coins-earned stat for free by accepting and instantly aborting wagered duels.
         boolean isPayout = "winner-payout".equals(reason);
         boolean ok = plugin.getEconomyManager().isReady()
                 && plugin.getEconomyManager().deposit(Bukkit.getOfflinePlayer(recipient), amount, isPayout);
@@ -1682,10 +1633,9 @@ public final class DuelManager {
         double wager = duel.getWager();
         duelStatsManager.recordDuelResult(winner, true, wager, payoutAmount, 0);
         duelStatsManager.recordDuelResult(loser, false, wager, 0, wager);
-        // Guarded by markStatsRecorded upstream, so this runs exactly once per decided duel, and
-        // - unlike its previous home inside recordRankedResult - it now sees wagered duels too.
-        // Those are always unranked (the ranked queue only ever creates zero-wager duels), so
-        // win-trading for duel_coins_won/duel_wins previously raised no flag whatsoever.
+        // markStatsRecorded upstream makes this exactly once per decided duel. It lives here
+        // rather than in recordRankedResult so wagered duels are covered too: those are always
+        // unranked, so win-trading for duel_coins_won/duel_wins would otherwise raise no flag.
         duelStatsManager.checkFarming(winner, loser);
     }
 
@@ -1802,10 +1752,9 @@ public final class DuelManager {
     }
 
     /**
-     * Shutdown-time drain for a map of owed pre-duel inventories: hand it straight back to anyone
-     * still online, and persist it for anyone who is not so their next join applies it. Used for
-     * the two windows whose duel row is already deleted, where losing the snapshot here would
-     * leave the player permanently holding the plugin-issued duel kit instead of their own items.
+     * Shutdown drain for owed pre-duel inventories: returned directly to anyone still online, and
+     * persisted for anyone who is not so their next join applies it. Covers the two windows whose
+     * duel row is already deleted, where a dropped snapshot means the player keeps the duel kit.
      */
     private void flushOwedRestores(Map<UUID, DuelInventorySnapshot> owed) {
         for (Map.Entry<UUID, DuelInventorySnapshot> entry : owed.entrySet()) {
@@ -1896,14 +1845,11 @@ public final class DuelManager {
     /**
      * Removes loose item entities inside a duel arena once the duel is fully over.
      *
-     * <p>Duel gear is issued by the plugin and every exit path restores the player's real
-     * pre-duel inventory over the top of it, so anything a duelist managed to put on the ground
-     * mid-fight is pure minted material: the arena is a normal world location that anyone can
-     * simply walk into once it is free (and a third party could already stand in it during the
-     * fight - the duel's mutual-hide wall is cosmetic, not a physical barrier). Combined with
-     * DuelListener's drop block this closes both halves of that duplication route: the block
-     * stops the common case, this sweep catches anything that lands there by other means
-     * (kit-apply overflow, a plugin-forced drop, an interrupted restore).
+     * <p>Duel gear is plugin-issued and every exit path overwrites it with the player's real
+     * inventory, so anything left on the ground is minted material - and the arena is an ordinary
+     * world location anyone can walk into once it frees up. DuelListener's drop block stops the
+     * common case; this sweep catches what lands there by other means, such as kit-apply
+     * overflow, a plugin-forced drop, or an interrupted restore.
      */
     private void clearArenaDrops(String arenaId) {
         Arena arena = duelArenaManager.resolve(arenaId);
@@ -1916,8 +1862,8 @@ public final class DuelManager {
         }
         double radius = Math.max(1, arena.getRadius()) + 5.0;
         int removed = 0;
-        // Chunk-bounded query rather than a scan of every entity in the world: arenas are small
-        // relative to a live world, and this runs on the main thread each time a duel resolves.
+        // Chunk-bounded rather than a full world entity scan: this runs on the main thread every
+        // time a duel resolves, and arenas are tiny relative to a live world.
         for (org.bukkit.entity.Entity entity : center.getWorld().getNearbyEntities(
                 center, radius, center.getWorld().getMaxHeight(), radius,
                 e -> e instanceof org.bukkit.entity.Item)) {

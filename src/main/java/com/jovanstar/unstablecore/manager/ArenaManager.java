@@ -818,12 +818,11 @@ public final class ArenaManager {
 
         Location spot = pickValidatedSpot(arena);
         if (spot == null) {
-            // cacheSafeSpots() probes hundreds of columns of blocks and save() then rewrites the
-            // whole of arenas.yml - both on the main thread, both triggered by a plain GUI click.
-            // If an arena has no usable spot (misconfigured centre, world edits) that used to fire
-            // on *every* join attempt, so a handful of players clicking join could hold the server
-            // in a permanent stall loop. Re-cache at most once a minute per arena, and let the
-            // normal autosave persist the result instead of blocking on a file write here.
+            // cacheSafeSpots() probes hundreds of block columns and save() rewrites the whole of
+            // arenas.yml, both on the main thread and both reachable from a plain GUI click. An
+            // arena with no usable spot would hit this on every join attempt, so a few players
+            // spamming join could hold the server in a stall loop. Re-cache at most once a minute
+            // per arena and let the normal autosave persist it rather than blocking on a write.
             long now = System.currentTimeMillis();
             Long last = lastSpotRecache.get(arena.getId());
             if (last == null || now - last >= SPOT_RECACHE_COOLDOWN_MS) {
@@ -854,11 +853,10 @@ public final class ArenaManager {
                 return;
             }
             Bukkit.getScheduler().runTask(plugin, () -> {
-                // Quitting between the teleport completing and this task running would otherwise
-                // re-add the arena tag *after* PlayerListener's quit cleanup already removed it,
-                // leaving a stale entry for an offline player. Anything that asks "is this player
-                // busy in an arena" (duel requests, the duel queue, /spec, build protection) then
-                // answers yes for someone who is not even here.
+                // Quitting between the teleport completing and this task would re-add the arena
+                // tag after quit cleanup removed it, so every "is this player busy in an arena"
+                // check - duel requests, the queue, /spec, build protection - would answer yes
+                // for someone who is not on the server.
                 if (!player.isOnline()) {
                     return;
                 }

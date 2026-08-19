@@ -185,17 +185,13 @@ public final class PlayerListener implements Listener {
     /**
      * Re-gears a player on respawn, honouring the normal loadout cooldown.
      *
-     * <p>This behaviour used to happen as a side effect of the duel respawn hook, which ran for
-     * every respawn on the server and unconditionally cleared the inventory before handing out a
-     * kit. That made dying a strictly better way to obtain a loadout than {@code /loadout} itself
-     * - free, instant, and completely bypassing {@code loadout.cooldown-seconds} - and destroyed
-     * whatever an ordinary player happened to respawn holding. Re-homed here and made explicit:
-     * it only fires when the player really has nothing (so it can never delete items, including
-     * on keepInventory setups), it goes through LoadoutManager#tryGive so the cooldown is both
-     * respected and consumed, and it can be switched off entirely in config.
+     * <p>Deliberately explicit rather than a side effect of the duel respawn hook: it fires only
+     * when the player has nothing, so it can never delete items (including on keepInventory
+     * setups), it routes through {@code LoadoutManager#tryGive} so the cooldown is respected and
+     * consumed, and {@code loadout.give-on-respawn} switches it off entirely.
      *
-     * <p>Runs at MONITOR/one tick later so DuelListener's own duel-respawn restore - which puts
-     * back a real pre-duel inventory and must win - has already been applied.
+     * <p>Runs at MONITOR, one tick later, so DuelListener's duel-respawn restore - which returns a
+     * real pre-duel inventory and must win - has already been applied.
      */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onRespawn(org.bukkit.event.player.PlayerRespawnEvent event) {

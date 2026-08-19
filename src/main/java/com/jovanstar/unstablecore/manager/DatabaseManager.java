@@ -842,10 +842,9 @@ public final class DatabaseManager {
     /**
      * Batched form of {@link #upsertProfile} for the periodic online-player sync.
      *
-     * <p>That sync used to schedule one async task - and therefore take one pooled connection and
-     * run one statement - per online player, every cycle. At a few hundred players that is a burst
-     * of hundreds of tasks contending over a pool of 4-20 connections, every 30 seconds, for what
-     * is a single batched write.
+     * <p>One statement for the whole cycle. Per-player tasks would each take a pooled connection,
+     * so a few hundred players meant hundreds of tasks contending over 4-20 connections every 30
+     * seconds for what is a single batched write.
      */
     public void upsertProfiles(List<ProfileRow> rows) {
         if (!isConnected() || rows == null || rows.isEmpty()) {
@@ -998,9 +997,9 @@ public final class DatabaseManager {
         try (Connection c = getConnection()) {
             c.setAutoCommit(false);
             try {
-                // See saveAllSettings for why this no longer wipes the table first. Un-equipping
-                // already issues its own targeted deleteTag(); the per-row delete here covers the
-                // (defensive) case of a blank value left in the map.
+                // Upsert rather than wipe-and-reinsert, for the reason given on saveAllSettings.
+                // Un-equipping issues its own targeted deleteTag(); the per-row delete below only
+                // covers a blank value defensively left in the map.
                 try (PreparedStatement ps = c.prepareStatement(upsertTagSql());
                      PreparedStatement del = c.prepareStatement("DELETE FROM player_tags WHERE uuid = ?")) {
                     for (Map.Entry<UUID, String> e : tags.entrySet()) {
@@ -1082,10 +1081,10 @@ public final class DatabaseManager {
         try (Connection c = getConnection()) {
             c.setAutoCommit(false);
             try {
-                // See saveAllSettings for why this no longer wipes the table first. Expired
-                // cooldowns are pruned by an explicit age predicate rather than by omission, so a
-                // momentarily-empty in-memory map can't silently clear everyone's cooldown (which
-                // here would hand every player an immediate free re-gear).
+                // Upsert rather than wipe-and-reinsert, for the reason given on saveAllSettings.
+                // Expired cooldowns are pruned by an explicit age predicate rather than by
+                // omission, so a momentarily-empty in-memory map cannot silently clear everyone's
+                // cooldown - which here would hand every player an immediate free re-gear.
                 try (PreparedStatement expire = c.prepareStatement(
                         "DELETE FROM loadout_cooldowns WHERE last_use <= ?")) {
                     expire.setLong(1, now - Math.max(0L, cooldownMs));

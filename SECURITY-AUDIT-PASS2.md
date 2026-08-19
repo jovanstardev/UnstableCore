@@ -26,7 +26,7 @@ closed the drop route and the empty-inventory route; it did not consider that th
 ## Critical
 
 ### P2-C1 · Reconnecting during the victory delay mints a full duel kit, unlimited
-`DuelManager.finishDuel` — `src/main/java/com/jovanstar/unstablecore/manager/DuelManager.java:1550`
+`DuelManager.finishDuel` — `src/main/java/com/jovanstar/unstablecore/manager/DuelManager.java:1517`
 
 **Category:** item duplication / unbounded item generation
 
@@ -83,7 +83,7 @@ inside 3s, confirm the pre-duel inventory is restored on the spot and no kit ite
 ## High
 
 ### P2-H1 · Shutdown silently discards pre-duel inventories owed to offline players
-`DuelManager.shutdown` — `DuelManager.java:243`
+`DuelManager.shutdown` — `DuelManager.java:237`
 
 **Category:** data loss / item loss
 
@@ -129,9 +129,9 @@ is the pre-existing limit of the `pending_restores` mechanism. **Testing require
 `checkFarming` was invoked only from `recordRankedResult`. But a duel is never both ranked and
 wagered:
 
-- `DuelManager.java:519` (the `/duel` request path — the only path carrying a wager) always
+- `DuelManager.java:500` (the `/duel` request path — the only path carrying a wager) always
   constructs the duel with `ranked = false`.
-- `DuelManager.java:907` (`createQueueMatch`, the only ranked path) always passes wager `0.0`.
+- `DuelManager.java:880` (`createQueueMatch`, the only ranked path) always passes wager `0.0`.
 
 So the entire economic half of duelling produced **no anti-farm signal at all**, and
 `/dueladmin flags` stayed empty regardless of how blatant the pattern was.
@@ -156,7 +156,7 @@ auto-punish" design in `DUELS.md`. Win-trading is still *possible*, just now vis
 confirm the pair appears in `/dueladmin flags`.
 
 ### P2-M2 · `pairCooldownUntil` grew for the entire uptime of the server
-`DuelManager.setDeclineCooldown` — `DuelManager.java:750`
+`DuelManager.setDeclineCooldown` — `DuelManager.java:738`
 
 **Category:** memory leak / unbounded collection
 
@@ -170,7 +170,7 @@ map it walks stays at roughly "pairs that declined in the last 5 seconds" rather
 allowed to accumulate first.
 
 ### P2-M3 · `lastRequestSentAt` grew without bound
-`DuelManager.createRequest` — `DuelManager.java:525`
+`DuelManager.createRequest` — `DuelManager.java:510`
 
 **Category:** memory leak / unbounded collection
 
@@ -181,7 +181,7 @@ dead after `request.rate-limit-seconds` (3s).
 `isRateLimited`'s own condition exactly, so no request is ever un-rate-limited early.
 
 ### P2-M4 · Quitting mid-teleport left a permanent "in arena" tag
-`ArenaManager.teleportToArena` — `ArenaManager.java:856`
+`ArenaManager.teleportToArena` — `ArenaManager.java:855`
 
 **Category:** state leak / denial of service against the affected player
 
