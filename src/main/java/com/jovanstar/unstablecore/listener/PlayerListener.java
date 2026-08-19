@@ -218,9 +218,13 @@ public final class PlayerListener implements Listener {
             if (!player.isOnline()) {
                 return;
             }
+            // hasPendingPostDuelRestore covers the post-duel end phase: the duel is terminal by
+            // then, but the player is a spectator awaiting their real inventory - gearing them
+            // here would just be overwritten by that restore.
             if (plugin.getDuelManager() != null
                     && (plugin.getDuelManager().isInDuel(player.getUniqueId())
-                    || plugin.getDuelManager().isInGrace(player.getUniqueId()))) {
+                    || plugin.getDuelManager().isInGrace(player.getUniqueId())
+                    || plugin.getDuelManager().hasPendingPostDuelRestore(player.getUniqueId()))) {
                 return;
             }
             if (!KitManager.isInventoryEmpty(player)) {

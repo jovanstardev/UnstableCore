@@ -164,6 +164,12 @@ public final class DuelListener implements Listener {
             event.setRespawnLocation(loc);
         }
 
+        // A loser marked for the end phase respawns in the arena as a spectator and gets their
+        // restore when the phase ends; everyone else is restored immediately.
+        if (mgr.beginLoserEndPhaseIfPending(player, null)) {
+            return;
+        }
+
         Bukkit.getScheduler().runTask(plugin, () -> {
             if (player.isOnline()) {
                 mgr.restorePlayerPostDuel(player, snapshot);

@@ -34,6 +34,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -76,6 +77,8 @@ public final class DuelManager {
      * is terminal and its crash-recovery row deleted by then, so shutdown() drains this map.
      */
     private final Map<UUID, DuelInventorySnapshot> pendingPostDuelRestores = new ConcurrentHashMap<>();
+    /** Losers owed the "you lost" spectator end-phase on their next (forced) respawn. */
+    private final Set<UUID> endPhaseLosers = ConcurrentHashMap.newKeySet();
     private BukkitTask boundaryTask;
 
     public DuelManager(UnstableCore plugin, DuelArenaManager duelArenaManager, DuelStatsManager duelStatsManager) {
@@ -1504,20 +1507,42 @@ public final class DuelManager {
             UUID loserUuid = duel.opponentOf(winner);
             Location spawn = resolveJoinSpawn();
             if (result == DuelResult.NORMAL_WIN) {
-                // Queue spawn location and snapshot so onRespawn teleports and restores loser
-                if (spawn != null) {
-                    pendingRespawnLocations.put(loserUuid, spawn);
-                }
                 DuelInventorySnapshot loserSnapshot = duel.snapshotFor(loserUuid);
-                if (loserSnapshot != null) {
-                    pendingRespawnSnapshots.put(loserUuid, loserSnapshot);
+                Player lp = Bukkit.getPlayer(loserUuid);
+                if (lp != null && lp.isOnline() && endPhaseTicks() > 0) {
+                    // End-phase: respawn the loser on the spot they died, hold them in SPECTATOR
+                    // under the defeat title for end-phase-seconds, then send them to spawn with
+                    // their inventory. The snapshot rides in pendingPostDuelRestores so a
+                    // shutdown inside the window still owes it to them.
+                    pendingRespawnLocations.put(loserUuid, lp.getLocation().clone());
+                    if (loserSnapshot != null) {
+                        pendingPostDuelRestores.put(loserUuid, loserSnapshot);
+                    }
+                    endPhaseLosers.add(loserUuid);
+                    // Skip the vanilla death screen so the phase starts immediately. Re-resolve
+                    // by UUID: a quit inside this tick leaves the handle stale.
+                    Bukkit.getScheduler().runTask(plugin, () -> {
+                        Player dead = Bukkit.getPlayer(loserUuid);
+                        if (dead != null && dead.isOnline() && dead.isDead()) {
+                            dead.spigot().respawn();
+                        }
+                    });
+                } else {
+                    // Loser already offline, or the phase is disabled: plain queue-for-respawn,
+                    // restored the moment their respawn fires.
+                    if (spawn != null) {
+                        pendingRespawnLocations.put(loserUuid, spawn);
+                    }
+                    if (loserSnapshot != null) {
+                        pendingRespawnSnapshots.put(loserUuid, loserSnapshot);
+                    }
                 }
             } else {
-                Player lp = Bukkit.getPlayer(loserUuid);
+                Player forfeiter = Bukkit.getPlayer(loserUuid);
                 DuelInventorySnapshot loserSnapshot = duel.snapshotFor(loserUuid);
-                if (lp != null && lp.isOnline() && !lp.isDead()) {
-                    teleportToSpawn(lp);
-                    restorePlayerPostDuel(lp, loserSnapshot);
+                if (forfeiter != null && forfeiter.isOnline() && !forfeiter.isDead()) {
+                    teleportToSpawn(forfeiter);
+                    restorePlayerPostDuel(forfeiter, loserSnapshot);
                 } else if (loserSnapshot != null) {
                     // Forfeit/timeout loser who is offline or mid-death-screen: without this their
                     // pre-duel inventory is dropped on the floor with the terminal Duel object and
@@ -1528,10 +1553,11 @@ public final class DuelManager {
                 }
             }
 
-            // Winner celebration: teleport to spawn after 3 seconds (60 ticks) and restore inventory
+            // Winner celebration: stay in the arena as-is for the end phase, then spawn+restore.
             Player wp = Bukkit.getPlayer(winner);
             if (wp != null && wp.isOnline()) {
                 wp.playSound(wp.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, SoundCategory.PLAYERS, 1.0f, 1.0f);
+                showEndTitle(wp, "victory", nameOf(loserUuid));
                 DuelInventorySnapshot winnerSnapshot = duel.snapshotFor(winner);
                 if (winnerSnapshot != null) {
                     pendingPostDuelRestores.put(winner, winnerSnapshot);
@@ -1553,7 +1579,7 @@ public final class DuelManager {
                         // it dies with this terminal Duel and they keep the duel kit for good.
                         queuePersistentRestore(winner, winnerSnapshot);
                     }
-                }, 60L);
+                }, Math.max(20L, endPhaseTicks()));
             }
         } else {
             // Draw / Timeout no contest
@@ -1921,6 +1947,61 @@ public final class DuelManager {
 
     public DuelInventorySnapshot consumePendingRespawnSnapshot(UUID uuid) {
         return uuid == null ? null : pendingRespawnSnapshots.remove(uuid);
+    }
+
+    private long endPhaseTicks() {
+        return Math.max(0L, cfg().getLong("end-phase-seconds", 5)) * 20L;
+    }
+
+    private void showEndTitle(Player player, String key, String opponentName) {
+        String title = cfg().getString("messages." + key + "-title",
+                key.equals("victory") ? "&a&lVICTORY" : "&c&lDEFEAT");
+        String subtitle = cfg().getString("messages." + key + "-subtitle", "");
+        MessageUtil.title(player, title,
+                MessageUtil.apply(subtitle, Map.of("opponent", opponentName)),
+                (int) Math.max(1L, endPhaseTicks() / 20L));
+    }
+
+    /**
+     * Takes over the loser's respawn when finishDuel marked them for the end phase: they respawn
+     * where they died, watch the arena in SPECTATOR under the defeat title for end-phase-seconds,
+     * and only then get the spawn teleport and their pre-duel inventory. Returns false when no
+     * phase is owed, in which case the caller's plain restore applies.
+     */
+    public boolean beginLoserEndPhaseIfPending(Player player, UUID winnerHint) {
+        UUID uuid = player.getUniqueId();
+        if (!endPhaseLosers.remove(uuid)) {
+            return false;
+        }
+        String opponentName = winnerHint != null ? nameOf(winnerHint) : "";
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            Player lp = Bukkit.getPlayer(uuid);
+            if (lp == null || !lp.isOnline()) {
+                // Quit right at respawn: hand the snapshot to the persistent path and stop.
+                DuelInventorySnapshot owed = pendingPostDuelRestores.remove(uuid);
+                if (owed != null) {
+                    queuePersistentRestore(uuid, owed);
+                }
+                return;
+            }
+            lp.setGameMode(org.bukkit.GameMode.SPECTATOR);
+            showEndTitle(lp, "defeat", opponentName);
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                DuelInventorySnapshot snapshot = pendingPostDuelRestores.remove(uuid);
+                Player online = Bukkit.getPlayer(uuid);
+                if (online != null && online.isOnline()) {
+                    teleportToSpawn(online);
+                    restorePlayerPostDuel(online, snapshot);
+                    // A null/empty snapshot never touches game mode - never leave them stuck.
+                    if (online.getGameMode() == org.bukkit.GameMode.SPECTATOR) {
+                        online.setGameMode(org.bukkit.GameMode.SURVIVAL);
+                    }
+                } else if (snapshot != null) {
+                    queuePersistentRestore(uuid, snapshot);
+                }
+            }, Math.max(20L, endPhaseTicks()));
+        });
+        return true;
     }
 
     public void restorePlayerPostDuel(Player player, DuelInventorySnapshot snapshot) {
