@@ -8,7 +8,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 
-/** Triggered by clicking the "map vote started" chat link - opens the map-select GUI. */
+/** Opens the map-select GUI for a player inside the arena while a vote is running. */
 public final class MapVoteCommand implements CommandExecutor {
 
     private final UnstableCore plugin;

@@ -147,6 +147,13 @@ public final class LoadoutManager {
             }
             return false;
         }
+        if (plugin.getArenaManager() != null && plugin.getArenaManager().getPlayerArena(uuid) != null) {
+            if (sendMessages) {
+                MessageUtil.send(player, plugin.getConfigManager().getDuels()
+                        .getString("messages.loadout-arena-blocked", "&cYou can't change your kit while inside an arena."));
+            }
+            return false;
+        }
         long remain = remainingMillis(uuid);
         if (remain > 0) {
             if (sendMessages) {

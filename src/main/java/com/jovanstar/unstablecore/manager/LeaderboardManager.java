@@ -410,6 +410,10 @@ public final class LeaderboardManager {
             case DUEL_COINS_WON ->
                     rank(computeStatMap(plugin.getDuelManager().getDuelStatsManager().trackedCoinsWon(), true));
             case DUEL_ELO -> rank(computeStatMap(plugin.getDuelManager().getDuelStatsManager().trackedElo(), true));
+            case RANKED_DUEL_WINS ->
+                    rank(computeStatMap(plugin.getDuelManager().getDuelStatsManager().trackedRankedWins(), true));
+            case CASUAL_DUEL_WINS ->
+                    rank(computeStatMap(plugin.getDuelManager().getDuelStatsManager().trackedCasualWins(), true));
         };
     }
 

@@ -222,11 +222,35 @@ public final class DatabaseManager {
                       coins_won DOUBLE NOT NULL DEFAULT 0,
                       coins_lost DOUBLE NOT NULL DEFAULT 0,
                       duels_played INTEGER NOT NULL DEFAULT 0,
-                      elo INTEGER NOT NULL DEFAULT 1000
+                      elo INTEGER NOT NULL DEFAULT 1000,
+                      ranked_wins INTEGER NOT NULL DEFAULT 0,
+                      ranked_losses INTEGER NOT NULL DEFAULT 0,
+                      casual_wins INTEGER NOT NULL DEFAULT 0,
+                      casual_losses INTEGER NOT NULL DEFAULT 0
                     )
                     """);
             try {
                 st.executeUpdate("ALTER TABLE duel_stats ADD COLUMN elo INTEGER NOT NULL DEFAULT 1000");
+            } catch (SQLException ignored) {
+                // column already exists
+            }
+            try {
+                st.executeUpdate("ALTER TABLE duel_stats ADD COLUMN ranked_wins INTEGER NOT NULL DEFAULT 0");
+            } catch (SQLException ignored) {
+                // column already exists
+            }
+            try {
+                st.executeUpdate("ALTER TABLE duel_stats ADD COLUMN ranked_losses INTEGER NOT NULL DEFAULT 0");
+            } catch (SQLException ignored) {
+                // column already exists
+            }
+            try {
+                st.executeUpdate("ALTER TABLE duel_stats ADD COLUMN casual_wins INTEGER NOT NULL DEFAULT 0");
+            } catch (SQLException ignored) {
+                // column already exists
+            }
+            try {
+                st.executeUpdate("ALTER TABLE duel_stats ADD COLUMN casual_losses INTEGER NOT NULL DEFAULT 0");
             } catch (SQLException ignored) {
                 // column already exists
             }
@@ -1948,9 +1972,10 @@ public final class DatabaseManager {
     }
 
     public record DuelStatsRow(int wins, int losses, int currentStreak, int bestStreak,
-                                double coinsWagered, double coinsWon, double coinsLost, int duelsPlayed, int elo) {
+                                double coinsWagered, double coinsWon, double coinsLost, int duelsPlayed, int elo,
+                                int rankedWins, int rankedLosses, int casualWins, int casualLosses) {
         public static DuelStatsRow empty() {
-            return new DuelStatsRow(0, 0, 0, 0, 0, 0, 0, 0, 1000);
+            return new DuelStatsRow(0, 0, 0, 0, 0, 0, 0, 0, 1000, 0, 0, 0, 0);
         }
     }
 
@@ -1962,14 +1987,16 @@ public final class DatabaseManager {
         try (Connection c = getConnection();
              PreparedStatement ps = c.prepareStatement(
                      "SELECT uuid, wins, losses, current_streak, best_streak, coins_wagered, "
-                             + "coins_won, coins_lost, duels_played, elo FROM duel_stats");
+                             + "coins_won, coins_lost, duels_played, elo, ranked_wins, ranked_losses, "
+                             + "casual_wins, casual_losses FROM duel_stats");
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
                 try {
                     out.put(UUID.fromString(rs.getString(1)), new DuelStatsRow(
                             rs.getInt(2), rs.getInt(3), rs.getInt(4), rs.getInt(5),
                             rs.getDouble(6), rs.getDouble(7), rs.getDouble(8), rs.getInt(9),
-                            rs.getInt(10) == 0 ? 1000 : rs.getInt(10)
+                            rs.getInt(10) == 0 ? 1000 : rs.getInt(10),
+                            rs.getInt(11), rs.getInt(12), rs.getInt(13), rs.getInt(14)
                     ));
                 } catch (IllegalArgumentException ignored) {
                 }
@@ -1984,26 +2011,32 @@ public final class DatabaseManager {
         if (mysql) {
             return """
                     INSERT INTO duel_stats (uuid, wins, losses, current_streak, best_streak,
-                      coins_wagered, coins_won, coins_lost, duels_played, elo)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                      coins_wagered, coins_won, coins_lost, duels_played, elo,
+                      ranked_wins, ranked_losses, casual_wins, casual_losses)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON DUPLICATE KEY UPDATE
                       wins = VALUES(wins), losses = VALUES(losses),
                       current_streak = VALUES(current_streak), best_streak = VALUES(best_streak),
                       coins_wagered = VALUES(coins_wagered), coins_won = VALUES(coins_won),
                       coins_lost = VALUES(coins_lost), duels_played = VALUES(duels_played),
-                      elo = VALUES(elo)
+                      elo = VALUES(elo), ranked_wins = VALUES(ranked_wins),
+                      ranked_losses = VALUES(ranked_losses), casual_wins = VALUES(casual_wins),
+                      casual_losses = VALUES(casual_losses)
                     """;
         }
         return """
                 INSERT INTO duel_stats (uuid, wins, losses, current_streak, best_streak,
-                  coins_wagered, coins_won, coins_lost, duels_played, elo)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  coins_wagered, coins_won, coins_lost, duels_played, elo,
+                  ranked_wins, ranked_losses, casual_wins, casual_losses)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(uuid) DO UPDATE SET
                   wins = excluded.wins, losses = excluded.losses,
                   current_streak = excluded.current_streak, best_streak = excluded.best_streak,
                   coins_wagered = excluded.coins_wagered, coins_won = excluded.coins_won,
                   coins_lost = excluded.coins_lost, duels_played = excluded.duels_played,
-                  elo = excluded.elo
+                  elo = excluded.elo, ranked_wins = excluded.ranked_wins,
+                  ranked_losses = excluded.ranked_losses, casual_wins = excluded.casual_wins,
+                  casual_losses = excluded.casual_losses
                 """;
     }
 
@@ -2022,6 +2055,10 @@ public final class DatabaseManager {
             ps.setDouble(8, row.coinsLost());
             ps.setInt(9, row.duelsPlayed());
             ps.setInt(10, row.elo());
+            ps.setInt(11, row.rankedWins());
+            ps.setInt(12, row.rankedLosses());
+            ps.setInt(13, row.casualWins());
+            ps.setInt(14, row.casualLosses());
             ps.executeUpdate();
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Failed to upsert duel stats for " + uuid, e);

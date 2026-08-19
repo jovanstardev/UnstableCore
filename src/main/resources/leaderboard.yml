@@ -6,7 +6,7 @@ max-candidates: 500
 
 messages:
   player-only: "&cThis command is for players only."
-  usage: "&7Usage: &f/leaderboard &8| &7/leaderboard <coins|kills|biggest_killstreak|deaths|playtime|duel_wins|duel_best_streak|duel_coins_won|duel_elo>"
+  usage: "&7Usage: &f/leaderboard &8| &7/leaderboard <coins|kills|biggest_killstreak|deaths|playtime|duel_wins|duel_best_streak|duel_coins_won|duel_elo|ranked_duel_wins|casual_duel_wins>"
   reload-success: "&aLeaderboards reloaded."
   search-prompt: "&7Type a player name in chat to jump to their position. Type &ccancel &7to abort."
   search-cancelled: "&cSearch cancelled."
@@ -32,6 +32,8 @@ gui:
       duel_best_streak: 20
       duel_coins_won: 21
       duel_elo: 22
+      ranked_duel_wins: 23
+      casual_duel_wins: 24
   category:
     title-template: "{prefix} &8(Page {page}/{total_pages})"
     small-caps-prefix: true
@@ -179,6 +181,28 @@ categories:
       - "&fClick to view the {stat_label} leaderboard"
     detail-prefix: "&8Highest Duel ELO"
     stat-label: "ELO"
+    head-name: "&d{name}"
+    head-lore:
+      - "&f{stat_label}: &f{value_formatted} &d(#{rank})"
+  ranked_duel_wins:
+    enabled: true
+    material: NETHERITE_SWORD
+    menu-name: "&d⚔ &dRanked Duel Wins Leaderboard"
+    menu-lore:
+      - "&fClick to view the {stat_label} leaderboard"
+    detail-prefix: "&8Most Ranked Duel Wins"
+    stat-label: "Ranked Wins"
+    head-name: "&d{name}"
+    head-lore:
+      - "&f{stat_label}: &f{value_formatted} &d(#{rank})"
+  casual_duel_wins:
+    enabled: true
+    material: IRON_SWORD
+    menu-name: "&d⚔ &dCasual Duel Wins Leaderboard"
+    menu-lore:
+      - "&fClick to view the {stat_label} leaderboard"
+    detail-prefix: "&8Most Casual Duel Wins"
+    stat-label: "Casual Wins"
     head-name: "&d{name}"
     head-lore:
       - "&f{stat_label}: &f{value_formatted} &d(#{rank})"

@@ -341,11 +341,10 @@ public final class DuelListener implements Listener {
 
         Duel victimDuel = mgr.getDuelForPlayer(victimId);
         Duel attackerDuel = mgr.getDuelForPlayer(attackerId);
-        // A duel occupies playerDuel from the moment it's REQUESTED (so requests/accepts can be
-        // validated), long before either player is actually teleported into the arena. Isolating
-        // PvP here for a merely-requested/accepted duel would make the target invincible against
-        // everyone else while still standing in a live FFA fight - only gate once combat is
-        // actually underway (STARTING/ACTIVE/ENDING).
+        // A duel occupies playerDuel from the moment it's REQUESTED, long before anyone is
+        // teleported into an arena. Isolating PvP for a merely-requested duel makes both parties
+        // invincible against everyone else while still standing in a live FFA fight - a free
+        // god-mode button for any two cooperating players. Only committed duels isolate.
         if (victimDuel != null && !victimDuel.getState().isActiveCombat()) {
             victimDuel = null;
         }

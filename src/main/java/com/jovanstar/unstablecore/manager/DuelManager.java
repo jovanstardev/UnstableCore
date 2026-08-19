@@ -427,18 +427,6 @@ public final class DuelManager {
         if (isInDuel(targetUuid)) {
             return "target-already-in-duel";
         }
-        if (plugin.getArenaManager().getPlayerArena(challengerUuid) != null) {
-            return "already-in-arena";
-        }
-        if (plugin.getArenaManager().getPlayerArena(targetUuid) != null) {
-            return "target-in-arena";
-        }
-        if (isInGrace(challengerUuid)) {
-            return "already-in-duel";
-        }
-        if (isInGrace(targetUuid)) {
-            return "target-already-in-duel";
-        }
         Player challenger = Bukkit.getPlayer(challengerUuid);
         if (challenger != null && isBusy(challenger)) {
             return "challenger-busy";
@@ -454,12 +442,6 @@ public final class DuelManager {
 
     private boolean isBusy(Player player) {
         if (player.isDead()) {
-            return true;
-        }
-        if (plugin.getArenaManager().getPlayerArena(player.getUniqueId()) != null) {
-            return true;
-        }
-        if (isInGrace(player.getUniqueId())) {
             return true;
         }
         return plugin.getCombatListener() != null && plugin.getCombatListener().isCombatTagged(player.getUniqueId());
@@ -1674,8 +1656,8 @@ public final class DuelManager {
         }
         UUID loser = duel.opponentOf(winner);
         double wager = duel.getWager();
-        duelStatsManager.recordDuelResult(winner, true, wager, payoutAmount, 0);
-        duelStatsManager.recordDuelResult(loser, false, wager, 0, wager);
+        duelStatsManager.recordDuelResult(winner, true, duel.isRanked(), wager, payoutAmount, 0);
+        duelStatsManager.recordDuelResult(loser, false, duel.isRanked(), wager, 0, wager);
         // markStatsRecorded upstream makes this exactly once per decided duel. It lives here
         // rather than in recordRankedResult so wagered duels are covered too: those are always
         // unranked, so win-trading for duel_coins_won/duel_wins would otherwise raise no flag.
