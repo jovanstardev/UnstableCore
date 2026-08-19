@@ -2,6 +2,7 @@ package com.jovanstar.unstablecore.listener;
 
 import com.jovanstar.unstablecore.UnstableCore;
 import com.jovanstar.unstablecore.model.Arena;
+import com.jovanstar.unstablecore.util.MessageUtil;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
@@ -9,6 +10,7 @@ import org.bukkit.block.BlockFace;
 import org.bukkit.entity.AbstractWindCharge;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Item;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -63,13 +65,34 @@ public final class AntiGlitchListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onPearlTeleport(PlayerTeleportEvent event) {
-        if (event.getCause() != PlayerTeleportEvent.TeleportCause.ENDER_PEARL) {
+        PlayerTeleportEvent.TeleportCause cause = event.getCause();
+        if (cause != PlayerTeleportEvent.TeleportCause.ENDER_PEARL
+                && cause != PlayerTeleportEvent.TeleportCause.CHORUS_FRUIT) {
             return;
         }
         Location to = event.getTo();
         if (to == null || to.getWorld() == null) {
             return;
         }
+
+        Player player = event.getPlayer();
+        // Arena containment was previously just a build/break permission tag - nothing stopped
+        // an ender pearl or chorus fruit from carrying a player straight through the boundary,
+        // since both teleport clean through solid blocks instead of colliding with them the way
+        // walking does. A player tracked as inside an arena can't teleport themselves past it.
+        String trackedId = plugin.getArenaManager().getPlayerArena(player.getUniqueId());
+        Arena trackedArena = trackedId == null ? null : plugin.getArenaManager().getArena(trackedId);
+        if (trackedArena != null && !trackedArena.contains(to)) {
+            event.setCancelled(true);
+            String msg = plugin.getConfig().getString(
+                    "messages.arena-boundary-blocked",
+                    "&c&l(!) &r&cYou can't leave the arena boundary like that."
+            );
+            MessageUtil.send(player, msg == null || msg.isBlank()
+                    ? "&c&l(!) &r&cYou can't leave the arena boundary like that." : msg);
+            return;
+        }
+
         if (!plugin.getArenaManager().hasArenasInWorld(to.getWorld().getName())) {
             return;
         }

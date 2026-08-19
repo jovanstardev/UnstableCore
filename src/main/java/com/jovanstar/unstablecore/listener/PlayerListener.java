@@ -14,6 +14,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
@@ -105,6 +106,38 @@ public final class PlayerListener implements Listener {
         float yaw = (float) plugin.getConfig().getDouble("join.spawn.yaw", 0.0);
         float pitch = (float) plugin.getConfig().getDouble("join.spawn.pitch", 0.0);
         return new Location(world, x, y, z, yaw, pitch);
+    }
+
+    private boolean isInSpawnProtection(Location loc) {
+        if (loc == null || loc.getWorld() == null) {
+            return false;
+        }
+        Location spawn = resolveJoinSpawn();
+        if (spawn == null || !spawn.getWorld().equals(loc.getWorld())) {
+            return false;
+        }
+        double radius = plugin.getConfig().getDouble("join.spawn.protect-radius", 25.0);
+        if (radius <= 0) {
+            return false;
+        }
+        double dx = loc.getX() - spawn.getX();
+        double dz = loc.getZ() - spawn.getZ();
+        return (dx * dx) + (dz * dz) <= radius * radius;
+    }
+
+    /** Only OPs/admins may drop items within the spawn protection radius. */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDropAtSpawn(PlayerDropItemEvent event) {
+        Player player = event.getPlayer();
+        if (player.hasPermission("unstablecore.admin")) {
+            return;
+        }
+        if (!isInSpawnProtection(player.getLocation())) {
+            return;
+        }
+        event.setCancelled(true);
+        MessageUtil.send(player, plugin.getConfig().getString(
+                "messages.spawn-drop-blocked", "&c&l(!) &r&cYou can't drop items at spawn."));
     }
 
     @EventHandler(priority = EventPriority.HIGH)

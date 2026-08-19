@@ -64,6 +64,8 @@ public final class UnstablePlaceholders extends PlaceholderExpansion {
                     plugin.getEventManager().getMillisUntilStreakEnds());
             case "killstreak", "ks" -> player == null ? "0"
                     : String.valueOf(plugin.getKillstreakManager().getStreak(player.getUniqueId()));
+            case "best_killstreak", "best_ks" -> player == null ? "0"
+                    : String.valueOf(plugin.getStatsManager().getBestStreak(player.getUniqueId()));
             case "deaths", "death" -> player == null ? "0"
                     : String.valueOf(plugin.getKillstreakManager().getDeaths(player.getUniqueId()));
             case "tag", "suffix" -> {
