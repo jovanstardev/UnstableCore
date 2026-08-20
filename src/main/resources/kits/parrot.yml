@@ -4,6 +4,7 @@ slot: 15
 permission: "unstablecore.kit.parrot"
 tier: Common
 price: 250
+cooldown: 240
 name-color: "&x&e&7&8&1&2&f"
 contents:
   '0':

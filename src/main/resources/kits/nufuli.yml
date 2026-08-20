@@ -4,6 +4,7 @@ slot: 29
 permission: "unstablecore.kit.nufuli"
 tier: Epic
 price: 2635
+cooldown: 360
 name-color: "&x&6&3&c&0&f&f"
 contents:
   '0':

@@ -57,19 +57,19 @@ public final class KitsGui implements InventoryHolder {
                 .build());
 
         String selectedId = kits.getSelectedId(player.getUniqueId());
-        // One shared claim cooldown for the whole menu (it is per-player, not per-kit), shown on
-        // every claimable kit so players know before clicking whether equipping will work.
-        long cooldownRemain = plugin.getLoadoutManager() == null
-                ? 0L : plugin.getLoadoutManager().remainingMillis(player.getUniqueId());
-        String cooldownLine = cooldownRemain <= 0 ? null
-                : "&e\u23f3 Claim cooldown: &f"
-                        + com.jovanstar.unstablecore.manager.EventManager.formatDurationMillis(cooldownRemain);
+        LoadoutManager loadouts = plugin.getLoadoutManager();
         for (Kit kit : kits.getKitsBySlot()) {
             int slot = kit.getSlot();
             if (slot < 0 || slot >= 54 || slot == EDIT_SLOT || slot == CLOSE_SLOT || slot == INFO_SLOT) {
                 continue;
             }
             boolean unlocked = kits.isUnlocked(player, kit);
+            // Whichever gate this kit is actually waiting on - its own cooldown or the shared one.
+            long remain = loadouts == null ? 0L
+                    : loadouts.effectiveRemainingMillis(player.getUniqueId(), kit);
+            String cooldownLine = remain <= 0 ? null
+                    : "&e\u23f3 Ready in &f"
+                            + com.jovanstar.unstablecore.manager.EventManager.formatDurationMillis(remain);
             boolean selected = kit.getId().equalsIgnoreCase(selectedId);
             String color = kit.getNameColor();
 

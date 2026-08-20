@@ -166,9 +166,11 @@ public final class KitManager {
             String tier = kitConfig.getString("tier", "Epic");
             double price = kitConfig.getDouble("price", 0);
             String nameColor = kitConfig.getString("name-color", "&d");
+            int kitCooldown = kitConfig.getInt("cooldown", 0);
             ItemStack[] contents = readContents(kitConfig.getConfigurationSection("contents"));
             warnAboutReservedSlots(id, contents);
-            kits.put(id, new Kit(id, display, icon, slot, perm, tier, price, nameColor, contents));
+            kits.put(id, new Kit(id, display, icon, slot, perm, tier, price, nameColor, contents,
+                    kitCooldown));
         }
     }
 
@@ -295,6 +297,9 @@ public final class KitManager {
         kitConfig.set("permission", kit.getPermission());
         kitConfig.set("tier", kit.getTier());
         kitConfig.set("price", kit.getPrice());
+        if (kit.getCooldownSeconds() > 0) {
+            kitConfig.set("cooldown", kit.getCooldownSeconds());
+        }
         kitConfig.set("name-color", kit.getNameColor());
         writeContents(kitConfig.createSection("contents"), kit.getContents());
         try {

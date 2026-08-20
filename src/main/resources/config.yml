@@ -60,6 +60,18 @@ killstreak:
     enabled: true
     # Sound slider the voice obeys. MASTER is always audible; PLAYERS respects that slider.
     category: MASTER
+    # Sends the announcer pack as an ADDITIONAL pack on join, stacked on top of any pack another
+    # plugin already applies (ItemsAdder, SkinVault). Use this instead of server.properties on a
+    # server that already serves a pack - server.properties holds only one, so setting it there
+    # makes the two packs replace each other.
+    #
+    # Leave url blank to disable. sha1 must be the 40-character hash of the uploaded zip; if it
+    # does not match, clients re-download every join or refuse the pack.
+    resource-pack:
+      url: ""
+      sha1: ""
+      prompt: "&dUnstable &fAnnouncer &7- adds killstreak voice lines"
+      required: false
     tiers:
       5:
         sound: "unstable:announcer.mega_kill"
@@ -430,6 +442,14 @@ held-shulker:
   enabled: true
   title: "&dShulker Box"
 
+# Set enabled to false on a server that runs a dedicated duels plugin (ZelDuels and the like).
+# The duel managers are never created and /duel, /dueladmin, /duels, /spec and /leave are
+# unregistered on startup, so the other plugin claims those names cleanly. Duel leaderboard
+# categories render empty. Everything else - kits, arenas, bounty, shop, killstreaks - is
+# unaffected.
+duels:
+  enabled: true
+
 kits:
   unlock-by-permission: false
   default-kit: law
@@ -545,6 +565,7 @@ messages:
   sword-none: "&cNo sword arena is configured. Set sword.arena-id or create a nomace arena."
   loadout-given: "&aLoadout claimed!"
   loadout-cooldown: "&cLoadout available in &f{time}&c."
+  loadout-kit-cooldown: "&f{kit} &cis on cooldown for &f{time}&c."
   loadout-no-kit: "&cSelect an unlocked kit first with &f/kits&c."
   loadout-arena-blocked: "&cYou can't change your kit while inside an arena."
   loadout-cooldown-reset: "&aReset loadout cooldown for &f{player}&a."

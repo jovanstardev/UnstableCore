@@ -856,7 +856,7 @@ public final class ArenaManager {
             // "safety net" is an unlimited free kit dispenser - drop everything, click join, get
             // a complete kit, repeat - minting unbounded paid-kit gear for other players.
             if (loadoutManager != null) {
-                loadoutManager.markUsed(player);
+                loadoutManager.markUsed(player, kit);
             }
             MessageUtil.sendConfig(player, "arena-auto-kit", Map.of("kit", kit.getDisplayName()));
         }

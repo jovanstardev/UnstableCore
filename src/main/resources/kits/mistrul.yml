@@ -4,6 +4,7 @@ slot: 28
 permission: "unstablecore.kit.mistrul"
 tier: Epic
 price: 2600
+cooldown: 480
 name-color: "&x&a&e&c&b&f&f"
 contents:
   '0':

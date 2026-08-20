@@ -16,21 +16,40 @@ Thresholds, volume, fallbacks and who hears each line live in `config.yml` under
 
 ## Hosting it
 
-1. Upload `UnstableAnnouncer.zip` (in the project root) anywhere that serves a **direct
-   download** over HTTPS. A GitHub Release asset works well and is free.
-2. Put the URL and hash in `server.properties`:
+Upload `UnstableAnnouncer.zip` (in the project root) anywhere that serves a **direct download**.
+A GitHub raw URL or Release asset works and is free. Then pick ONE of the two ways to send it.
+
+### If another plugin already sends a pack (ItemsAdder, SkinVault, ...)
+
+Use the plugin's own sender, which stacks this pack **on top of** the existing one rather than
+replacing it. `server.properties` holds a single pack, so putting it there makes the two fight
+and one set of assets disappears.
+
+In `config.yml`, under `killstreak.announcer`:
+
+```yaml
+    resource-pack:
+      url: "https://your-host/UnstableAnnouncer.zip"
+      sha1: "a575663f98eb28e57d5cb6f5515e31732ff19561"
+      prompt: "&dUnstable &fAnnouncer &7- adds killstreak voice lines"
+      required: false
+```
+
+### If nothing else sends a pack
+
+`server.properties` is fine - leave the plugin sender's `url` blank:
 
 ```properties
 resource-pack=https://your-host/UnstableAnnouncer.zip
-resource-pack-sha1=12a863e2f27492e97cf721a783b6bd138e30800f
+resource-pack-sha1=a575663f98eb28e57d5cb6f5515e31732ff19561
 require-resource-pack=false
 ```
 
-`require-resource-pack=false` keeps the pack optional — players who decline still hear the
-vanilla fallbacks. Set it to `true` only if you want to kick players who refuse.
+Either way the pack stays optional, so players who decline still hear the vanilla fallbacks.
 
 **The SHA1 must match the uploaded file exactly.** A stale hash makes clients re-download on
 every join, or refuse the pack outright.
+
 
 ## Changing the sounds
 
@@ -54,8 +73,9 @@ key `unstable:announcer.whatever` from `config.yml`.
 
 ## Notes
 
-- `pack_format` is `46` (Minecraft 1.21.4). If the client shows an "incompatible pack" warning
-  after a game update, bump it in `pack.mcmeta`; the pack usually still loads regardless.
+- `pack_format` is `75`, with `supported_formats` declaring 46-99 so one zip covers a wide
+  range of client versions without a "made for a different version" warning. Widen that range
+  in `pack.mcmeta` if a future update falls outside it.
 - Zip the **contents**, not the folder — `pack.mcmeta` must sit at the archive root, not inside
   a wrapper directory. The command above does this correctly.
 - Bedrock clients connected through Geyser do not receive Java resource packs; they hear the

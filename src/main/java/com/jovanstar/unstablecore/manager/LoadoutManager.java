@@ -1,6 +1,7 @@
 package com.jovanstar.unstablecore.manager;
 
 import com.jovanstar.unstablecore.UnstableCore;
+import com.jovanstar.unstablecore.model.Kit;
 import com.jovanstar.unstablecore.util.MessageUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -17,6 +18,8 @@ public final class LoadoutManager {
 
     private final UnstableCore plugin;
     private final Map<UUID, Long> lastUse = new ConcurrentHashMap<>();
+    /** uuid -> (kitId -> last claim millis), for kits that declare their own cooldown. */
+    private final Map<UUID, Map<String, Long>> kitLastUse = new ConcurrentHashMap<>();
     private final Map<UUID, Long> noCooldownUntil = new ConcurrentHashMap<>();
 
     public LoadoutManager(UnstableCore plugin) {
@@ -26,12 +29,14 @@ public final class LoadoutManager {
 
     public void load() {
         lastUse.clear();
+        kitLastUse.clear();
         noCooldownUntil.clear();
         DatabaseManager db = plugin.getDatabaseManager();
         if (db == null || !db.isConnected()) {
             return;
         }
         lastUse.putAll(db.loadAllLoadouts());
+        kitLastUse.putAll(db.loadAllKitCooldowns());
         noCooldownUntil.putAll(db.loadAllLoadoutNoCooldown());
         pruneExpired();
     }
@@ -85,14 +90,70 @@ public final class LoadoutManager {
         return remain;
     }
 
+    /**
+     * Seconds this kit is locked for after a claim: the kit's own {@code cooldown}, or
+     * {@code loadout.cooldown-seconds} when the kit does not declare one.
+     */
+    public long kitCooldownMillis(Kit kit) {
+        if (kit == null || kit.getCooldownSeconds() <= 0) {
+            return cooldownMillis();
+        }
+        return kit.getCooldownSeconds() * 1000L;
+    }
+
+    /**
+     * Time left on <em>this kit's</em> own cooldown. Independent of the shared cooldown, so a
+     * player waiting out a 10-minute kit can still claim a cheaper one - subject to
+     * {@link #remainingMillis}, which still rate-limits claiming in general.
+     */
+    public long kitRemainingMillis(UUID uuid, Kit kit) {
+        if (uuid == null || kit == null) {
+            return 0L;
+        }
+        Player online = Bukkit.getPlayer(uuid);
+        if (online != null && bypassesCooldown(online)) {
+            return 0L;
+        }
+        Map<String, Long> byKit = kitLastUse.get(uuid);
+        Long last = byKit == null ? null : byKit.get(kit.getId());
+        if (last == null) {
+            return 0L;
+        }
+        long remain = (last + kitCooldownMillis(kit)) - System.currentTimeMillis();
+        return Math.max(0L, remain);
+    }
+
+    /** Longest of the two gates, for display: what the player is actually waiting on. */
+    public long effectiveRemainingMillis(UUID uuid, Kit kit) {
+        return Math.max(remainingMillis(uuid), kitRemainingMillis(uuid, kit));
+    }
+
+    private void markKitUsed(Player player, Kit kit) {
+        if (player == null || kit == null || bypassesCooldown(player)) {
+            return;
+        }
+        UUID uuid = player.getUniqueId();
+        long now = System.currentTimeMillis();
+        kitLastUse.computeIfAbsent(uuid, u -> new ConcurrentHashMap<>()).put(kit.getId(), now);
+        DatabaseManager db = plugin.getDatabaseManager();
+        if (db != null && db.isConnected()) {
+            String kitId = kit.getId();
+            Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> db.upsertKitCooldown(uuid, kitId, now));
+        }
+    }
+
     public void resetCooldown(UUID uuid) {
         if (uuid == null) {
             return;
         }
         lastUse.remove(uuid);
+        kitLastUse.remove(uuid);
         DatabaseManager db = plugin.getDatabaseManager();
         if (db != null && db.isConnected()) {
-            Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> db.deleteLoadoutCooldown(uuid));
+            Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+                db.deleteLoadoutCooldown(uuid);
+                db.deleteKitCooldowns(uuid);
+            });
         }
     }
 
@@ -163,9 +224,23 @@ public final class LoadoutManager {
             return false;
         }
         KitManager kits = plugin.getKitManager();
-        if (kits == null || kits.getSelectedKit(player) == null) {
+        Kit selected = kits == null ? null : kits.getSelectedKit(player);
+        if (selected == null) {
             if (sendMessages) {
                 MessageUtil.sendConfig(player, "loadout-no-kit", Map.of());
+            }
+            return false;
+        }
+        // Second, independent gate: this particular kit's own cooldown. The shared one above
+        // limits how often a player may claim anything at all - without it, per-kit timers alone
+        // would let someone claim every kit back to back and dump 20-odd loadouts on the floor.
+        long kitRemain = kitRemainingMillis(uuid, selected);
+        if (kitRemain > 0) {
+            if (sendMessages) {
+                MessageUtil.sendConfig(player, "loadout-kit-cooldown", Map.of(
+                        "time", EventManager.formatDurationMillis(kitRemain),
+                        "kit", selected.getDisplayName()
+                ));
             }
             return false;
         }
@@ -179,6 +254,7 @@ public final class LoadoutManager {
         UUID uuid = player.getUniqueId();
         KitManager kits = plugin.getKitManager();
 
+        Kit claimed = kits == null ? null : kits.getSelectedKit(player);
         boolean bypass = bypassesCooldown(player);
         long now = System.currentTimeMillis();
         if (!bypass) {
@@ -192,6 +268,10 @@ public final class LoadoutManager {
         if (!kits.applyLoadout(player)) {
             if (!bypass) {
                 lastUse.remove(uuid);
+                Map<String, Long> byKit = kitLastUse.get(uuid);
+                if (byKit != null && claimed != null) {
+                    byKit.remove(claimed.getId());
+                }
             }
             if (sendMessages) {
                 MessageUtil.sendConfig(player, "loadout-no-kit", Map.of());
@@ -199,6 +279,7 @@ public final class LoadoutManager {
             return false;
         }
 
+        markKitUsed(player, claimed);
         if (sendMessages) {
             MessageUtil.sendConfig(player, "loadout-given", Map.of());
         }
@@ -213,9 +294,15 @@ public final class LoadoutManager {
      * No-op for players who legitimately bypass the cooldown, matching tryGive's behaviour.
      */
     public void markUsed(Player player) {
+        markUsed(player, null);
+    }
+
+    /** @param kit the kit actually handed out, so its own cooldown starts too; null for none. */
+    public void markUsed(Player player, Kit kit) {
         if (player == null || bypassesCooldown(player)) {
             return;
         }
+        markKitUsed(player, kit);
         UUID uuid = player.getUniqueId();
         long now = System.currentTimeMillis();
         lastUse.put(uuid, now);

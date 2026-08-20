@@ -4,6 +4,7 @@ slot: 20
 permission: "unstablecore.kit.wyll"
 tier: Uncommon
 price: 600
+cooldown: 180
 name-color: "&x&8&F&C&A&8&B"
 contents:
   '0':

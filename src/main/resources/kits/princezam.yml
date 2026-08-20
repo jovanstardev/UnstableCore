@@ -4,6 +4,7 @@ slot: 12
 permission: "unstablecore.kit.princezam"
 tier: Common
 price: 50
+cooldown: 240
 name-color: "&x&f&f&d&9&0&0"
 contents:
   '0':

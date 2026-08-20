@@ -4,6 +4,7 @@ slot: 14
 permission: "unstablecore.kit.ferremc"
 tier: Common
 price: 180
+cooldown: 300
 name-color: "&x&8&3&0&0&0&0"
 contents:
   '0':
