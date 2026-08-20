@@ -4,6 +4,7 @@ slot: 25
 permission: "unstablecore.kit.theobaldthebird"
 tier: Rare
 price: 2500
+cooldown: 180
 name-color: "&x&f&f&d&9&0&0"
 contents:
   '0':

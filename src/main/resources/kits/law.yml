@@ -4,6 +4,7 @@ slot: 10
 permission: "unstablecore.kit.law"
 tier: Starter
 price: 0
+cooldown: 60
 name-color: "&x&2&f&8&6&e&7"
 contents:
   '0':

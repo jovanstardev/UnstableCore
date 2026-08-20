@@ -4,6 +4,7 @@ slot: 37
 permission: "unstablecore.kit.lettucek"
 tier: Mythic
 price: 9000
+cooldown: 600
 name-color: "&x&e&5&b&a&0&0"
 contents:
   '0':

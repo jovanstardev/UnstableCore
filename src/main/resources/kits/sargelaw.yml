@@ -4,6 +4,7 @@ slot: 23
 permission: "unstablecore.kit.sargelaw"
 tier: Rare
 price: 2000
+cooldown: 240
 name-color: "&x&e&7&2&f&7&2"
 contents:
   '0':

@@ -4,6 +4,7 @@ slot: 34
 permission: "unstablecore.kit.wemmbu"
 tier: Mythic
 price: 7200
+cooldown: 480
 name-color: "&x&8&0&0&0&f&f"
 contents:
   '0':

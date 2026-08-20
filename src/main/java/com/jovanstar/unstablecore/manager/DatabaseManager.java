@@ -145,6 +145,14 @@ public final class DatabaseManager {
                     )
                     """);
             st.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS kit_cooldowns (
+                      uuid VARCHAR(36) NOT NULL,
+                      kit_id VARCHAR(64) NOT NULL,
+                      last_use BIGINT NOT NULL,
+                      PRIMARY KEY (uuid, kit_id)
+                    )
+                    """);
+            st.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS loadout_nocooldown (
                       uuid VARCHAR(36) NOT NULL PRIMARY KEY,
                       until_ms BIGINT NOT NULL
@@ -1074,6 +1082,77 @@ public final class DatabaseManager {
             ps.executeUpdate();
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Failed to delete tag for " + uuid, e);
+        }
+    }
+
+    private String upsertKitCooldownSql() {
+        if (mysql) {
+            return """
+                    INSERT INTO kit_cooldowns (uuid, kit_id, last_use) VALUES (?, ?, ?)
+                    ON DUPLICATE KEY UPDATE last_use = VALUES(last_use)
+                    """;
+        }
+        return """
+                INSERT INTO kit_cooldowns (uuid, kit_id, last_use) VALUES (?, ?, ?)
+                ON CONFLICT(uuid, kit_id) DO UPDATE SET last_use = excluded.last_use
+                """;
+    }
+
+    /** uuid -> (kitId -> last claim millis). */
+    public Map<UUID, Map<String, Long>> loadAllKitCooldowns() {
+        Map<UUID, Map<String, Long>> out = new ConcurrentHashMap<>();
+        try (Connection c = getConnection();
+             PreparedStatement ps = c.prepareStatement("SELECT uuid, kit_id, last_use FROM kit_cooldowns");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                try {
+                    out.computeIfAbsent(UUID.fromString(rs.getString(1)), u -> new ConcurrentHashMap<>())
+                            .put(rs.getString(2), rs.getLong(3));
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to load kit cooldowns from database", e);
+        }
+        return out;
+    }
+
+    public void upsertKitCooldown(UUID uuid, String kitId, long lastUse) {
+        if (uuid == null || kitId == null) {
+            return;
+        }
+        try (Connection c = getConnection();
+             PreparedStatement ps = c.prepareStatement(upsertKitCooldownSql())) {
+            ps.setString(1, uuid.toString());
+            ps.setString(2, kitId);
+            ps.setLong(3, lastUse);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to save kit cooldown", e);
+        }
+    }
+
+    public void deleteKitCooldowns(UUID uuid) {
+        if (uuid == null) {
+            return;
+        }
+        try (Connection c = getConnection();
+             PreparedStatement ps = c.prepareStatement("DELETE FROM kit_cooldowns WHERE uuid = ?")) {
+            ps.setString(1, uuid.toString());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to clear kit cooldowns", e);
+        }
+    }
+
+    /** Drops rows older than the longest configured kit cooldown so the table cannot grow forever. */
+    public void pruneKitCooldowns(long olderThanMs) {
+        try (Connection c = getConnection();
+             PreparedStatement ps = c.prepareStatement("DELETE FROM kit_cooldowns WHERE last_use <= ?")) {
+            ps.setLong(1, olderThanMs);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to prune kit cooldowns", e);
         }
     }
 

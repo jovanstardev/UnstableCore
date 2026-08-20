@@ -4,6 +4,7 @@ slot: 32
 permission: "unstablecore.kit.shoebilly"
 tier: Legendary
 price: 4700
+cooldown: 180
 name-color: "&x&8&c&8&c&8&c"
 contents:
   '0':
