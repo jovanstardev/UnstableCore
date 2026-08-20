@@ -12,6 +12,9 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class KillstreakManager {
 
+    private static final java.util.List<Integer> DEFAULT_MILESTONES =
+            java.util.List.of(5, 10, 15, 20, 25, 50, 100);
+
     private final UnstableCore plugin;
     private final Map<UUID, Integer> streaks = new ConcurrentHashMap<>();
     private final Map<UUID, Integer> deaths = new ConcurrentHashMap<>();
@@ -152,8 +155,7 @@ public final class KillstreakManager {
         if (!plugin.getConfig().getBoolean("killstreak.announcer.enabled", true)) {
             return;
         }
-        java.util.List<Integer> milestones = plugin.getConfig().getIntegerList("killstreak.milestones.values");
-        if (!milestones.contains(streak)) {
+        if (!milestoneValues().contains(streak)) {
             return;
         }
         org.bukkit.configuration.ConfigurationSection tiers =
@@ -237,6 +239,20 @@ public final class KillstreakManager {
         }
     }
 
+    /**
+     * Streak values that count as a milestone, from {@code killstreak.milestones.values}.
+     *
+     * <p>Falls back to the shipped list when that path is absent or empty rather than matching
+     * nothing. An empty list silently disables every milestone effect - the chat callout and the
+     * announcer both - which reads as "the feature is broken" rather than "the config is
+     * incomplete", and a config generated before this section existed hits exactly that.
+     * {@code killstreak.milestones.enabled: false} remains the way to turn milestones off.
+     */
+    private java.util.List<Integer> milestoneValues() {
+        java.util.List<Integer> configured = plugin.getConfig().getIntegerList("killstreak.milestones.values");
+        return configured.isEmpty() ? DEFAULT_MILESTONES : configured;
+    }
+
     public void broadcastMilestone(Player killer, int streak) {
         if (!plugin.getConfig().getBoolean("killstreak.milestones.enabled", true)) {
             return;
@@ -244,8 +260,7 @@ public final class KillstreakManager {
         if (!plugin.getConfig().getBoolean("kill-messages.enabled", true)) {
             return;
         }
-        java.util.List<Integer> milestones = plugin.getConfig().getIntegerList("killstreak.milestones.values");
-        if (milestones.isEmpty() || !milestones.contains(streak)) {
+        if (!milestoneValues().contains(streak)) {
             return;
         }
         String icon = plugin.getConfig().getString("kill-messages.icon", "&c⚔");
