@@ -528,7 +528,8 @@ messages:
   kit-cannot-afford: "&cYou need &e{price} coins &cto unlock &f{kit}&c."
   kit-purchased: "&aUnlocked &f{kit} &afor &e{price} coins&a!"
   kit-selected: "&aSelected kit &f{kit}&a."
-  kit-selected-inventory-not-empty: "&cEmpty your inventory first, then reselect the kit to auto-equip it. Or use &f/loadout&c."
+  # Shown once per session, the first time a player opens /trash.
+  disposal-warning: "&c\u26a0 &7Items left in the bin are &cdestroyed &7when you close it."
   arena-auto-kit: "&aYou arrived without a kit - equipped &f{kit}&a!"
   kit-not-found: "&cKit &f{kit} &cnot found."
   kit-layout-saved: "&aSaved loadout layout for &f{kit}&a."

@@ -305,7 +305,6 @@ public final class UnstableCore extends JavaPlugin {
         LeaderboardCommand leaderboard = new LeaderboardCommand(this);
         getCommand("leaderboard").setExecutor(leaderboard);
         getCommand("leaderboard").setTabCompleter(leaderboard);
-
     }
 
     private void registerListeners() {

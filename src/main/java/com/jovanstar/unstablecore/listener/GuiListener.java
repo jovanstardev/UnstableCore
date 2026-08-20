@@ -5,6 +5,7 @@ import com.jovanstar.unstablecore.gui.ArenaGui;
 import com.jovanstar.unstablecore.gui.BountyBoardGui;
 import com.jovanstar.unstablecore.gui.DisposalGui;
 import com.jovanstar.unstablecore.gui.KitAdminEditGui;
+import com.jovanstar.unstablecore.gui.KitConfirmGui;
 import com.jovanstar.unstablecore.gui.KitEditGui;
 import com.jovanstar.unstablecore.gui.KitPreviewGui;
 import com.jovanstar.unstablecore.gui.KitsGui;
@@ -76,6 +77,7 @@ public final class GuiListener implements Listener {
                 || topHolder instanceof LeaderboardCategoryGui
                 || topHolder instanceof DisposalGui
                 || topHolder instanceof KitsGui
+                || topHolder instanceof KitConfirmGui
                 || topHolder instanceof KitPreviewGui
                 || topHolder instanceof KitEditGui
                 || topHolder instanceof KitAdminEditGui)) {
@@ -97,6 +99,7 @@ public final class GuiListener implements Listener {
 
         event.setCancelled(true);
         if (topHolder instanceof KitsGui
+                || topHolder instanceof KitConfirmGui
                 || topHolder instanceof KitPreviewGui
                 || topHolder instanceof LeaderboardMenuGui
                 || topHolder instanceof LeaderboardCategoryGui
@@ -161,11 +164,38 @@ public final class GuiListener implements Listener {
             } else if (topHolder instanceof KitsGui gui) {
                 gui.handleClick(player, slot, click);
                 syncCursor(player);
+            } else if (topHolder instanceof KitConfirmGui gui) {
+                gui.handleClick(player, slot);
+                syncCursor(player);
             } else if (topHolder instanceof KitPreviewGui gui) {
                 gui.handleClick(player, slot, click);
                 syncCursor(player);
             }
         });
+    }
+
+    /**
+     * Whether it is safe to pop the kits menu back open after the player closes the disposal bin.
+     * The bin can be force-closed by death, and the player may have been pulled into a fight or an
+     * arena while it was open, so the reopen must not fire while dead, in an arena, or
+     * combat-tagged - only when they are idle at spawn.
+     */
+    private boolean canReopenKits(Player player) {
+        if (player == null || !player.isOnline() || player.isDead()) {
+            return false;
+        }
+        // Cached tag and real location, matching LoadoutManager.canClaim: the tag can be null
+        // while the body is physically inside an arena, and the menu must not reopen there.
+        if (plugin.getArenaManager() != null
+                && (plugin.getArenaManager().getPlayerArena(player.getUniqueId()) != null
+                || plugin.getArenaManager().resolveArenaAt(player.getLocation()) != null)) {
+            return false;
+        }
+        if (plugin.getCombatListener() != null
+                && plugin.getCombatListener().isCombatTagged(player.getUniqueId())) {
+            return false;
+        }
+        return true;
     }
 
     private static void syncCursor(Player player) {
@@ -216,7 +246,8 @@ public final class GuiListener implements Listener {
                 || holder instanceof RewardsGui || holder instanceof TagsGui
                 || holder instanceof BountyBoardGui || holder instanceof PlaceBountyGui
                 || holder instanceof LeaderboardMenuGui || holder instanceof LeaderboardCategoryGui
-                || holder instanceof KitsGui || holder instanceof KitPreviewGui) {
+                || holder instanceof KitsGui || holder instanceof KitConfirmGui
+                || holder instanceof KitPreviewGui) {
             event.setCancelled(true);
             if (event.getWhoClicked() instanceof Player player) {
                 syncCursor(player);
@@ -229,6 +260,17 @@ public final class GuiListener implements Listener {
         InventoryHolder holder = event.getInventory().getHolder();
         if (holder instanceof DisposalGui disposal) {
             disposal.disposeContents();
+            // Came here from the kit confirm screen: hand them back to the kits menu so they
+            // can claim the kit they were binning space for. Next tick, because reopening an
+            // inventory from inside a close event desyncs the client view.
+            if (event.getPlayer() instanceof Player closer
+                    && DisposalGui.consumeReturnToKits(closer.getUniqueId())) {
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (canReopenKits(closer)) {
+                        KitsGui.open(plugin, closer);
+                    }
+                });
+            }
         }
         if (event.getPlayer() instanceof Player player) {
             if (holder instanceof KitEditGui editGui) {
@@ -238,6 +280,7 @@ public final class GuiListener implements Listener {
                 adminEditGui.onClose(player);
             }
             if (holder instanceof KitsGui
+                    || holder instanceof KitConfirmGui
                     || holder instanceof KitPreviewGui
                     || holder instanceof ShopGui
                     || holder instanceof ArenaGui
@@ -264,5 +307,6 @@ public final class GuiListener implements Listener {
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         lastClickMs.remove(event.getPlayer().getUniqueId());
+        DisposalGui.clearPlayer(event.getPlayer().getUniqueId());
     }
 }

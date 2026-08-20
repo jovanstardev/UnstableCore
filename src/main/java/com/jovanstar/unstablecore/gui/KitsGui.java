@@ -57,6 +57,13 @@ public final class KitsGui implements InventoryHolder {
                 .build());
 
         String selectedId = kits.getSelectedId(player.getUniqueId());
+        // One shared claim cooldown for the whole menu (it is per-player, not per-kit), shown on
+        // every claimable kit so players know before clicking whether equipping will work.
+        long cooldownRemain = plugin.getLoadoutManager() == null
+                ? 0L : plugin.getLoadoutManager().remainingMillis(player.getUniqueId());
+        String cooldownLine = cooldownRemain <= 0 ? null
+                : "&e\u23f3 Claim cooldown: &f"
+                        + com.jovanstar.unstablecore.manager.EventManager.formatDurationMillis(cooldownRemain);
         for (Kit kit : kits.getKitsBySlot()) {
             int slot = kit.getSlot();
             if (slot < 0 || slot >= 54 || slot == EDIT_SLOT || slot == CLOSE_SLOT || slot == INFO_SLOT) {
@@ -69,30 +76,35 @@ public final class KitsGui implements InventoryHolder {
             ItemBuilder builder = new ItemBuilder(kit.getIcon()).hideAttributes();
             if (selected) {
                 builder.name("&aSelected &8| " + color + "&l" + kit.getDisplayName());
+                java.util.List<String> lore = new java.util.ArrayList<>();
                 if (isStarter(kit)) {
-                    builder.lore(
-                            "&7Type: &fStarter Kit",
-                            "&aSelected as your current kit.",
-                            "&b> Right-click &fto preview"
-                    );
+                    lore.add("&7Type: &fStarter Kit");
+                    lore.add("&aSelected as your current kit.");
                 } else {
-                    builder.lore(
-                            tierLine(kit),
-                            "",
-                            "&aSelected as your current kit.",
-                            "",
-                            "&6> Left-click &fto select",
-                            "&b> Right-click &fto preview"
-                    );
+                    lore.add(tierLine(kit));
+                    lore.add("");
+                    lore.add("&aSelected as your current kit.");
                 }
+                if (cooldownLine != null) {
+                    lore.add(cooldownLine);
+                }
+                lore.add("");
+                if (!isStarter(kit)) {
+                    lore.add("&6> Left-click &fto select");
+                }
+                lore.add("&b> Right-click &fto preview");
+                builder.lore(lore);
             } else if (unlocked) {
                 builder.name("&aUnlocked &8| " + color + "&l" + kit.getDisplayName());
-                builder.lore(
-                        tierLine(kit),
-                        "",
-                        "&6> Left-click &fto select",
-                        "&b> Right-click &fto preview"
-                );
+                java.util.List<String> lore = new java.util.ArrayList<>();
+                lore.add(tierLine(kit));
+                if (cooldownLine != null) {
+                    lore.add(cooldownLine);
+                }
+                lore.add("");
+                lore.add("&6> Left-click &fto select");
+                lore.add("&b> Right-click &fto preview");
+                builder.lore(lore);
             } else {
                 builder.name("&cLocked &8| " + color + "&l" + kit.getDisplayName());
                 builder.lore(
@@ -197,16 +209,28 @@ public final class KitsGui implements InventoryHolder {
     /**
      * Auto-applies the just-selected kit if the player's inventory is completely empty, so
      * picking a kit from /kits doesn't require a separate /loadout. If they still have items,
-     * we refuse to silently wipe them and ask them to empty their inventory first instead.
+     * we never wipe them silently: a {@link KitConfirmGui} asks first, with a bin-and-equip
+     * button, a "sort it myself" /trash shortcut, and a cancel.
      */
     private void autoEquipIfEmpty(Player player) {
-        if (!KitManager.isInventoryEmpty(player)) {
-            MessageUtil.sendConfig(player, "kit-selected-inventory-not-empty", Map.of());
+        LoadoutManager loadouts = plugin.getLoadoutManager();
+        if (loadouts == null) {
             return;
         }
-        LoadoutManager loadouts = plugin.getLoadoutManager();
-        if (loadouts != null) {
+        if (KitManager.isInventoryEmpty(player)) {
             loadouts.tryGive(player, true);
+            return;
+        }
+        // Inventory not empty: only offer the destructive confirm when a claim would actually be
+        // allowed right now. canClaim refuses - with the reason messaged - inside an arena, on
+        // cooldown, or with no kit. None of those should reach a screen whose confirm button
+        // destroys the player's inventory.
+        if (!loadouts.canClaim(player, true)) {
+            return;
+        }
+        Kit selected = plugin.getKitManager().getSelectedKit(player);
+        if (selected != null) {
+            KitConfirmGui.open(plugin, player, selected);
         }
     }
 

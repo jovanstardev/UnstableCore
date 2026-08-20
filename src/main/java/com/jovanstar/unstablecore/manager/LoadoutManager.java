@@ -130,12 +130,23 @@ public final class LoadoutManager {
         return tryGive(player, true);
     }
 
-    public boolean tryGive(Player player, boolean sendMessages) {
+    /**
+     * Whether a loadout claim would be allowed for this player right now, without consuming the
+     * cooldown or touching their inventory. This is the single precondition gate shared by
+     * {@link #tryGive} and by callers that must destroy something before claiming (the kit
+     * confirm screen), so "may I claim" and "claim" can never disagree within a tick.
+     */
+    public boolean canClaim(Player player, boolean sendMessages) {
         if (player == null) {
             return false;
         }
         UUID uuid = player.getUniqueId();
-        if (plugin.getArenaManager() != null && plugin.getArenaManager().getPlayerArena(uuid) != null) {
+        // Both the cached tag and the real location: the tag can be null while the body is inside
+        // an arena (a relog with join.spawn-on-join off, or the one-tick gap before
+        // teleportToArena writes the tag), and trusting the tag alone let a kit be claimed there.
+        if (plugin.getArenaManager() != null
+                && (plugin.getArenaManager().getPlayerArena(uuid) != null
+                || plugin.getArenaManager().resolveArenaAt(player.getLocation()) != null)) {
             if (sendMessages) {
                 MessageUtil.send(player, plugin.getConfig()
                         .getString("messages.loadout-arena-blocked", "&cYou can't change your kit while inside an arena."));
@@ -151,7 +162,6 @@ public final class LoadoutManager {
             }
             return false;
         }
-
         KitManager kits = plugin.getKitManager();
         if (kits == null || kits.getSelectedKit(player) == null) {
             if (sendMessages) {
@@ -159,6 +169,15 @@ public final class LoadoutManager {
             }
             return false;
         }
+        return true;
+    }
+
+    public boolean tryGive(Player player, boolean sendMessages) {
+        if (!canClaim(player, sendMessages)) {
+            return false;
+        }
+        UUID uuid = player.getUniqueId();
+        KitManager kits = plugin.getKitManager();
 
         boolean bypass = bypassesCooldown(player);
         long now = System.currentTimeMillis();
