@@ -75,6 +75,11 @@ public final class CombatListener implements Listener {
             return;
         }
         recentDeathHandled.put(victim.getUniqueId(), System.currentTimeMillis());
+        // Death ends combat: the tag only exists to punish leaving a fight alive, so a dead player
+        // who respawns at spawn is no longer "in combat". Without this the tag lingered for the
+        // full combat-tag.seconds after death, so a just-respawned player was told "you can't do
+        // that while in combat" for kit swaps, arena joins and the like.
+        combatTags.remove(victim.getUniqueId());
         int brokenStreak = plugin.getKillstreakManager().getStreak(victim.getUniqueId());
         Player killer = victim.getKiller();
 
