@@ -8,6 +8,7 @@ import com.jovanstar.unstablecore.gui.DuelHistoryGui;
 import com.jovanstar.unstablecore.gui.DuelMapGui;
 import com.jovanstar.unstablecore.gui.DuelQueueGui;
 import com.jovanstar.unstablecore.gui.KitAdminEditGui;
+import com.jovanstar.unstablecore.gui.KitConfirmGui;
 import com.jovanstar.unstablecore.gui.KitEditGui;
 import com.jovanstar.unstablecore.gui.KitPreviewGui;
 import com.jovanstar.unstablecore.gui.KitsGui;
@@ -79,6 +80,7 @@ public final class GuiListener implements Listener {
                 || topHolder instanceof LeaderboardCategoryGui
                 || topHolder instanceof DisposalGui
                 || topHolder instanceof KitsGui
+                || topHolder instanceof KitConfirmGui
                 || topHolder instanceof KitPreviewGui
                 || topHolder instanceof KitEditGui
                 || topHolder instanceof KitAdminEditGui
@@ -103,6 +105,7 @@ public final class GuiListener implements Listener {
 
         event.setCancelled(true);
         if (topHolder instanceof KitsGui
+                || topHolder instanceof KitConfirmGui
                 || topHolder instanceof KitPreviewGui
                 || topHolder instanceof LeaderboardMenuGui
                 || topHolder instanceof LeaderboardCategoryGui
@@ -176,6 +179,9 @@ public final class GuiListener implements Listener {
             } else if (topHolder instanceof KitsGui gui) {
                 gui.handleClick(player, slot, click);
                 syncCursor(player);
+            } else if (topHolder instanceof KitConfirmGui gui) {
+                gui.handleClick(player, slot);
+                syncCursor(player);
             } else if (topHolder instanceof KitPreviewGui gui) {
                 gui.handleClick(player, slot, click);
                 syncCursor(player);
@@ -231,7 +237,8 @@ public final class GuiListener implements Listener {
                 || holder instanceof RewardsGui || holder instanceof TagsGui
                 || holder instanceof BountyBoardGui || holder instanceof PlaceBountyGui
                 || holder instanceof LeaderboardMenuGui || holder instanceof LeaderboardCategoryGui
-                || holder instanceof KitsGui || holder instanceof KitPreviewGui
+                || holder instanceof KitsGui || holder instanceof KitConfirmGui
+                || holder instanceof KitPreviewGui
                 || holder instanceof DuelMapGui || holder instanceof DuelHistoryGui
                 || holder instanceof DuelQueueGui) {
             event.setCancelled(true);
@@ -246,6 +253,19 @@ public final class GuiListener implements Listener {
         InventoryHolder holder = event.getInventory().getHolder();
         if (holder instanceof DisposalGui disposal) {
             disposal.disposeContents();
+            // Came here from the kit confirm screen: hand them back to the kits menu so they
+            // can claim the kit they were binning space for. Next tick, because reopening an
+            // inventory from inside a close event desyncs the client view.
+            if (event.getPlayer() instanceof Player closer
+                    && DisposalGui.consumeReturnToKits(closer.getUniqueId())) {
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (closer.isOnline()
+                            && (plugin.getDuelManager() == null
+                            || !plugin.getDuelManager().isInCombatDuel(closer.getUniqueId()))) {
+                        KitsGui.open(plugin, closer);
+                    }
+                });
+            }
         }
         if (event.getPlayer() instanceof Player player) {
             if (holder instanceof KitEditGui editGui) {
@@ -255,6 +275,7 @@ public final class GuiListener implements Listener {
                 adminEditGui.onClose(player);
             }
             if (holder instanceof KitsGui
+                    || holder instanceof KitConfirmGui
                     || holder instanceof KitPreviewGui
                     || holder instanceof ShopGui
                     || holder instanceof ArenaGui
@@ -284,5 +305,6 @@ public final class GuiListener implements Listener {
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         lastClickMs.remove(event.getPlayer().getUniqueId());
+        DisposalGui.clearPlayer(event.getPlayer().getUniqueId());
     }
 }

@@ -130,7 +130,13 @@ public final class LoadoutManager {
         return tryGive(player, true);
     }
 
-    public boolean tryGive(Player player, boolean sendMessages) {
+    /**
+     * Whether a loadout claim would be allowed for this player right now, without consuming the
+     * cooldown or touching their inventory. This is the single precondition gate shared by
+     * {@link #tryGive} and by callers that must destroy something before claiming (the kit
+     * confirm screen), so "may I claim" and "claim" can never disagree within a tick.
+     */
+    public boolean canClaim(Player player, boolean sendMessages) {
         if (player == null) {
             return false;
         }
@@ -141,6 +147,16 @@ public final class LoadoutManager {
         // Enforced here rather than only in duels.yml's restricted-commands list so it also
         // covers command aliases and every internal caller (e.g. the /kits auto-equip path).
         if (plugin.getDuelManager() != null && plugin.getDuelManager().isInCombatDuel(uuid)) {
+            if (sendMessages) {
+                MessageUtil.send(player, plugin.getConfigManager().getDuels()
+                        .getString("messages.loadout-blocked", "&cYou can't change your kit during a duel."));
+            }
+            return false;
+        }
+        // A player owed a post-duel inventory restore (the winner's victory delay, a loser still
+        // on the death screen, a crash restore) is about to have their whole inventory replaced.
+        // Equipping now would consume the cooldown for a kit the restore immediately overwrites.
+        if (plugin.getDuelManager() != null && plugin.getDuelManager().hasPendingPostDuelRestore(uuid)) {
             if (sendMessages) {
                 MessageUtil.send(player, plugin.getConfigManager().getDuels()
                         .getString("messages.loadout-blocked", "&cYou can't change your kit during a duel."));
@@ -163,7 +179,6 @@ public final class LoadoutManager {
             }
             return false;
         }
-
         KitManager kits = plugin.getKitManager();
         if (kits == null || kits.getSelectedKit(player) == null) {
             if (sendMessages) {
@@ -171,6 +186,15 @@ public final class LoadoutManager {
             }
             return false;
         }
+        return true;
+    }
+
+    public boolean tryGive(Player player, boolean sendMessages) {
+        if (!canClaim(player, sendMessages)) {
+            return false;
+        }
+        UUID uuid = player.getUniqueId();
+        KitManager kits = plugin.getKitManager();
 
         boolean bypass = bypassesCooldown(player);
         long now = System.currentTimeMillis();
