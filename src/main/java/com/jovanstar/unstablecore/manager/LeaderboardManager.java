@@ -404,17 +404,26 @@ public final class LeaderboardManager {
             case KILLS -> rank(computeStatMap(plugin.getStatsManager().trackedKills(), true));
             case BIGGEST_KILLSTREAK -> rank(computeStatMap(plugin.getStatsManager().trackedBestStreaks(), true));
             case DEATHS -> rank(computeStatMap(plugin.getKillstreakManager().trackedDeaths(), true));
-            case DUEL_WINS -> rank(computeStatMap(plugin.getDuelManager().getDuelStatsManager().trackedWins(), true));
-            case DUEL_BEST_STREAK ->
-                    rank(computeStatMap(plugin.getDuelManager().getDuelStatsManager().trackedBestStreaks(), true));
-            case DUEL_COINS_WON ->
-                    rank(computeStatMap(plugin.getDuelManager().getDuelStatsManager().trackedCoinsWon(), true));
-            case DUEL_ELO -> rank(computeStatMap(plugin.getDuelManager().getDuelStatsManager().trackedElo(), true));
-            case RANKED_DUEL_WINS ->
-                    rank(computeStatMap(plugin.getDuelManager().getDuelStatsManager().trackedRankedWins(), true));
-            case CASUAL_DUEL_WINS ->
-                    rank(computeStatMap(plugin.getDuelManager().getDuelStatsManager().trackedCasualWins(), true));
+            // Every duel category resolves through duelStats(), which returns null when duels are
+            // switched off - those boards then render empty instead of throwing on every open.
+            case DUEL_WINS -> rank(duelStats() == null
+                    ? Map.of() : computeStatMap(duelStats().trackedWins(), true));
+            case DUEL_BEST_STREAK -> rank(duelStats() == null
+                    ? Map.of() : computeStatMap(duelStats().trackedBestStreaks(), true));
+            case DUEL_COINS_WON -> rank(duelStats() == null
+                    ? Map.of() : computeStatMap(duelStats().trackedCoinsWon(), true));
+            case DUEL_ELO -> rank(duelStats() == null
+                    ? Map.of() : computeStatMap(duelStats().trackedElo(), true));
+            case RANKED_DUEL_WINS -> rank(duelStats() == null
+                    ? Map.of() : computeStatMap(duelStats().trackedRankedWins(), true));
+            case CASUAL_DUEL_WINS -> rank(duelStats() == null
+                    ? Map.of() : computeStatMap(duelStats().trackedCasualWins(), true));
         };
+    }
+
+    /** Duel stats, or null when duels.enabled is false and no duel manager was created. */
+    private com.jovanstar.unstablecore.manager.DuelStatsManager duelStats() {
+        return plugin.getDuelManager() == null ? null : plugin.getDuelManager().getDuelStatsManager();
     }
 
     private Map<UUID, Double> computeCoins() {

@@ -442,6 +442,14 @@ held-shulker:
   enabled: true
   title: "&dShulker Box"
 
+# Set enabled to false on a server that runs a dedicated duels plugin (ZelDuels and the like).
+# The duel managers are never created and /duel, /dueladmin, /duels, /spec and /leave are
+# unregistered on startup, so the other plugin claims those names cleanly. Duel leaderboard
+# categories render empty. Everything else - kits, arenas, bounty, shop, killstreaks - is
+# unaffected.
+duels:
+  enabled: true
+
 kits:
   unlock-by-permission: false
   default-kit: law
