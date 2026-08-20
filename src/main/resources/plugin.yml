@@ -96,6 +96,9 @@ commands:
     description: Open UnstableCore leaderboards
     aliases: [leaderboards, lb]
     usage: /leaderboard [coins|kills|biggest_killstreak|deaths|playtime|duel_wins|duel_best_streak|duel_coins_won|duel_elo|reload]
+  duel:
+    description: Challenge a player to a kit+map+wager duel
+    usage: /duel <player|accept|deny|cancel|toggle|history|forceend>
   leave:
     description: Leave the post-duel grace period early
     usage: /leave

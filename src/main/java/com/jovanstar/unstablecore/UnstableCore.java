@@ -4,6 +4,7 @@ import com.jovanstar.unstablecore.command.ArenasCommand;
 import com.jovanstar.unstablecore.command.BountyCommand;
 import com.jovanstar.unstablecore.command.DisposalCommand;
 import com.jovanstar.unstablecore.command.DuelAdminCommand;
+import com.jovanstar.unstablecore.command.DuelCommand;
 import com.jovanstar.unstablecore.command.KillstreakCommand;
 import com.jovanstar.unstablecore.command.KitCommand;
 import com.jovanstar.unstablecore.command.KitsCommand;
@@ -348,6 +349,10 @@ public final class UnstableCore extends JavaPlugin {
         LeaderboardCommand leaderboard = new LeaderboardCommand(this);
         getCommand("leaderboard").setExecutor(leaderboard);
         getCommand("leaderboard").setTabCompleter(leaderboard);
+
+        DuelCommand duel = new DuelCommand(this);
+        getCommand("duel").setExecutor(duel);
+        getCommand("duel").setTabCompleter(duel);
 
         getCommand("leave").setExecutor(new LeaveCommand(this));
 
