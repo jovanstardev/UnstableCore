@@ -527,7 +527,8 @@ messages:
   kit-cannot-afford: "&cYou need &e{price} coins &cto unlock &f{kit}&c."
   kit-purchased: "&aUnlocked &f{kit} &afor &e{price} coins&a!"
   kit-selected: "&aSelected kit &f{kit}&a."
-  kit-selected-inventory-not-empty: "&cEmpty your inventory first, then reselect the kit to auto-equip it. Or use &f/loadout&c."
+  # Clickable in chat - clicking it opens the /trash disposal bin.
+  kit-selected-inventory-not-empty: "&cYour inventory isn't empty. Click here or use &f/trash &cto bin your items and armor, then reselect the kit to claim it."
   arena-auto-kit: "&aYou arrived without a kit - equipped &f{kit}&a!"
   kit-not-found: "&cKit &f{kit} &cnot found."
   kit-layout-saved: "&aSaved loadout layout for &f{kit}&a."

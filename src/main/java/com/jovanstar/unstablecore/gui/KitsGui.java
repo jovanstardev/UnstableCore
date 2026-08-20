@@ -11,6 +11,8 @@ import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
 import org.bukkit.event.inventory.ClickType;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
@@ -197,11 +199,19 @@ public final class KitsGui implements InventoryHolder {
     /**
      * Auto-applies the just-selected kit if the player's inventory is completely empty, so
      * picking a kit from /kits doesn't require a separate /loadout. If they still have items,
-     * we refuse to silently wipe them and ask them to empty their inventory first instead.
+     * we refuse to silently wipe them and instead point them at /trash - the whole message is
+     * clickable and opens the disposal bin directly. The kit is already selected by the time
+     * this runs, so once they've binned their items a reselect or /loadout claims it.
      */
     private void autoEquipIfEmpty(Player player) {
         if (!KitManager.isInventoryEmpty(player)) {
-            MessageUtil.sendConfig(player, "kit-selected-inventory-not-empty", Map.of());
+            String raw = plugin.getConfig().getString(
+                    "messages.kit-selected-inventory-not-empty",
+                    "&cYour inventory isn't empty. Click here or use &f/trash &cto bin your items"
+                            + " and armor, then reselect the kit to claim it.");
+            player.sendMessage(MessageUtil.parse(raw)
+                    .clickEvent(ClickEvent.runCommand("/trash"))
+                    .hoverEvent(HoverEvent.showText(MessageUtil.parse("&7Click to open the disposal bin"))));
             return;
         }
         LoadoutManager loadouts = plugin.getLoadoutManager();
