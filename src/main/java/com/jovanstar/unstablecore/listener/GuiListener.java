@@ -199,8 +199,11 @@ public final class GuiListener implements Listener {
         if (player == null || !player.isOnline() || player.isDead()) {
             return false;
         }
+        // Cached tag and real location, matching LoadoutManager.canClaim: the tag can be null
+        // while the body is physically inside an arena, and the menu must not reopen there.
         if (plugin.getArenaManager() != null
-                && plugin.getArenaManager().getPlayerArena(player.getUniqueId()) != null) {
+                && (plugin.getArenaManager().getPlayerArena(player.getUniqueId()) != null
+                || plugin.getArenaManager().resolveArenaAt(player.getLocation()) != null)) {
             return false;
         }
         if (plugin.getDuelManager() != null
