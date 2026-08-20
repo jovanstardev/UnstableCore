@@ -50,6 +50,31 @@ killstreak:
   milestones:
     enabled: true
     values: [5, 10, 15, 20, 25, 50, 100]
+  # Announcer voice lines on killstreak milestones. Fires only on the milestone values above,
+  # picking the highest tier the streak has reached: 5-9 announce mega kill, 10+ monster kill.
+  #
+  # "sound" is a resource-pack key (see the resourcepack/ folder and its README). Players without
+  # the pack silently ignore it, so "fallback" - a normal vanilla sound - is played to everyone
+  # and the voice just layers on top for those who have the pack. Nothing breaks either way.
+  announcer:
+    enabled: true
+    # Sound slider the voice obeys. MASTER is always audible; PLAYERS respects that slider.
+    category: MASTER
+    tiers:
+      5:
+        sound: "unstable:announcer.mega_kill"
+        fallback: ENTITY_ENDER_DRAGON_GROWL
+        volume: 1.0
+        pitch: 1.0
+        # false = only the player who got the streak hears it
+        broadcast: false
+      10:
+        sound: "unstable:announcer.monster_kill"
+        fallback: ENTITY_WITHER_SPAWN
+        volume: 1.0
+        pitch: 1.0
+        # true = the whole server hears it (players who muted streak alerts are skipped)
+        broadcast: true
 
 kill-messages:
   enabled: true

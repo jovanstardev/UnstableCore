@@ -3,6 +3,7 @@ package com.jovanstar.unstablecore.manager;
 import com.jovanstar.unstablecore.UnstableCore;
 import com.jovanstar.unstablecore.util.MessageUtil;
 import org.bukkit.Sound;
+import org.bukkit.SoundCategory;
 import org.bukkit.entity.Player;
 
 import java.util.Map;
@@ -113,6 +114,7 @@ public final class KillstreakManager {
         if (plugin.getLeaderboardManager() != null) {
             plugin.getLeaderboardManager().rememberPlayer(killer);
         }
+        playStreakAnnouncer(killer, streak);
         int titleMinimum = Math.max(1, plugin.getConfig().getInt("killstreak.title-minimum", 2));
         if (streak >= titleMinimum && isTitlesEnabled(killer.getUniqueId())) {
             int seconds = plugin.getConfig().getInt("killstreak.title-seconds", 2);
@@ -132,6 +134,107 @@ public final class KillstreakManager {
             }
         }
         return streak;
+    }
+
+    /**
+     * Plays the announcer voice line for a killstreak that just crossed a configured tier.
+     *
+     * <p>Only fires on the {@code killstreak.milestones.values} thresholds, never on every kill,
+     * and picks the highest tier the streak has reached - so 5 announces "mega kill" and 10 and
+     * up announce "monster kill".
+     *
+     * <p>The tier's {@code sound} is a resource-pack key. A client without the pack silently
+     * ignores an unknown key, so the {@code fallback} vanilla sound is played to everyone
+     * regardless and the voice simply layers on top for players who have it. That keeps the
+     * feature working for every player without needing to know who accepted the pack.
+     */
+    public void playStreakAnnouncer(Player killer, int streak) {
+        if (!plugin.getConfig().getBoolean("killstreak.announcer.enabled", true)) {
+            return;
+        }
+        java.util.List<Integer> milestones = plugin.getConfig().getIntegerList("killstreak.milestones.values");
+        if (!milestones.contains(streak)) {
+            return;
+        }
+        org.bukkit.configuration.ConfigurationSection tiers =
+                plugin.getConfig().getConfigurationSection("killstreak.announcer.tiers");
+        if (tiers == null) {
+            return;
+        }
+        int bestThreshold = -1;
+        String bestKey = null;
+        for (String key : tiers.getKeys(false)) {
+            int threshold;
+            try {
+                threshold = Integer.parseInt(key);
+            } catch (NumberFormatException ignored) {
+                continue;
+            }
+            if (streak >= threshold && threshold > bestThreshold) {
+                bestThreshold = threshold;
+                bestKey = key;
+            }
+        }
+        if (bestKey == null) {
+            return;
+        }
+        org.bukkit.configuration.ConfigurationSection tier = tiers.getConfigurationSection(bestKey);
+        if (tier == null) {
+            return;
+        }
+        String customSound = tier.getString("sound", "");
+        String fallbackName = tier.getString("fallback", "");
+        float volume = (float) tier.getDouble("volume", 1.0);
+        float pitch = (float) tier.getDouble("pitch", 1.0);
+        boolean everyone = tier.getBoolean("broadcast", false);
+
+        SoundCategory category;
+        try {
+            category = SoundCategory.valueOf(
+                    plugin.getConfig().getString("killstreak.announcer.category", "MASTER"));
+        } catch (IllegalArgumentException ignored) {
+            category = SoundCategory.MASTER;
+        }
+        Sound fallback = null;
+        if (!fallbackName.isBlank()) {
+            try {
+                fallback = Sound.valueOf(fallbackName);
+            } catch (IllegalArgumentException ignored) {
+                plugin.getLogger().warning("killstreak.announcer.tiers." + bestKey
+                        + ".fallback is not a valid Sound: " + fallbackName);
+            }
+        }
+
+        if (everyone) {
+            for (Player online : org.bukkit.Bukkit.getOnlinePlayers()) {
+                // Same toggle that already gates the milestone message, so a player who muted
+                // streak alerts does not get the voice line either.
+                if (plugin.getSettingsManager() != null
+                        && !plugin.getSettingsManager().isEnabled(online, SettingsManager.STREAK_ALERTS)) {
+                    continue;
+                }
+                playAnnouncerTo(online, customSound, fallback, category, volume, pitch);
+            }
+            return;
+        }
+        if (plugin.getSettingsManager() == null
+                || plugin.getSettingsManager().isEnabled(killer, SettingsManager.STREAK_ALERTS)) {
+            playAnnouncerTo(killer, customSound, fallback, category, volume, pitch);
+        }
+    }
+
+    private void playAnnouncerTo(Player listener, String customSound, Sound fallback,
+                                 SoundCategory category, float volume, float pitch) {
+        if (listener == null || !listener.isOnline()) {
+            return;
+        }
+        if (fallback != null) {
+            listener.playSound(listener.getLocation(), fallback, category, volume, pitch);
+        }
+        if (customSound != null && !customSound.isBlank()) {
+            // Unknown keys are a no-op client-side, so this is safe without the resource pack.
+            listener.playSound(listener.getLocation(), customSound, category, volume, pitch);
+        }
     }
 
     public void broadcastMilestone(Player killer, int streak) {
