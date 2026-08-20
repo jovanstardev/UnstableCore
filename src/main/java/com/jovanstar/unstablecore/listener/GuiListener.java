@@ -189,6 +189,33 @@ public final class GuiListener implements Listener {
         });
     }
 
+    /**
+     * Whether it is safe to pop the kits menu back open after the player closes the disposal bin.
+     * The bin can be force-closed by death, and the player may have been pulled into a fight or an
+     * arena while it was open, so the reopen must not fire while dead, in an arena, combat-tagged,
+     * in a duel or grace, or awaiting a post-duel restore - only when they are idle at spawn.
+     */
+    private boolean canReopenKits(Player player) {
+        if (player == null || !player.isOnline() || player.isDead()) {
+            return false;
+        }
+        if (plugin.getArenaManager() != null
+                && plugin.getArenaManager().getPlayerArena(player.getUniqueId()) != null) {
+            return false;
+        }
+        if (plugin.getDuelManager() != null
+                && (plugin.getDuelManager().isInDuel(player.getUniqueId())
+                || plugin.getDuelManager().isInGrace(player.getUniqueId())
+                || plugin.getDuelManager().hasPendingPostDuelRestore(player.getUniqueId()))) {
+            return false;
+        }
+        if (plugin.getCombatListener() != null
+                && plugin.getCombatListener().isCombatTagged(player.getUniqueId())) {
+            return false;
+        }
+        return true;
+    }
+
     private static void syncCursor(Player player) {
         if (player.getItemOnCursor() != null && !player.getItemOnCursor().getType().isAir()) {
             player.setItemOnCursor(null);
@@ -259,9 +286,7 @@ public final class GuiListener implements Listener {
             if (event.getPlayer() instanceof Player closer
                     && DisposalGui.consumeReturnToKits(closer.getUniqueId())) {
                 Bukkit.getScheduler().runTask(plugin, () -> {
-                    if (closer.isOnline()
-                            && (plugin.getDuelManager() == null
-                            || !plugin.getDuelManager().isInCombatDuel(closer.getUniqueId()))) {
+                    if (canReopenKits(closer)) {
                         KitsGui.open(plugin, closer);
                     }
                 });

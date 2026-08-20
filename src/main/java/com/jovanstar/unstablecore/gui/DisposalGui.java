@@ -36,7 +36,21 @@ public final class DisposalGui implements InventoryHolder {
         inventory.clear();
     }
 
-    public static void open(UnstableCore plugin, Player player) {
+    /**
+     * Opens the void-trash bin, unless the player's inventory is currently owned by DuelManager -
+     * a committed duel or a pending post-duel restore. The bin is a detached inventory the duel
+     * restores never touch, so staging the plugin-issued kit in it during those windows and then
+     * triggering a no-teleport restore duplicates the kit. Every entry point (command, kit confirm
+     * screen) routes through here, so the guard can never be bypassed by adding a new caller.
+     *
+     * @return true if the bin was opened
+     */
+    public static boolean open(UnstableCore plugin, Player player) {
+        if (isDuelBlocked(plugin, player)) {
+            MessageUtil.send(player, plugin.getConfigManager().getDuels().getString(
+                    "messages.disposal-blocked", "&cYou can't use the disposal during a duel."));
+            return false;
+        }
         // Once per session, not per open - a reminder helps a new player, a nag helps nobody.
         if (WARNED.add(player.getUniqueId())) {
             MessageUtil.send(player, plugin.getConfig().getString(
@@ -44,12 +58,29 @@ public final class DisposalGui implements InventoryHolder {
                     "&c\u26a0 &7Items left in the bin are &cdestroyed &7when you close it."));
         }
         player.openInventory(new DisposalGui(plugin).getInventory());
+        return true;
     }
 
-    /** Opens the bin from the kit confirm screen; closing it returns the player to /kits. */
-    public static void openWithReturn(UnstableCore plugin, Player player) {
+    private static boolean isDuelBlocked(UnstableCore plugin, Player player) {
+        if (plugin.getDuelManager() == null) {
+            return false;
+        }
+        UUID uuid = player.getUniqueId();
+        return plugin.getDuelManager().isInCombatDuel(uuid)
+                || plugin.getDuelManager().hasPendingPostDuelRestore(uuid);
+    }
+
+    /**
+     * Opens the bin from the kit confirm screen; closing it returns the player to /kits. The
+     * return flag is set only if the bin actually opened, so a refused open can't leave a stale
+     * flag that reopens /kits on some later unrelated disposal close.
+     */
+    public static boolean openWithReturn(UnstableCore plugin, Player player) {
+        if (!open(plugin, player)) {
+            return false;
+        }
         RETURN_TO_KITS.add(player.getUniqueId());
-        open(plugin, player);
+        return true;
     }
 
     /** One-shot read of the return flag, consumed by GuiListener's close handler. */

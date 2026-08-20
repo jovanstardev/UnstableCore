@@ -799,7 +799,8 @@ public final class ArenaManager {
     public boolean teleportToArena(Player player, String arenaKey) {
         if (plugin.getDuelManager() != null) {
             UUID uuid = player.getUniqueId();
-            if (plugin.getDuelManager().isInDuel(uuid) || plugin.getDuelManager().isInGrace(uuid)) {
+            if (plugin.getDuelManager().isInDuel(uuid) || plugin.getDuelManager().isInGrace(uuid)
+                    || plugin.getDuelManager().hasPendingPostDuelRestore(uuid)) {
                 MessageUtil.send(player, "&cYou cannot join an arena while in a duel.");
                 return false;
             }
@@ -879,6 +880,12 @@ public final class ArenaManager {
     private void giveRandomKitIfEmpty(Player player) {
         KitManager kitManager = plugin.getKitManager();
         if (kitManager == null || !KitManager.isInventoryEmpty(player)) {
+            return;
+        }
+        // A pending post-duel restore is about to overwrite this inventory; handing (and charging)
+        // a kit now burns the cooldown for gear the restore immediately replaces.
+        if (plugin.getDuelManager() != null
+                && plugin.getDuelManager().hasPendingPostDuelRestore(player.getUniqueId())) {
             return;
         }
         LoadoutManager loadoutManager = plugin.getLoadoutManager();

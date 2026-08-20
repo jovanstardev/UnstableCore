@@ -213,16 +213,25 @@ public final class KitsGui implements InventoryHolder {
      * button, a "sort it myself" /trash shortcut, and a cancel.
      */
     private void autoEquipIfEmpty(Player player) {
-        if (!KitManager.isInventoryEmpty(player)) {
-            Kit selected = plugin.getKitManager().getSelectedKit(player);
-            if (selected != null) {
-                KitConfirmGui.open(plugin, player, selected);
-            }
+        LoadoutManager loadouts = plugin.getLoadoutManager();
+        if (loadouts == null) {
             return;
         }
-        LoadoutManager loadouts = plugin.getLoadoutManager();
-        if (loadouts != null) {
+        if (KitManager.isInventoryEmpty(player)) {
             loadouts.tryGive(player, true);
+            return;
+        }
+        // Inventory not empty: only offer the destructive confirm when a claim would actually be
+        // allowed right now. canClaim refuses - with the reason messaged - during a duel, inside
+        // an arena, while a post-duel restore is owed, on cooldown, or with no kit. None of those
+        // should reach a screen whose confirm button destroys the player's inventory, and gating
+        // here is what keeps the confirm screen (and its /trash shortcut) off-limits mid-duel.
+        if (!loadouts.canClaim(player, true)) {
+            return;
+        }
+        Kit selected = plugin.getKitManager().getSelectedKit(player);
+        if (selected != null) {
+            KitConfirmGui.open(plugin, player, selected);
         }
     }
 

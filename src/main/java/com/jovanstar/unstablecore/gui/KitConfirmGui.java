@@ -106,7 +106,12 @@ public final class KitConfirmGui implements InventoryHolder {
         // screen promised to equip, then re-approve the claim *before* anything is destroyed.
         // canClaim refuses mid-duel, inside an arena, while a post-duel inventory restore is
         // still owed, and on cooldown - each of which may have started after the screen opened.
-        kits.selectKit(player, kit.getId());
+        // If the kit became unclaimable (locked/removed by a reload), never wipe: equipping the
+        // stale prior selection is not what the player consented to.
+        if (!kits.selectKit(player, kit.getId())) {
+            player.closeInventory();
+            return;
+        }
         if (!loadouts.canClaim(player, true)) {
             player.closeInventory();
             return;

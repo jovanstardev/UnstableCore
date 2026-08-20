@@ -163,7 +163,12 @@ public final class LoadoutManager {
             }
             return false;
         }
-        if (plugin.getArenaManager() != null && plugin.getArenaManager().getPlayerArena(uuid) != null) {
+        // Both the cached tag and the real location: the tag can be null while the body is inside
+        // an arena (a relog with join.spawn-on-join off, or the one-tick gap before
+        // teleportToArena writes the tag), and trusting the tag alone let a kit be claimed there.
+        if (plugin.getArenaManager() != null
+                && (plugin.getArenaManager().getPlayerArena(uuid) != null
+                || plugin.getArenaManager().resolveArenaAt(player.getLocation()) != null)) {
             if (sendMessages) {
                 MessageUtil.send(player, plugin.getConfigManager().getDuels()
                         .getString("messages.loadout-arena-blocked", "&cYou can't change your kit while inside an arena."));
