@@ -77,7 +77,7 @@ public final class AntiGlitchListener implements Listener {
             return;
         }
         // A pearl outlives its thrower being moved to another map (rotation transfer, arena
-        // join, duel setup), and when it lands it drags them back to wherever it fell -
+        // join), and when it lands it drags them back to wherever it fell -
         // typically the just-rotated-out map, empty but for them. A pearl never legitimately
         // crosses worlds (the teleport only does when the *player* changed world mid-flight),
         // and one landing in an arena may only complete for a player still in that arena.

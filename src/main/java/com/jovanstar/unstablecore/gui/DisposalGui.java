@@ -37,20 +37,13 @@ public final class DisposalGui implements InventoryHolder {
     }
 
     /**
-     * Opens the void-trash bin, unless the player's inventory is currently owned by DuelManager -
-     * a committed duel or a pending post-duel restore. The bin is a detached inventory the duel
-     * restores never touch, so staging the plugin-issued kit in it during those windows and then
-     * triggering a no-teleport restore duplicates the kit. Every entry point (command, kit confirm
-     * screen) routes through here, so the guard can never be bypassed by adding a new caller.
+     * Opens the void-trash bin. Every entry point (command, kit confirm screen) routes through
+     * here, so the session-warning and return-to-/kits bookkeeping can never be bypassed by
+     * adding a new caller.
      *
      * @return true if the bin was opened
      */
     public static boolean open(UnstableCore plugin, Player player) {
-        if (isDuelBlocked(plugin, player)) {
-            MessageUtil.send(player, plugin.getConfigManager().getDuels().getString(
-                    "messages.disposal-blocked", "&cYou can't use the disposal during a duel."));
-            return false;
-        }
         // Once per session, not per open - a reminder helps a new player, a nag helps nobody.
         if (WARNED.add(player.getUniqueId())) {
             MessageUtil.send(player, plugin.getConfig().getString(
@@ -59,15 +52,6 @@ public final class DisposalGui implements InventoryHolder {
         }
         player.openInventory(new DisposalGui(plugin).getInventory());
         return true;
-    }
-
-    private static boolean isDuelBlocked(UnstableCore plugin, Player player) {
-        if (plugin.getDuelManager() == null) {
-            return false;
-        }
-        UUID uuid = player.getUniqueId();
-        return plugin.getDuelManager().isInCombatDuel(uuid)
-                || plugin.getDuelManager().hasPendingPostDuelRestore(uuid);
     }
 
     /**

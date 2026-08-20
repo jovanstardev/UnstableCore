@@ -202,28 +202,6 @@ public final class LoadoutManager {
             return false;
         }
         UUID uuid = player.getUniqueId();
-        // Duels hand both players an identical, plugin-chosen kit; /loadout re-applies the
-        // player's own selected kit straight over the top of it, so without this gate a duelist
-        // could simply out-gear their opponent mid-fight for the price of one loadout cooldown.
-        // Enforced here rather than only in duels.yml's restricted-commands list so it also
-        // covers command aliases and every internal caller (e.g. the /kits auto-equip path).
-        if (plugin.getDuelManager() != null && plugin.getDuelManager().isInCombatDuel(uuid)) {
-            if (sendMessages) {
-                MessageUtil.send(player, plugin.getConfigManager().getDuels()
-                        .getString("messages.loadout-blocked", "&cYou can't change your kit during a duel."));
-            }
-            return false;
-        }
-        // A player owed a post-duel inventory restore (the winner's victory delay, a loser still
-        // on the death screen, a crash restore) is about to have their whole inventory replaced.
-        // Equipping now would consume the cooldown for a kit the restore immediately overwrites.
-        if (plugin.getDuelManager() != null && plugin.getDuelManager().hasPendingPostDuelRestore(uuid)) {
-            if (sendMessages) {
-                MessageUtil.send(player, plugin.getConfigManager().getDuels()
-                        .getString("messages.loadout-blocked", "&cYou can't change your kit during a duel."));
-            }
-            return false;
-        }
         // Both the cached tag and the real location: the tag can be null while the body is inside
         // an arena (a relog with join.spawn-on-join off, or the one-tick gap before
         // teleportToArena writes the tag), and trusting the tag alone let a kit be claimed there.
@@ -231,7 +209,7 @@ public final class LoadoutManager {
                 && (plugin.getArenaManager().getPlayerArena(uuid) != null
                 || plugin.getArenaManager().resolveArenaAt(player.getLocation()) != null)) {
             if (sendMessages) {
-                MessageUtil.send(player, plugin.getConfigManager().getDuels()
+                MessageUtil.send(player, plugin.getConfig()
                         .getString("messages.loadout-arena-blocked", "&cYou can't change your kit while inside an arena."));
             }
             return false;

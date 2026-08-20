@@ -19,8 +19,8 @@ import org.jetbrains.annotations.NotNull;
  * Destructive-by-consent confirm screen shown when a player selects a kit from {@link KitsGui}
  * while still holding items: "bin everything and equip?". The wipe only ever happens from the
  * confirm button here, after {@link LoadoutManager#canClaim} has re-approved the claim at click
- * time - so a duel, arena entry or pending post-duel restore that began after the screen opened
- * refuses cleanly instead of destroying an inventory it shouldn't.
+ * time - so an arena entry that began after the screen opened refuses cleanly instead of
+ * destroying an inventory it shouldn't.
  */
 public final class KitConfirmGui implements InventoryHolder {
 
@@ -104,10 +104,9 @@ public final class KitConfirmGui implements InventoryHolder {
         }
         // The screen may have been open for a while; re-align the selection with what this
         // screen promised to equip, then re-approve the claim *before* anything is destroyed.
-        // canClaim refuses mid-duel, inside an arena, while a post-duel inventory restore is
-        // still owed, and on cooldown - each of which may have started after the screen opened.
-        // If the kit became unclaimable (locked/removed by a reload), never wipe: equipping the
-        // stale prior selection is not what the player consented to.
+        // canClaim refuses inside an arena and on cooldown - either of which may have started
+        // after the screen opened. If the kit became unclaimable (locked/removed by a reload),
+        // never wipe: equipping the stale prior selection is not what the player consented to.
         if (!kits.selectKit(player, kit.getId())) {
             player.closeInventory();
             return;

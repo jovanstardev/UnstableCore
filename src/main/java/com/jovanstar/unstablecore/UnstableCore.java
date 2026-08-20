@@ -3,19 +3,15 @@ package com.jovanstar.unstablecore;
 import com.jovanstar.unstablecore.command.ArenasCommand;
 import com.jovanstar.unstablecore.command.BountyCommand;
 import com.jovanstar.unstablecore.command.DisposalCommand;
-import com.jovanstar.unstablecore.command.DuelAdminCommand;
-import com.jovanstar.unstablecore.command.DuelCommand;
 import com.jovanstar.unstablecore.command.KillstreakCommand;
 import com.jovanstar.unstablecore.command.KitCommand;
 import com.jovanstar.unstablecore.command.KitsCommand;
 import com.jovanstar.unstablecore.command.LeaderboardCommand;
-import com.jovanstar.unstablecore.command.LeaveCommand;
 import com.jovanstar.unstablecore.command.LoadoutCommand;
 import com.jovanstar.unstablecore.command.MapVoteCommand;
 import com.jovanstar.unstablecore.command.RewardsCommand;
 import com.jovanstar.unstablecore.command.SettingsCommand;
 import com.jovanstar.unstablecore.command.ShopCommand;
-import com.jovanstar.unstablecore.command.SpectateCommand;
 import com.jovanstar.unstablecore.command.StatsCommand;
 import com.jovanstar.unstablecore.command.SwordCommand;
 import com.jovanstar.unstablecore.command.TagsCommand;
@@ -24,7 +20,6 @@ import com.jovanstar.unstablecore.listener.ArenaListener;
 import com.jovanstar.unstablecore.listener.AntiGlitchListener;
 import com.jovanstar.unstablecore.listener.BountyListener;
 import com.jovanstar.unstablecore.listener.CombatListener;
-import com.jovanstar.unstablecore.listener.DuelListener;
 import com.jovanstar.unstablecore.listener.GuiListener;
 import com.jovanstar.unstablecore.listener.HeldShulkerListener;
 import com.jovanstar.unstablecore.listener.LeaderboardListener;
@@ -35,11 +30,6 @@ import com.jovanstar.unstablecore.manager.ArenaManager;
 import com.jovanstar.unstablecore.manager.BountyManager;
 import com.jovanstar.unstablecore.manager.ConfigManager;
 import com.jovanstar.unstablecore.manager.DatabaseManager;
-import com.jovanstar.unstablecore.manager.DuelArenaManager;
-import com.jovanstar.unstablecore.manager.DuelManager;
-import com.jovanstar.unstablecore.manager.DuelQueueManager;
-import com.jovanstar.unstablecore.manager.DuelScoreboardManager;
-import com.jovanstar.unstablecore.manager.DuelStatsManager;
 import com.jovanstar.unstablecore.manager.EconomyManager;
 import com.jovanstar.unstablecore.manager.EventManager;
 import com.jovanstar.unstablecore.manager.ItemCleanupManager;
@@ -53,7 +43,6 @@ import com.jovanstar.unstablecore.manager.PlaytimeManager;
 import com.jovanstar.unstablecore.manager.RewardsManager;
 import com.jovanstar.unstablecore.manager.SettingsManager;
 import com.jovanstar.unstablecore.manager.ShopManager;
-import com.jovanstar.unstablecore.manager.SpectatorManager;
 import com.jovanstar.unstablecore.manager.StatsManager;
 import com.jovanstar.unstablecore.manager.TagManager;
 import com.jovanstar.unstablecore.placeholder.UnstablePlaceholders;
@@ -88,17 +77,10 @@ public final class UnstableCore extends JavaPlugin {
     private BountyManager bountyManager;
     private LeaderboardManager leaderboardManager;
     private ItemCleanupManager itemCleanupManager;
-    private DuelArenaManager duelArenaManager;
-    private DuelStatsManager duelStatsManager;
-    private DuelManager duelManager;
-    private DuelQueueManager duelQueueManager;
-    private SpectatorManager spectatorManager;
-    private DuelScoreboardManager duelScoreboardManager;
     private ArenaListener arenaListener;
     private CombatListener combatListener;
     private HeldShulkerListener heldShulkerListener;
     private org.bukkit.scheduler.BukkitTask autosaveTask;
-    private boolean duelsEnabled = true;
 
     @Override
     public void onEnable() {
@@ -156,25 +138,6 @@ public final class UnstableCore extends JavaPlugin {
         this.itemCleanupManager = new ItemCleanupManager(this);
         this.itemCleanupManager.start();
 
-        // Servers that run a dedicated duels plugin turn this off; every getter below then stays
-        // null and the duel commands are unregistered, so nothing of ours competes with it.
-        this.duelsEnabled = getConfig().getBoolean("duels.enabled", true);
-        if (duelsEnabled) {
-            this.duelArenaManager = new DuelArenaManager(this);
-            this.duelStatsManager = new DuelStatsManager(this);
-            this.duelManager = new DuelManager(this, duelArenaManager, duelStatsManager);
-            this.duelManager.start();
-
-            this.duelQueueManager = new DuelQueueManager(this);
-            this.duelQueueManager.start();
-
-            this.spectatorManager = new SpectatorManager(this);
-            this.duelScoreboardManager = new DuelScoreboardManager(this);
-        } else {
-            getLogger().info("Duels disabled (duels.enabled: false) - "
-                    + "duel commands released for another plugin to claim.");
-        }
-
         autosaveTask = Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
             killstreakManager.save();
             statsManager.save();
@@ -206,18 +169,6 @@ public final class UnstableCore extends JavaPlugin {
         }
         if (itemCleanupManager != null) {
             itemCleanupManager.stop();
-        }
-        if (duelQueueManager != null) {
-            duelQueueManager.stop();
-        }
-        if (spectatorManager != null) {
-            spectatorManager.shutdown();
-        }
-        if (duelScoreboardManager != null) {
-            duelScoreboardManager.shutdown();
-        }
-        if (duelManager != null) {
-            duelManager.shutdown();
         }
         if (mapVoteManager != null) {
             mapVoteManager.cancel();
@@ -301,10 +252,6 @@ public final class UnstableCore extends JavaPlugin {
         if (arenaListener != null) {
             arenaListener.reloadSettings();
         }
-        if (duelArenaManager != null) {
-            duelArenaManager.reload();
-        }
-
     }
 
     private void registerCommands() {
@@ -358,48 +305,6 @@ public final class UnstableCore extends JavaPlugin {
         LeaderboardCommand leaderboard = new LeaderboardCommand(this);
         getCommand("leaderboard").setExecutor(leaderboard);
         getCommand("leaderboard").setTabCompleter(leaderboard);
-
-        if (!duelsEnabled) {
-            releaseDuelCommands();
-            return;
-        }
-
-        DuelCommand duel = new DuelCommand(this);
-        getCommand("duel").setExecutor(duel);
-        getCommand("duel").setTabCompleter(duel);
-
-        getCommand("leave").setExecutor(new LeaveCommand(this));
-
-        DuelAdminCommand duelAdmin = new DuelAdminCommand(this);
-        getCommand("dueladmin").setExecutor(duelAdmin);
-        getCommand("dueladmin").setTabCompleter(duelAdmin);
-        getCommand("duels").setExecutor(duelAdmin);
-        getCommand("duels").setTabCompleter(duelAdmin);
-
-        SpectateCommand spectate = new SpectateCommand(this);
-        getCommand("spec").setExecutor(spectate);
-        getCommand("spec").setTabCompleter(spectate);
-    }
-
-    /**
-     * Unregisters our duel commands from the server command map.
-     *
-     * <p>plugin.yml commands are registered before onEnable runs, so simply not setting an
-     * executor is not enough - the command would still resolve to us and shadow whichever duels
-     * plugin the server actually uses, answering with a bare usage line. Removing them hands the
-     * plain names back, leaving the other plugin's registration in place.
-     */
-    private void releaseDuelCommands() {
-        org.bukkit.command.CommandMap map = Bukkit.getCommandMap();
-        if (map == null) {
-            return;
-        }
-        for (String name : new String[]{"duel", "dueladmin", "duels", "spec", "leave"}) {
-            org.bukkit.command.PluginCommand own = getCommand(name);
-            if (own != null) {
-                own.unregister(map);
-            }
-        }
     }
 
     private void registerListeners() {
@@ -414,9 +319,6 @@ public final class UnstableCore extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new GuiListener(this), this);
         Bukkit.getPluginManager().registerEvents(new BountyListener(this), this);
         Bukkit.getPluginManager().registerEvents(new LeaderboardListener(this), this);
-        if (duelsEnabled) {
-            Bukkit.getPluginManager().registerEvents(new DuelListener(this), this);
-        }
         if (itemCleanupManager != null) {
             Bukkit.getPluginManager().registerEvents(itemCleanupManager, this);
         }
@@ -504,26 +406,6 @@ public final class UnstableCore extends JavaPlugin {
 
     public ItemCleanupManager getItemCleanupManager() {
         return itemCleanupManager;
-    }
-
-    public DuelManager getDuelManager() {
-        return duelManager;
-    }
-
-    public DuelStatsManager getDuelStatsManager() {
-        return duelStatsManager;
-    }
-
-    public DuelQueueManager getDuelQueueManager() {
-        return duelQueueManager;
-    }
-
-    public SpectatorManager getSpectatorManager() {
-        return spectatorManager;
-    }
-
-    public DuelScoreboardManager getDuelScoreboardManager() {
-        return duelScoreboardManager;
     }
 
     public ArenaListener getArenaListener() {

@@ -41,9 +41,9 @@ public final class LeaderboardManager {
     private final Map<UUID, String> nameCache = new ConcurrentHashMap<>();
     /**
      * Lower-cased name -> uuid reverse view of {@link #nameCache}. findUuidByName is on the
-     * command path for /stats, /uc economy and /dueladmin, all of which are reachable often
-     * enough (and, for /stats, by any player) that a linear scan over every player the server has
-     * ever seen is not an acceptable per-call cost.
+     * command path for /stats and /uc economy, both of which are reachable often enough (and,
+     * for /stats, by any player) that a linear scan over every player the server has ever seen
+     * is not an acceptable per-call cost.
      */
     private final Map<String, UUID> nameToUuid = new ConcurrentHashMap<>();
     // Raw DB rows backing the COINS/PLAYTIME categories, refreshed off-thread on a timer by
@@ -285,8 +285,8 @@ public final class LeaderboardManager {
 
     /**
      * How long a leaderboard search prompt keeps capturing chat. Bounded for the same reason as
-     * the duel and bounty prompts: a search that is re-armed on too-short input would otherwise
-     * swallow the player's chat indefinitely.
+     * the bounty prompt: a search that is re-armed on too-short input would otherwise swallow
+     * the player's chat indefinitely.
      */
     private long promptTimeoutMs() {
         return Math.max(5_000L, plugin.getConfig().getLong("chat-prompt-timeout-seconds", 60) * 1000L);
@@ -404,26 +404,7 @@ public final class LeaderboardManager {
             case KILLS -> rank(computeStatMap(plugin.getStatsManager().trackedKills(), true));
             case BIGGEST_KILLSTREAK -> rank(computeStatMap(plugin.getStatsManager().trackedBestStreaks(), true));
             case DEATHS -> rank(computeStatMap(plugin.getKillstreakManager().trackedDeaths(), true));
-            // Every duel category resolves through duelStats(), which returns null when duels are
-            // switched off - those boards then render empty instead of throwing on every open.
-            case DUEL_WINS -> rank(duelStats() == null
-                    ? Map.of() : computeStatMap(duelStats().trackedWins(), true));
-            case DUEL_BEST_STREAK -> rank(duelStats() == null
-                    ? Map.of() : computeStatMap(duelStats().trackedBestStreaks(), true));
-            case DUEL_COINS_WON -> rank(duelStats() == null
-                    ? Map.of() : computeStatMap(duelStats().trackedCoinsWon(), true));
-            case DUEL_ELO -> rank(duelStats() == null
-                    ? Map.of() : computeStatMap(duelStats().trackedElo(), true));
-            case RANKED_DUEL_WINS -> rank(duelStats() == null
-                    ? Map.of() : computeStatMap(duelStats().trackedRankedWins(), true));
-            case CASUAL_DUEL_WINS -> rank(duelStats() == null
-                    ? Map.of() : computeStatMap(duelStats().trackedCasualWins(), true));
         };
-    }
-
-    /** Duel stats, or null when duels.enabled is false and no duel manager was created. */
-    private com.jovanstar.unstablecore.manager.DuelStatsManager duelStats() {
-        return plugin.getDuelManager() == null ? null : plugin.getDuelManager().getDuelStatsManager();
     }
 
     private Map<UUID, Double> computeCoins() {

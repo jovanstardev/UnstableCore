@@ -80,13 +80,10 @@ public final class PlayerListener implements Listener {
         if (plugin.getRewardsManager() != null) {
             plugin.getRewardsManager().handleJoin(player);
         }
-        if (plugin.getDuelManager() != null) {
-            plugin.getDuelManager().applyPendingCrashRestore(player);
-        }
-        // A player who disconnected mid-/spec (rare, but possible) has GameMode.SPECTATOR saved
-        // in their player data - SpectatorManager can't restore it while they're offline, so
-        // undo it here instead of leaving them permanently stuck in spectator mode. Nothing else
-        // in this plugin ever expects a player to legitimately rejoin already in spectator mode.
+        // A player who disconnected mid-spectate (rare, but possible) has GameMode.SPECTATOR
+        // saved in their player data and nothing to restore it while they're offline, so undo it
+        // here instead of leaving them permanently stuck in spectator mode. Nothing else in this
+        // plugin ever expects a player to legitimately rejoin already in spectator mode.
         if (player.getGameMode() == org.bukkit.GameMode.SPECTATOR) {
             player.setGameMode(org.bukkit.GameMode.SURVIVAL);
         }
@@ -214,21 +211,9 @@ public final class PlayerListener implements Listener {
         if (plugin.getArenaListener() != null) {
             plugin.getArenaListener().clearPlayer(event.getPlayer().getUniqueId());
         }
-        if (plugin.getDuelManager() != null) {
-            // Must run before handleQuitCombatTag - a duel disconnect is a forfeit routed to
-            // duel payout, not an FFA combat-log kill credit (CombatListener itself also checks
-            // isInDuel and no-ops, this ordering just makes the intent explicit).
-            plugin.getDuelManager().handleDisconnect(event.getPlayer());
-        }
         if (plugin.getCombatListener() != null) {
             plugin.getCombatListener().handleQuitCombatTag(event.getPlayer());
             plugin.getCombatListener().clearPlayer(event.getPlayer().getUniqueId());
-        }
-        if (plugin.getSpectatorManager() != null) {
-            plugin.getSpectatorManager().handleDisconnect(event.getPlayer());
-        }
-        if (plugin.getDuelScoreboardManager() != null) {
-            plugin.getDuelScoreboardManager().handleDisconnect(event.getPlayer());
         }
         if (plugin.getRewardsManager() != null) {
             plugin.getRewardsManager().unload(event.getPlayer().getUniqueId());
@@ -284,9 +269,6 @@ public final class PlayerListener implements Listener {
      * cheaper way to re-gear than waiting. Only ever fires on a completely empty inventory, so it
      * can never delete items (including on keepInventory setups), and
      * {@code loadout.give-on-respawn} still switches the whole thing off.
-     *
-     * <p>Runs at MONITOR, one tick later, so DuelListener's duel-respawn restore - which returns a
-     * real pre-duel inventory and must win - has already been applied.
      */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onRespawn(org.bukkit.event.player.PlayerRespawnEvent event) {
@@ -301,15 +283,6 @@ public final class PlayerListener implements Listener {
         Player player = event.getPlayer();
         Bukkit.getScheduler().runTask(plugin, () -> {
             if (!player.isOnline()) {
-                return;
-            }
-            // hasPendingPostDuelRestore covers the post-duel end phase: the duel is terminal by
-            // then, but the player is a spectator awaiting their real inventory - gearing them
-            // here would just be overwritten by that restore.
-            if (plugin.getDuelManager() != null
-                    && (plugin.getDuelManager().isInDuel(player.getUniqueId())
-                    || plugin.getDuelManager().isInGrace(player.getUniqueId())
-                    || plugin.getDuelManager().hasPendingPostDuelRestore(player.getUniqueId()))) {
                 return;
             }
             if (!KitManager.isInventoryEmpty(player)) {

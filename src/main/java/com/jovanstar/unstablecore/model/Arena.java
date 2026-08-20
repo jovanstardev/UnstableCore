@@ -21,15 +21,6 @@ public final class Arena {
     private int radius;
     private final List<int[]> spots = new ArrayList<>();
 
-    // Duel-specific spawns
-    private double spawn1X, spawn1Y, spawn1Z;
-    private float spawn1Yaw, spawn1Pitch;
-    private boolean hasSpawn1;
-
-    private double spawn2X, spawn2Y, spawn2Z;
-    private float spawn2Yaw, spawn2Pitch;
-    private boolean hasSpawn2;
-
     public Arena(String id, String displayName, ArenaType type) {
         this.id = id.toLowerCase();
         this.displayName = displayName;
@@ -50,26 +41,6 @@ public final class Arena {
         arena.yaw = (float) section.getDouble("yaw");
         arena.pitch = (float) section.getDouble("pitch");
         arena.radius = section.getInt("radius", 50);
-
-        if (section.isConfigurationSection("spawn1")) {
-            ConfigurationSection s1 = section.getConfigurationSection("spawn1");
-            arena.spawn1X = s1.getDouble("x");
-            arena.spawn1Y = s1.getDouble("y");
-            arena.spawn1Z = s1.getDouble("z");
-            arena.spawn1Yaw = (float) s1.getDouble("yaw");
-            arena.spawn1Pitch = (float) s1.getDouble("pitch");
-            arena.hasSpawn1 = true;
-        }
-
-        if (section.isConfigurationSection("spawn2")) {
-            ConfigurationSection s2 = section.getConfigurationSection("spawn2");
-            arena.spawn2X = s2.getDouble("x");
-            arena.spawn2Y = s2.getDouble("y");
-            arena.spawn2Z = s2.getDouble("z");
-            arena.spawn2Yaw = (float) s2.getDouble("yaw");
-            arena.spawn2Pitch = (float) s2.getDouble("pitch");
-            arena.hasSpawn2 = true;
-        }
 
         for (String spot : section.getStringList("spots")) {
             String[] parts = spot.split(",");
@@ -99,24 +70,6 @@ public final class Arena {
         section.set("pitch", pitch);
         section.set("radius", radius);
 
-        if (hasSpawn1) {
-            ConfigurationSection s1 = section.createSection("spawn1");
-            s1.set("x", spawn1X);
-            s1.set("y", spawn1Y);
-            s1.set("z", spawn1Z);
-            s1.set("yaw", spawn1Yaw);
-            s1.set("pitch", spawn1Pitch);
-        }
-
-        if (hasSpawn2) {
-            ConfigurationSection s2 = section.createSection("spawn2");
-            s2.set("x", spawn2X);
-            s2.set("y", spawn2Y);
-            s2.set("z", spawn2Z);
-            s2.set("yaw", spawn2Yaw);
-            s2.set("pitch", spawn2Pitch);
-        }
-
         List<String> spotStrings = new ArrayList<>(spots.size());
         for (int[] s : spots) {
             spotStrings.add(s[0] + "," + s[1] + "," + s[2]);
@@ -140,62 +93,6 @@ public final class Arena {
             return null;
         }
         return new Location(world, x, y, z, yaw, pitch);
-    }
-
-    public void setSpawn1(Location loc) {
-        if (loc == null || loc.getWorld() == null) return;
-        if (this.worldName == null || this.worldName.isBlank()) {
-            this.worldName = loc.getWorld().getName();
-        }
-        this.spawn1X = loc.getX();
-        this.spawn1Y = loc.getY();
-        this.spawn1Z = loc.getZ();
-        this.spawn1Yaw = loc.getYaw();
-        this.spawn1Pitch = loc.getPitch();
-        this.hasSpawn1 = true;
-    }
-
-    public void setSpawn2(Location loc) {
-        if (loc == null || loc.getWorld() == null) return;
-        if (this.worldName == null || this.worldName.isBlank()) {
-            this.worldName = loc.getWorld().getName();
-        }
-        this.spawn2X = loc.getX();
-        this.spawn2Y = loc.getY();
-        this.spawn2Z = loc.getZ();
-        this.spawn2Yaw = loc.getYaw();
-        this.spawn2Pitch = loc.getPitch();
-        this.hasSpawn2 = true;
-    }
-
-    public Location getSpawn1() {
-        World world = Bukkit.getWorld(worldName);
-        if (world == null) {
-            return null;
-        }
-        if (hasSpawn1) {
-            return new Location(world, spawn1X, spawn1Y, spawn1Z, spawn1Yaw, spawn1Pitch);
-        }
-        return getCenter();
-    }
-
-    public Location getSpawn2() {
-        World world = Bukkit.getWorld(worldName);
-        if (world == null) {
-            return null;
-        }
-        if (hasSpawn2) {
-            return new Location(world, spawn2X, spawn2Y, spawn2Z, spawn2Yaw, spawn2Pitch);
-        }
-        return randomSpot();
-    }
-
-    public boolean hasSpawn1() {
-        return hasSpawn1;
-    }
-
-    public boolean hasSpawn2() {
-        return hasSpawn2;
     }
 
     public Location randomSpot() {

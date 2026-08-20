@@ -222,10 +222,9 @@ public final class KitsGui implements InventoryHolder {
             return;
         }
         // Inventory not empty: only offer the destructive confirm when a claim would actually be
-        // allowed right now. canClaim refuses - with the reason messaged - during a duel, inside
-        // an arena, while a post-duel restore is owed, on cooldown, or with no kit. None of those
-        // should reach a screen whose confirm button destroys the player's inventory, and gating
-        // here is what keeps the confirm screen (and its /trash shortcut) off-limits mid-duel.
+        // allowed right now. canClaim refuses - with the reason messaged - inside an arena, on
+        // cooldown, or with no kit. None of those should reach a screen whose confirm button
+        // destroys the player's inventory.
         if (!loadouts.canClaim(player, true)) {
             return;
         }

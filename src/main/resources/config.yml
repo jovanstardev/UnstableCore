@@ -16,9 +16,9 @@ database:
 
 newbie-hours: 6
 
-# How long a chat prompt (duel wager, bounty amount, leaderboard search) keeps capturing
-# what the player types before it gives up. Without a limit, a prompt the player never
-# answered would swallow their chat for the rest of the session.
+# How long a chat prompt (bounty amount, leaderboard search) keeps capturing what the player
+# types before it gives up. Without a limit, a prompt the player never answered would swallow
+# their chat for the rest of the session.
 chat-prompt-timeout-seconds: 60
 
 kill-reward: 10
@@ -567,6 +567,7 @@ messages:
   loadout-cooldown: "&cLoadout available in &f{time}&c."
   loadout-kit-cooldown: "&f{kit} &cis on cooldown for &f{time}&c."
   loadout-no-kit: "&cSelect an unlocked kit first with &f/kits&c."
+  loadout-arena-blocked: "&cYou can't change your kit while inside an arena."
   loadout-cooldown-reset: "&aReset loadout cooldown for &f{player}&a."
   kit-none-selected: "&cYou have no kit selected. Open &f/kits &cand pick one."
   kit-locked: "&cYou have not unlocked &f{kit}&c."
