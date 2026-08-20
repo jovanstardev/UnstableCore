@@ -25,6 +25,9 @@ import java.util.UUID;
 
 public final class PlayerListener implements Listener {
 
+    /** Stable id for the announcer pack, so re-sending replaces it rather than stacking copies. */
+    private static final UUID ANNOUNCER_PACK_ID = UUID.fromString("a9d4f1c2-0e77-4b3a-9c61-5f2e8b0d7a44");
+
     private final UnstableCore plugin;
 
     public PlayerListener(UnstableCore plugin) {
@@ -93,6 +96,60 @@ public final class PlayerListener implements Listener {
         if (plugin.getLeaderboardManager() != null) {
             plugin.getLeaderboardManager().syncProfile(player);
         }
+        sendAnnouncerPack(player);
+    }
+
+    /**
+     * Sends the announcer resource pack as an <em>additional</em> pack.
+     *
+     * <p>Deliberately not {@code server.properties}: that field holds a single pack, and on a
+     * server where ItemsAdder or SkinVault already serves one, setting it there means one pack
+     * replaces the other and something loses its assets. The UUID overload stacks instead, so the
+     * voice lines layer on top of whatever else is already applied.
+     *
+     * <p>No-op when the url is blank, so servers that would rather serve the pack through
+     * server.properties (or not at all) just leave it empty.
+     */
+    private void sendAnnouncerPack(Player player) {
+        String url = plugin.getConfig().getString("killstreak.announcer.resource-pack.url", "");
+        if (url == null || url.isBlank()) {
+            return;
+        }
+        byte[] hash = parseSha1(plugin.getConfig().getString("killstreak.announcer.resource-pack.sha1", ""));
+        if (hash == null) {
+            plugin.getLogger().warning("killstreak.announcer.resource-pack.sha1 must be 40 hex "
+                    + "characters matching the uploaded zip - announcer pack not sent.");
+            return;
+        }
+        String prompt = plugin.getConfig().getString("killstreak.announcer.resource-pack.prompt", "");
+        boolean required = plugin.getConfig().getBoolean("killstreak.announcer.resource-pack.required", false);
+        try {
+            player.setResourcePack(ANNOUNCER_PACK_ID, url, hash,
+                    prompt == null || prompt.isBlank() ? null : MessageUtil.parse(prompt), required);
+        } catch (Exception e) {
+            plugin.getLogger().warning("Failed to send the announcer resource pack: " + e.getMessage());
+        }
+    }
+
+    /** 40 hex characters -> the 20-byte digest the client verifies the download against. */
+    private static byte[] parseSha1(String hex) {
+        if (hex == null) {
+            return null;
+        }
+        String clean = hex.trim();
+        if (clean.length() != 40) {
+            return null;
+        }
+        byte[] out = new byte[20];
+        for (int i = 0; i < 20; i++) {
+            int hi = Character.digit(clean.charAt(i * 2), 16);
+            int lo = Character.digit(clean.charAt(i * 2 + 1), 16);
+            if (hi < 0 || lo < 0) {
+                return null;
+            }
+            out[i] = (byte) ((hi << 4) | lo);
+        }
+        return out;
     }
 
     private Location resolveJoinSpawn() {

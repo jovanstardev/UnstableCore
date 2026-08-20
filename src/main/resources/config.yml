@@ -60,6 +60,18 @@ killstreak:
     enabled: true
     # Sound slider the voice obeys. MASTER is always audible; PLAYERS respects that slider.
     category: MASTER
+    # Sends the announcer pack as an ADDITIONAL pack on join, stacked on top of any pack another
+    # plugin already applies (ItemsAdder, SkinVault). Use this instead of server.properties on a
+    # server that already serves a pack - server.properties holds only one, so setting it there
+    # makes the two packs replace each other.
+    #
+    # Leave url blank to disable. sha1 must be the 40-character hash of the uploaded zip; if it
+    # does not match, clients re-download every join or refuse the pack.
+    resource-pack:
+      url: ""
+      sha1: ""
+      prompt: "&dUnstable &fAnnouncer &7- adds killstreak voice lines"
+      required: false
     tiers:
       5:
         sound: "unstable:announcer.mega_kill"
