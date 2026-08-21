@@ -222,6 +222,14 @@ public final class UnstableCore extends JavaPlugin {
         if (kitManager != null) {
             kitManager.savePlayerData();
         }
+        if (arenaManager != null) {
+            // Flush arenas.yml and the dirty placed-block set BEFORE loadAll() swaps in a freshly
+            // read data.yml. arenaManager.reload() below repopulates placedBlocks from whatever is
+            // on disk, so without this every block players placed since the last autosave (up to
+            // 5 minutes' worth) is forgotten - and forgotten player-placed blocks are treated as
+            // natural terrain, which the arena protection then refuses to let anyone break.
+            arenaManager.shutdown();
+        }
         configManager.loadAll();
         MessageUtil.init(this);
         tagManager.load();

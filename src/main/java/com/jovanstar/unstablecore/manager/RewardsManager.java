@@ -400,7 +400,13 @@ public final class RewardsManager {
         if (claimed.contains(required)) {
             return DayState.CLAIMED;
         }
-        if (progress >= required) {
+        // registerLoginDay clamps monthDays to the calendar length of the month, so a monthly
+        // milestone requiring more days than the month actually has can never be reached: the
+        // shipped 30-day tier is unclaimable every February no matter how perfect attendance is.
+        // Treat "every day this month" as satisfying it. The tier keeps its configured id, so
+        // monthClaimed and the config lookup are unaffected.
+        int effective = weekly ? required : Math.min(required, today().lengthOfMonth());
+        if (progress >= effective) {
             return DayState.CLAIMABLE;
         }
         return DayState.LOCKED;

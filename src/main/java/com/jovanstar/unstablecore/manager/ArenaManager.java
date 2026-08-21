@@ -223,6 +223,13 @@ public final class ArenaManager {
         if (!placedDirty) {
             return;
         }
+        // cancel() cannot interrupt an async task that is already running, so this can still be
+        // mid-flight while onDisable executes - and scheduling onto a disabled plugin throws
+        // IllegalPluginAccessException. onDisable calls shutdown() itself, which saves the same
+        // state synchronously, so skipping here loses nothing.
+        if (!plugin.isEnabled()) {
+            return;
+        }
         Bukkit.getScheduler().runTask(plugin, () -> {
             if (placedDirty) {
                 savePlacedBlocks();

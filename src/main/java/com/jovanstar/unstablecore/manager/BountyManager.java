@@ -178,6 +178,15 @@ public final class BountyManager {
             msg(placer, "economy", Map.of());
             return false;
         }
+        // Every persistence call below swallows its SQLException, so with the database down the
+        // coins are taken, nextBountyId() falls back to a duplicate id and upsertBounty silently
+        // discards the row - the player pays and the bounty does not survive a restart. Refuse
+        // before touching their balance instead.
+        DatabaseManager db = plugin.getDatabaseManager();
+        if (db == null || !db.isConnected()) {
+            msg(placer, "economy", Map.of());
+            return false;
+        }
         if (target == null || target.getUniqueId() == null) {
             msg(placer, "offline", Map.of());
             return false;
