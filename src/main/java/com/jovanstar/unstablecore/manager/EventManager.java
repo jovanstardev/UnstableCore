@@ -521,6 +521,6 @@ public final class EventManager {
         if (multi == (long) multi) {
             return String.valueOf((long) multi);
         }
-        return String.format("%.1f", multi);
+        return String.format(Locale.ROOT, "%.1f", multi);
     }
 }

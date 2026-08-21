@@ -10,6 +10,8 @@ import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Locale;
+
 public final class UnstablePlaceholders extends PlaceholderExpansion {
 
     private final UnstableCore plugin;
@@ -40,7 +42,7 @@ public final class UnstablePlaceholders extends PlaceholderExpansion {
 
     @Override
     public @Nullable String onPlaceholderRequest(Player player, @NotNull String params) {
-        String key = params.toLowerCase();
+        String key = params.toLowerCase(Locale.ROOT);
         return switch (key) {
             case "coins", "balance", "money" -> {
                 if (player == null) {
@@ -50,11 +52,11 @@ public final class UnstablePlaceholders extends PlaceholderExpansion {
             }
             case "multiplier", "coin_multiplier" -> {
                 double m = plugin.getEventManager().getMultiplier();
-                yield m == (long) m ? String.valueOf((long) m) : String.format("%.1f", m);
+                yield m == (long) m ? String.valueOf((long) m) : String.format(Locale.ROOT, "%.1f", m);
             }
             case "streak_multiplier" -> {
                 double m = plugin.getEventManager().getStreakMultiplier();
-                yield m == (long) m ? String.valueOf((long) m) : String.format("%.1f", m);
+                yield m == (long) m ? String.valueOf((long) m) : String.format(Locale.ROOT, "%.1f", m);
             }
             case "event_active" -> plugin.getEventManager().isCoinActive() ? "true" : "false";
             case "streak_event_active" -> plugin.getEventManager().isStreakActive() ? "true" : "false";
@@ -91,7 +93,7 @@ public final class UnstablePlaceholders extends PlaceholderExpansion {
                 yield MessageUtil.strip(equipped);
             }
             case "playtime_hours" -> player == null ? "0"
-                    : String.format("%.2f", plugin.getPlaytimeManager().getPlaytimeHours(player));
+                    : String.format(Locale.ROOT, "%.2f", plugin.getPlaytimeManager().getPlaytimeHours(player));
             case "is_newbie" -> {
                 if (player == null) {
                     yield "false";
