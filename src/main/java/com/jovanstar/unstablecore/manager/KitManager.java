@@ -542,7 +542,12 @@ public final class KitManager {
             return true;
         }
         Set<String> set = unlocked.get(player.getUniqueId());
-        if (set != null && set.contains(kit.getId())) {
+        // Every write path - unlock(), tryPurchaseUnlock() and the player-data loader - stores the
+        // id lower-cased, so the lookup has to match. Reading the raw id meant a kit whose id
+        // carried any upper-case character could be paid for and still never register as unlocked,
+        // charging the player for nothing. Today's ids all come from lower-case file names, so this
+        // is a latent trap rather than a live loss - /kit create with mixed case would spring it.
+        if (set != null && set.contains(kit.getId().toLowerCase(Locale.ROOT))) {
             return true;
         }
         if (plugin.getConfig().getBoolean("kits.unlock-by-permission", false)

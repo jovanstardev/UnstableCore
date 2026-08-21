@@ -203,6 +203,15 @@ public final class ArenaManager {
         if (rotateTask != null) {
             rotateTask.cancel();
         }
+        // load() clears the live placed-block set and refills it from the in-memory data.yml, which
+        // holds only what savePlacedBlocks last wrote - and that runs on a five-minute autosave.
+        // Every block placed since then was dropped from tracking while still standing in the
+        // world, so it read as natural terrain afterwards and nobody could break their own cobweb
+        // again. Worse, the next autosave persisted the truncated set, making the loss permanent.
+        // Flushing first makes the reload round-trip lossless.
+        if (placedDirty) {
+            savePlacedBlocks();
+        }
         plugin.getConfigManager().reloadArenas();
         load();
     }
