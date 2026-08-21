@@ -42,6 +42,7 @@ import com.jovanstar.unstablecore.manager.MapVoteManager;
 import com.jovanstar.unstablecore.manager.PlaytimeManager;
 import com.jovanstar.unstablecore.manager.RewardsManager;
 import com.jovanstar.unstablecore.manager.SettingsManager;
+import com.jovanstar.unstablecore.manager.EnderChestManager;
 import com.jovanstar.unstablecore.manager.ShopManager;
 import com.jovanstar.unstablecore.manager.StatsManager;
 import com.jovanstar.unstablecore.manager.TagManager;
@@ -66,6 +67,7 @@ public final class UnstableCore extends JavaPlugin {
     private PlaytimeManager playtimeManager;
     private TagManager tagManager;
     private ShopManager shopManager;
+    private EnderChestManager enderChestManager;
     private KitManager kitManager;
     private LoadoutManager loadoutManager;
     private ActionBarManager actionBarManager;
@@ -127,6 +129,7 @@ public final class UnstableCore extends JavaPlugin {
         this.afkZoneManager.start();
 
         this.shopManager = new ShopManager(this);
+        this.enderChestManager = new EnderChestManager(this);
         this.kitManager = new KitManager(this);
         this.loadoutManager = new LoadoutManager(this);
         this.actionBarManager = new ActionBarManager(this);
@@ -375,6 +378,10 @@ public final class UnstableCore extends JavaPlugin {
 
     public TagManager getTagManager() {
         return tagManager;
+    }
+
+    public EnderChestManager getEnderChestManager() {
+        return enderChestManager;
     }
 
     public ShopManager getShopManager() {

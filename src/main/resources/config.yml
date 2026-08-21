@@ -556,6 +556,7 @@ messages:
   arena-nomace-no-elytra: "&c&l(!) &r&cElytra flying is disabled in no-mace arenas."
   arena-boundary-blocked: "&c&l(!) &r&cYou can't leave the arena boundary like that."
   spawn-drop-blocked: "&c&l(!) &r&cYou can't drop items at spawn."
+  echest-wiped: "&c&l(!) &r&cYour ender chest was cleared by a server-wide reset."
   mine-bypass-on: "&aMine bypass &fenabled&a. You can break/place natural arena blocks."
   mine-bypass-off: "&cMine bypass &fdisabled&c. Natural arena blocks are protected again."
   arena-newbie-set: "&aNewbie arena (nomace / under 6h) spawn updated."

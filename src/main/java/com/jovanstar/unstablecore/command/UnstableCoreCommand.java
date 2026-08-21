@@ -2,6 +2,7 @@ package com.jovanstar.unstablecore.command;
 
 import com.jovanstar.unstablecore.UnstableCore;
 import com.jovanstar.unstablecore.manager.EconomyManager;
+import com.jovanstar.unstablecore.manager.EnderChestManager;
 import com.jovanstar.unstablecore.model.Arena;
 import com.jovanstar.unstablecore.model.ArenaType;
 import com.jovanstar.unstablecore.util.MessageUtil;
@@ -73,10 +74,31 @@ public final class UnstableCoreCommand implements CommandExecutor, TabCompleter 
             case "event" -> handleEvent(sender, args);
             case "mine" -> handleMine(sender, args);
             case "setspawn" -> handleSetSpawn(sender);
+            case "clearechests" -> handleClearEnderChests(sender);
             case "loadout" -> handleLoadout(sender, args);
             default -> sendHelp(sender);
         }
         return true;
+    }
+
+    /**
+     * Wipes every player's ender chest server-wide.
+     *
+     * <p>Online players are cleared immediately; offline players are cleared on their next join,
+     * because Bukkit cannot reach an offline ender chest. See {@link EnderChestManager}. There is
+     * no undo and the contents are not backed up.
+     */
+    private void handleClearEnderChests(CommandSender sender) {
+        EnderChestManager echests = plugin.getEnderChestManager();
+        if (echests == null) {
+            MessageUtil.send(sender, "&cEnder chest manager is unavailable.");
+            return;
+        }
+        int cleared = echests.wipeAll();
+        MessageUtil.send(sender, "&a&l(!) &r&aCleared &f" + cleared
+                + "&a online ender chest(s). Everyone else is cleared on their next join.");
+        plugin.getLogger().warning(sender.getName() + " wiped all ender chests server-wide ("
+                + cleared + " online cleared immediately).");
     }
 
     private void handleSetSpawn(CommandSender sender) {
@@ -470,6 +492,7 @@ public final class UnstableCoreCommand implements CommandExecutor, TabCompleter 
         MessageUtil.send(sender, "&e/unstablecore event ...");
         MessageUtil.send(sender, "&e/uc mine bypass [on|off] &7- break natural arena blocks");
         MessageUtil.send(sender, "&e/uc setspawn &7- set join spawn to your location");
+        MessageUtil.send(sender, "&e/uc clearechests &7- wipe every player's ender chest");
         MessageUtil.send(sender, "&e/uc shop reset &7- restore default shop.yml");
         MessageUtil.send(sender, "&e/uc vote start &7- force start map vote");
         MessageUtil.send(sender, "&e/uc loadout reset <player> &7- clear loadout cooldown");
@@ -493,7 +516,8 @@ public final class UnstableCoreCommand implements CommandExecutor, TabCompleter 
             return List.of();
         }
         if (args.length == 1) {
-            return filter(List.of("arena", "economy", "event", "mine", "shop", "vote", "setspawn", "loadout", "reload"), args[0]);
+            return filter(List.of("arena", "economy", "event", "mine", "shop", "vote", "setspawn", "loadout",
+                    "clearechests", "reload"), args[0]);
         }
         if (args[0].equalsIgnoreCase("loadout")) {
             if (args.length == 2) {

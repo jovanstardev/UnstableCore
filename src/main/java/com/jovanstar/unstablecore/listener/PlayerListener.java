@@ -56,6 +56,14 @@ public final class PlayerListener implements Listener {
             );
         }
 
+        // A pending server-wide ender chest wipe is applied on the way in, before the player can
+        // open anything. Offline players cannot be reached any other way - see EnderChestManager.
+        if (plugin.getEnderChestManager() != null
+                && plugin.getEnderChestManager().applyPendingWipe(player)) {
+            MessageUtil.send(player, plugin.getConfig().getString(
+                    "messages.echest-wiped", "&c&l(!) &r&cYour ender chest was cleared by a server-wide reset."));
+        }
+
         if (plugin.getConfig().getBoolean("join.spawn-on-join", true)) {
             Location spawn = resolveJoinSpawn();
             if (spawn != null) {
