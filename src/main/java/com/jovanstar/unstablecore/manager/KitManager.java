@@ -164,6 +164,7 @@ public final class KitManager {
         if (files == null) {
             return;
         }
+        int missingCooldown = 0;
         for (File file : files) {
             String fileName = file.getName();
             String id = fileName.substring(0, fileName.length() - 4).toLowerCase(Locale.ROOT);
@@ -176,11 +177,26 @@ public final class KitManager {
             double price = kitConfig.getDouble("price", 0);
             String nameColor = kitConfig.getString("name-color", "&d");
             int kitCooldown = kitConfig.getInt("cooldown", 0);
+            if (!kitConfig.isSet("cooldown")) {
+                missingCooldown++;
+            }
             ItemStack[] contents = readContents(kitConfig.getConfigurationSection("contents"));
             warnAboutReservedSlots(id, contents);
             kits.put(id, new Kit(id, display, icon, slot, perm, tier, price, nameColor, contents,
                     kitCooldown));
         }
+        // A kit file written before per-kit cooldowns existed has no "cooldown" key, and Bukkit
+        // never overwrites a config that is already on disk. Such a kit silently falls back to the
+        // shared loadout.cooldown-seconds, so an upgraded server shows one identical cooldown on
+        // every kit with nothing in the log to explain it. Say so instead of failing quietly.
+        if (missingCooldown > 0) {
+            plugin.getLogger().warning(missingCooldown + " of " + kits.size()
+                    + " kit files have no 'cooldown' key and fall back to loadout.cooldown-seconds ("
+                    + Math.max(0L, plugin.getConfig().getLong("loadout.cooldown-seconds", 1800L))
+                    + "s). Add 'cooldown: <seconds>' to plugins/UnstableCore/kits/<kit>.yml to give"
+                    + " that kit its own timer.");
+        }
+
         int max = 0;
         for (Kit kit : kits.values()) {
             max = Math.max(max, kit.getCooldownSeconds());
