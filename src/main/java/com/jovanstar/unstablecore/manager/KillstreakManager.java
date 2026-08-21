@@ -69,12 +69,16 @@ public final class KillstreakManager {
         if (db == null || !db.isConnected()) {
             return;
         }
+        // Skip only players we track nothing for. Testing the VALUES instead meant a tracked
+        // zero was indistinguishable from "no data": after /resetkillstreak on a player with no
+        // deaths, the write was skipped and the old non-zero streak stayed in the database, so a
+        // crash before the next autosave restored a streak the player had already lost.
+        if (!streaks.containsKey(uuid) && !deaths.containsKey(uuid) && !titlesEnabled.containsKey(uuid)) {
+            return;
+        }
         int streak = streaks.getOrDefault(uuid, 0);
         int death = deaths.getOrDefault(uuid, 0);
         boolean titles = titlesEnabled.getOrDefault(uuid, true);
-        if (streak <= 0 && death <= 0 && titles) {
-            return;
-        }
         org.bukkit.Bukkit.getScheduler().runTaskAsynchronously(plugin,
                 () -> db.upsertCombatRow(uuid, streak, death, titles));
     }

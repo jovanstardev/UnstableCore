@@ -22,7 +22,13 @@ import java.util.logging.Level;
 public final class DatabaseManager {
 
     private final UnstableCore plugin;
-    private HikariDataSource dataSource;
+    /**
+     * Volatile because async DB tasks read it while the main thread nulls it in {@link #close()}.
+     * Every use snapshots it into a local first: isConnected() then getConnection() would otherwise
+     * be a check-then-dereference across threads, turning a clean "not connected" SQLException into
+     * an NPE for any write still in flight when the plugin disables.
+     */
+    private volatile HikariDataSource dataSource;
     private boolean mysql;
 
     public DatabaseManager(UnstableCore plugin) {
@@ -88,21 +94,24 @@ public final class DatabaseManager {
     }
 
     public boolean isConnected() {
-        return dataSource != null && !dataSource.isClosed();
+        HikariDataSource ds = dataSource;
+        return ds != null && !ds.isClosed();
     }
 
     public Connection getConnection() throws SQLException {
-        if (!isConnected()) {
+        HikariDataSource ds = dataSource;
+        if (ds == null || ds.isClosed()) {
             throw new SQLException("Database is not connected.");
         }
-        return dataSource.getConnection();
+        return ds.getConnection();
     }
 
     public void close() {
-        if (dataSource != null && !dataSource.isClosed()) {
-            dataSource.close();
-        }
+        HikariDataSource ds = dataSource;
         dataSource = null;
+        if (ds != null && !ds.isClosed()) {
+            ds.close();
+        }
     }
 
     private void createTables() throws SQLException {

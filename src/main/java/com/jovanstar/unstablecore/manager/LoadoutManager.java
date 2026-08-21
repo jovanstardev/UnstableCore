@@ -28,16 +28,27 @@ public final class LoadoutManager {
     }
 
     public void load() {
-        lastUse.clear();
-        kitLastUse.clear();
-        noCooldownUntil.clear();
         DatabaseManager db = plugin.getDatabaseManager();
+        // Read first, and only replace what is in memory once the data is actually in hand.
+        // Clearing up front meant a /uc reload while the database was unreachable left all three
+        // maps empty and returned - which reads as "nobody is on cooldown" and hands the whole
+        // server a free kit claim.
         if (db == null || !db.isConnected()) {
+            plugin.getLogger().warning(
+                    "Database unavailable while loading loadout cooldowns - keeping the cooldowns "
+                            + "already in memory rather than clearing them.");
             return;
         }
-        lastUse.putAll(db.loadAllLoadouts());
-        kitLastUse.putAll(db.loadAllKitCooldowns());
-        noCooldownUntil.putAll(db.loadAllLoadoutNoCooldown());
+        Map<UUID, Long> freshLast = db.loadAllLoadouts();
+        Map<UUID, Map<String, Long>> freshKit = db.loadAllKitCooldowns();
+        Map<UUID, Long> freshNoCooldown = db.loadAllLoadoutNoCooldown();
+
+        lastUse.clear();
+        lastUse.putAll(freshLast);
+        kitLastUse.clear();
+        kitLastUse.putAll(freshKit);
+        noCooldownUntil.clear();
+        noCooldownUntil.putAll(freshNoCooldown);
         pruneExpired();
     }
 
