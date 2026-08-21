@@ -24,6 +24,7 @@ import com.jovanstar.unstablecore.listener.GuiListener;
 import com.jovanstar.unstablecore.listener.HeldShulkerListener;
 import com.jovanstar.unstablecore.listener.LeaderboardListener;
 import com.jovanstar.unstablecore.listener.PlayerListener;
+import com.jovanstar.unstablecore.listener.WorldBorderListener;
 import com.jovanstar.unstablecore.manager.ActionBarManager;
 import com.jovanstar.unstablecore.manager.AfkZoneManager;
 import com.jovanstar.unstablecore.manager.ArenaManager;
@@ -82,6 +83,7 @@ public final class UnstableCore extends JavaPlugin {
     private ArenaListener arenaListener;
     private CombatListener combatListener;
     private HeldShulkerListener heldShulkerListener;
+    private WorldBorderListener worldBorderListener;
     private org.bukkit.scheduler.BukkitTask autosaveTask;
 
     @Override
@@ -268,6 +270,9 @@ public final class UnstableCore extends JavaPlugin {
         if (arenaListener != null) {
             arenaListener.reloadSettings();
         }
+        if (worldBorderListener != null) {
+            worldBorderListener.reloadSettings();
+        }
     }
 
     private void registerCommands() {
@@ -332,6 +337,8 @@ public final class UnstableCore extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new AntiGlitchListener(this), this);
         this.heldShulkerListener = new HeldShulkerListener(this);
         Bukkit.getPluginManager().registerEvents(heldShulkerListener, this);
+        this.worldBorderListener = new WorldBorderListener(this);
+        Bukkit.getPluginManager().registerEvents(worldBorderListener, this);
         Bukkit.getPluginManager().registerEvents(new GuiListener(this), this);
         Bukkit.getPluginManager().registerEvents(new BountyListener(this), this);
         Bukkit.getPluginManager().registerEvents(new LeaderboardListener(this), this);
@@ -438,5 +445,9 @@ public final class UnstableCore extends JavaPlugin {
 
     public HeldShulkerListener getHeldShulkerListener() {
         return heldShulkerListener;
+    }
+
+    public WorldBorderListener getWorldBorderListener() {
+        return worldBorderListener;
     }
 }

@@ -271,6 +271,9 @@ public final class PlayerListener implements Listener {
         if (plugin.getArenaListener() != null) {
             plugin.getArenaListener().clearPlayer(event.getPlayer().getUniqueId());
         }
+        if (plugin.getWorldBorderListener() != null) {
+            plugin.getWorldBorderListener().clearPlayer(event.getPlayer().getUniqueId());
+        }
         if (plugin.getCombatListener() != null) {
             plugin.getCombatListener().handleQuitCombatTag(event.getPlayer());
             plugin.getCombatListener().clearPlayer(event.getPlayer().getUniqueId());

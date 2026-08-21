@@ -110,6 +110,12 @@ permissions:
   unstablecore.loadout.kit-nocooldown:
     description: Bypass per-kit /loadout cooldowns permanently
     default: false
+  # default: op (not false, unlike the cooldown-bypass nodes above) - this exists so staff can
+  # build and fly right up to the border while setting a map up, not as a purchasable perk, so
+  # ops need it without a separate grant.
+  unstablecore.border.bypass:
+    description: Exempt from the world-border push-back buffer zone
+    default: op
   unstablecore.vote.2x:
     description: Map votes count as 2x
     default: false

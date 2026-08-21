@@ -525,10 +525,27 @@ anti-bush:
     - FLOWERING_AZALEA
   push-strength: 0.45
 
+world-border:
+  # Shoves players back while they are still short of the world border, so they never reach the
+  # edge itself. Vanilla only reacts once they are already touching it, which leaves the border
+  # usable as a wall to fight against and as the spot clip cheats aim for.
+  push-back:
+    enabled: true
+    # How many blocks clear of the border the buffer zone starts. Worlds whose border is smaller
+    # than two of these are skipped - there would be no interior left to stand in.
+    distance: 5.0
+    # Horizontal shove, in the same units as anti-bush.push-strength.
+    push-strength: 0.55
+    # Small upward hop so ground friction doesn't eat the shove.
+    push-up: 0.12
+
 messages:
   no-permission: "&cYou don't have permission."
   pearl-stale: "&7Your ender pearl fizzled - you were moved to another map while it was in the air."
   pearl-border: "&cYour ender pearl landed outside the world border."
+  pearl-border-buffer: "&cYour ender pearl landed too close to the world border."
+  # Shown when the border push-back fires. Blank pushes silently.
+  world-border-push: "&c&l(!) &r&cYou can't go past the world border."
   player-only: "&cPlayers only."
   player-not-found: "&cPlayer not found."
   reload: "&aUnstableCore reloaded."

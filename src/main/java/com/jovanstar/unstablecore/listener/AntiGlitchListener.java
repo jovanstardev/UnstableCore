@@ -98,6 +98,19 @@ public final class AntiGlitchListener implements Listener {
             return;
         }
 
+        // The walk-based border push-back (WorldBorderListener) only reacts to PlayerMoveEvent,
+        // which a teleport never fires - so without this, pearling or chorus-fruiting straight
+        // into the buffer zone landed cleanly and skipped the push-back entirely, letting a player
+        // reach the wall in one throw instead of being shoved back on the walk in.
+        WorldBorderListener borderListener = plugin.getWorldBorderListener();
+        if (borderListener != null && borderListener.isEnabled()
+                && !player.hasPermission(WorldBorderListener.BYPASS_PERMISSION)
+                && WorldBorderListener.isWithinBorderBuffer(to, borderListener.getDistance())) {
+            event.setCancelled(true);
+            MessageUtil.sendConfig(player, "pearl-border-buffer", Map.of());
+            return;
+        }
+
         // Arena containment was previously just a build/break permission tag - nothing stopped
         // an ender pearl or chorus fruit from carrying a player straight through the boundary,
         // since both teleport clean through solid blocks instead of colliding with them the way
