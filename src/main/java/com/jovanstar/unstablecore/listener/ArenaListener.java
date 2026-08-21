@@ -170,6 +170,28 @@ public final class ArenaListener implements Listener {
         plugin.getArenaManager().setPlayerArena(event.getPlayer().getUniqueId(), arena.getId());
     }
 
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPlaceMonitor(BlockPlaceEvent event) {
+        // Mark only after every plugin has finished. handlePlace runs at HIGHEST and skips
+        // cancelled events, so a later HIGHEST handler that un-cancels a cobweb place used
+        // to leave it untracked and treated as natural terrain.
+        if (isAxeStripPlace(event)) {
+            return;
+        }
+        Location blockLoc = event.getBlock().getLocation();
+        Arena arena = plugin.getArenaManager().resolveArenaAt(blockLoc);
+        if (arena == null || arena.getType() != ArenaType.MACE) {
+            return;
+        }
+        if (event instanceof BlockMultiPlaceEvent multi) {
+            for (org.bukkit.block.BlockState state : multi.getReplacedBlockStates()) {
+                plugin.getArenaManager().markPlaced(state.getLocation());
+            }
+        }
+        plugin.getArenaManager().markPlaced(blockLoc);
+        plugin.getArenaManager().setPlayerArena(event.getPlayer().getUniqueId(), arena.getId());
+    }
+
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onBreak(BlockBreakEvent event) {
         Player player = event.getPlayer();
@@ -177,6 +199,15 @@ public final class ArenaListener implements Listener {
         Location loc = block.getLocation();
         Arena arena = resolveArena(player, loc);
         if (arena == null) {
+            return;
+        }
+
+        // Cobwebs are always breakable in arenas. Player-placed ones can fall out of the
+        // placed-block set (reload, cap eviction, another plugin placing the block), after
+        // which they were treated as natural terrain and could not be broken.
+        if (isAlwaysBreakable(block.getType())) {
+            event.setCancelled(false);
+            plugin.getArenaManager().unmarkPlaced(loc);
             return;
         }
 
@@ -207,6 +238,19 @@ public final class ArenaListener implements Listener {
 
         event.setCancelled(true);
         sendNaturalBreak(player);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = false)
+    public void onBreakCobwebMonitor(BlockBreakEvent event) {
+        if (event.getBlock().getType() != Material.COBWEB) {
+            return;
+        }
+        Location loc = event.getBlock().getLocation();
+        if (plugin.getArenaManager().resolveArenaAt(loc) == null) {
+            return;
+        }
+        event.setCancelled(false);
+        plugin.getArenaManager().unmarkPlaced(loc);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
@@ -278,7 +322,8 @@ public final class ArenaListener implements Listener {
             if (!inArena) {
                 continue;
             }
-            if (plugin.getArenaManager().isPlayerPlaced(bLoc)) {
+            if (isAlwaysBreakable(block.getType())
+                    || plugin.getArenaManager().isPlayerPlaced(bLoc)) {
                 brokenPlaced.add(bLoc.clone());
                 continue;
             }
@@ -397,6 +442,10 @@ public final class ArenaListener implements Listener {
             case GRASS_BLOCK, DIRT, COARSE_DIRT, DIRT_PATH, ROOTED_DIRT -> true;
             default -> false;
         };
+    }
+
+    private static boolean isAlwaysBreakable(Material type) {
+        return type == Material.COBWEB;
     }
 
     private static boolean isCropOrFarmPlant(Material type) {
