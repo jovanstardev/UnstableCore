@@ -488,6 +488,9 @@ join:
     z: 0.5
     yaw: 0.0
     pitch: 0.0
+    # Blocks within this many blocks of the spawn point above: item drops (anyone without
+    # unstablecore.admin) and building. Measured horizontally from the spawn x/z, so set it wide
+    # enough to cover the whole spawn build - drops just outside the radius are still allowed.
     protect-radius: 25
   title:
     enabled: true

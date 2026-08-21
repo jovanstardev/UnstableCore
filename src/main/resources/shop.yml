@@ -175,7 +175,7 @@ categories:
           - "&7Clears your current /loadout CD"
           - "&7right now."
           - "&7Next claim starts normal cooldown."
-        price: 200
+        price: 1000
         give-item: false
         reset-loadout-cooldown: true
       no_cd_15m:

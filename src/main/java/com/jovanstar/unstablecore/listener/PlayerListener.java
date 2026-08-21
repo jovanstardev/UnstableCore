@@ -13,6 +13,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.InventoryAction;
+import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
@@ -22,11 +24,18 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class PlayerListener implements Listener {
 
     /** Stable id for the announcer pack, so re-sending replaces it rather than stacking copies. */
     private static final UUID ANNOUNCER_PACK_ID = UUID.fromString("a9d4f1c2-0e77-4b3a-9c61-5f2e8b0d7a44");
+
+    /**
+     * Last time each player was told off for a blocked spawn drop. Holding ctrl+Q fires the drop
+     * handlers many times per second, so the reminder is rate limited to keep chat readable.
+     */
+    private final Map<UUID, Long> lastDropWarning = new ConcurrentHashMap<>();
 
     private final UnstableCore plugin;
 
@@ -191,6 +200,48 @@ public final class PlayerListener implements Listener {
             return;
         }
         event.setCancelled(true);
+        warnDropBlocked(player);
+    }
+
+    /**
+     * Closes the inventory-screen route around {@link #onDropAtSpawn}.
+     *
+     * <p>{@code PlayerDropItemEvent} only covers throwing an item while no screen is open. Pressing Q
+     * with the inventory (or any container) open, or clicking an item outside the window, travels
+     * through {@link InventoryClickEvent} instead - so without this a player could drop anything at
+     * spawn simply by opening their own inventory first. Runs with {@code ignoreCancelled} so the
+     * plugin's own menus, which already cancel their clicks, neither double-fire nor warn.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onInventoryDropAtSpawn(InventoryClickEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player)) {
+            return;
+        }
+        InventoryAction action = event.getAction();
+        if (action != InventoryAction.DROP_ALL_SLOT
+                && action != InventoryAction.DROP_ONE_SLOT
+                && action != InventoryAction.DROP_ALL_CURSOR
+                && action != InventoryAction.DROP_ONE_CURSOR) {
+            return;
+        }
+        if (player.hasPermission("unstablecore.admin")) {
+            return;
+        }
+        if (!isInSpawnProtection(player.getLocation())) {
+            return;
+        }
+        event.setCancelled(true);
+        warnDropBlocked(player);
+    }
+
+    /** Sends the "no dropping at spawn" reminder, at most once every two seconds per player. */
+    private void warnDropBlocked(Player player) {
+        long now = System.currentTimeMillis();
+        Long last = lastDropWarning.get(player.getUniqueId());
+        if (last != null && now - last < 2000L) {
+            return;
+        }
+        lastDropWarning.put(player.getUniqueId(), now);
         MessageUtil.send(player, plugin.getConfig().getString(
                 "messages.spawn-drop-blocked", "&c&l(!) &r&cYou can't drop items at spawn."));
     }
@@ -206,6 +257,7 @@ public final class PlayerListener implements Listener {
             );
         }
 
+        lastDropWarning.remove(event.getPlayer().getUniqueId());
         plugin.getAfkZoneManager().clear(event.getPlayer());
         plugin.getArenaManager().clearPlayer(event.getPlayer().getUniqueId());
         if (plugin.getArenaListener() != null) {
