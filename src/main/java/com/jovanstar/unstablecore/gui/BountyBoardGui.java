@@ -50,6 +50,11 @@ public final class BountyBoardGui implements InventoryHolder {
         if (size % 9 != 0) {
             size = 54;
         }
+        // The layout is fixed for a double chest: CONTENT runs to slot 43 and the board buttons
+        // default to 45-52, so anything smaller throws ArrayIndexOutOfBounds for every viewer.
+        if (size < 54) {
+            size = 54;
+        }
         BountyManager mgr = plugin.getBountyManager();
         List<Bounty> list = mgr.sortedFiltered(filter);
         int perPage = Math.min(CONTENT.length, Math.max(1, cfg.getInt("gui.slots-per-page", CONTENT.length)));

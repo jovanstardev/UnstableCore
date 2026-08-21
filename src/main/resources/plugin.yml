@@ -104,8 +104,11 @@ permissions:
   unstablecore.loadout.nocooldown:
     description: Bypass /loadout cooldown permanently
     default: false
-  unstablecore.kit.nocooldown:
-    description: Bypass kit /loadout cooldown permanently
+  # Deliberately NOT under unstablecore.kit.* - that namespace holds the per-kit unlock nodes
+  # (unstablecore.kit.<id>), so a wildcard grant meant to unlock every kit also handed out
+  # permanent cooldown bypass.
+  unstablecore.loadout.kit-nocooldown:
+    description: Bypass per-kit /loadout cooldowns permanently
     default: false
   unstablecore.vote.2x:
     description: Map votes count as 2x

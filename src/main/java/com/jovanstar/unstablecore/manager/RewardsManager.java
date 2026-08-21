@@ -351,6 +351,14 @@ public final class RewardsManager {
                 proposed.lastClaimDay = todayStr;
                 proposed.boosterUntil = boosterUntil;
 
+                // Refuse before committing rather than after. tryMarkDailyClaim atomically sets
+                // last_claim_day, so a deposit that fails afterwards leaves the day marked claimed
+                // with nothing paid out - and the player cannot claim it again, ever.
+                if (coins > 0 && !plugin.getEconomyManager().isReady()) {
+                    msg(player, "economy-unavailable", Map.of());
+                    return false;
+                }
+
                 if (!plugin.getDatabaseManager().tryMarkDailyClaim(uuid, proposed.toRow(), todayStr)) {
                     msg(player, "already-claimed", Map.of());
                     PlayerRewards fresh = PlayerRewards.from(plugin.getDatabaseManager().loadRewards(uuid));
@@ -359,8 +367,14 @@ public final class RewardsManager {
                 }
 
                 if (coins > 0 && !plugin.getEconomyManager().deposit(player, coins)) {
+                    // Economy said it was ready and still rejected the deposit. Put the row back
+                    // the way it was so the day stays claimable instead of silently vanishing.
                     plugin.getLogger().warning("Daily reward deposit failed for " + player.getName()
-                            + " day " + day + " (" + coins + " coins). Claim kept.");
+                            + " day " + day + " (" + coins + " coins) - rolling the claim back.");
+                    plugin.getDatabaseManager().saveRewards(uuid, data.toRow());
+                    cache.put(uuid, data);
+                    msg(player, "economy-unavailable", Map.of());
+                    return false;
                 }
 
                 cache.put(uuid, proposed);
@@ -429,6 +443,11 @@ public final class RewardsManager {
                     proposed.boosterUntil = base + add;
                 }
 
+                if (coins > 0 && !plugin.getEconomyManager().isReady()) {
+                    msg(player, "economy-unavailable", Map.of());
+                    return false;
+                }
+
                 if (!plugin.getDatabaseManager().tryMarkMilestoneClaim(
                         uuid, proposed.toRow(), weekly, required)) {
                     msg(player, "already-claimed", Map.of());
@@ -438,8 +457,14 @@ public final class RewardsManager {
                 }
 
                 if (coins > 0 && !plugin.getEconomyManager().deposit(player, coins)) {
+                    // Same rollback as claimDaily - a committed milestone with no payout is
+                    // unclaimable forever.
                     plugin.getLogger().warning("Milestone reward deposit failed for " + player.getName()
-                            + " (" + coins + " coins). Claim kept.");
+                            + " (" + coins + " coins) - rolling the claim back.");
+                    plugin.getDatabaseManager().saveRewards(uuid, data.toRow());
+                    cache.put(uuid, data);
+                    msg(player, "economy-unavailable", Map.of());
+                    return false;
                 }
 
                 cache.put(uuid, proposed);

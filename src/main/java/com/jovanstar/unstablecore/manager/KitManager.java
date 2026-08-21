@@ -870,8 +870,14 @@ public final class KitManager {
                 continue;
             }
             HashMap<Integer, ItemStack> leftover = inv.addItem(stack.clone());
-            for (ItemStack drop : leftover.values()) {
-                player.getWorld().dropItemNaturally(player.getLocation(), drop);
+            if (!leftover.isEmpty()) {
+                // Do not drop the remainder. Kit gear is plugin-issued, so anything left on the
+                // floor at spawn is free material that anyone can pick up, minted again on every
+                // claim. A kit that cannot fit in a player inventory is a configuration error, so
+                // say so once with enough detail to fix it instead of leaking items.
+                plugin.getLogger().warning("Kit '" + kit.getId() + "' does not fit in a player "
+                        + "inventory - slot " + i + " (" + stack.getType() + ") was not given to "
+                        + player.getName() + ". Remove items from the kit or free up a slot.");
             }
         }
         player.updateInventory();
@@ -932,18 +938,25 @@ public final class KitManager {
                 out[i] = stack.clone();
             }
         }
-        int idx = 36;
-        ItemStack off = inv.getItemInOffHand();
-        if (off != null && !off.getType().isAir() && idx < Kit.CONTENTS_SIZE) {
-            out[idx++] = off.clone();
-        }
+        // Fixed slots matching Bukkit's own PlayerInventory layout (36-39 armor, 40 offhand),
+        // which is also what applyKit reads back and what the shipped kit files use.
+        //
+        // This used to pack sequentially from 36, putting the offhand at 36 and armor after it.
+        // applyKit finds armor by material name so that part still worked, but it only looks for
+        // an offhand at index 46 then 40 - so an offhand item that was not a shield, totem or
+        // banner fell through to the addItem fallback and, on a full inventory, was dropped on
+        // the floor every single time the kit was claimed.
         ItemStack[] armor = inv.getArmorContents();
         if (armor != null) {
-            for (int a = armor.length - 1; a >= 0 && idx < Kit.CONTENTS_SIZE; a--) {
+            for (int a = 0; a < Math.min(armor.length, 4); a++) {
                 if (armor[a] != null && !armor[a].getType().isAir()) {
-                    out[idx++] = armor[a].clone();
+                    out[36 + a] = armor[a].clone();
                 }
             }
+        }
+        ItemStack off = inv.getItemInOffHand();
+        if (off != null && !off.getType().isAir()) {
+            out[40] = off.clone();
         }
         return out;
     }

@@ -157,13 +157,17 @@ public final class RewardsGui implements InventoryHolder {
                     "best", String.valueOf(Math.max(displayStreak, data.streak)),
                     "today", mgr.today().toString()
             );
-            inventory.setItem(slot, buildConfigured(streak, Material.SUNFLOWER, "&e☀ DAILY STREAK", ph, true));
+            if (validSlot(slot)) {
+                inventory.setItem(slot, buildConfigured(streak, Material.SUNFLOWER, "&e☀ DAILY STREAK", ph, true));
+            }
         }
 
         ConfigurationSection footer = cfg.getConfigurationSection("daily.footer");
         if (footer != null) {
             int slot = footer.getInt("slot", 49);
-            inventory.setItem(slot, buildConfigured(footer, Material.EMERALD, "&aDAILY CYCLE", Map.of(), true));
+            if (validSlot(slot)) {
+                inventory.setItem(slot, buildConfigured(footer, Material.EMERALD, "&aDAILY CYCLE", Map.of(), true));
+            }
         }
 
         for (Map.Entry<Integer, ConfigurationSection> e : mgr.dailyDays().entrySet()) {
@@ -229,7 +233,9 @@ public final class RewardsGui implements InventoryHolder {
                     "month-days", String.valueOf(monthDays),
                     "reset", RewardsManager.formatDuration(mgr.millisUntilWeekReset())
             );
-            inventory.setItem(slot, buildConfigured(info, Material.BOOK, "&fINFO", ph, true));
+            if (validSlot(slot)) {
+                inventory.setItem(slot, buildConfigured(info, Material.BOOK, "&fINFO", ph, true));
+            }
         }
 
         for (Map.Entry<Integer, ConfigurationSection> e : mgr.milestones(weekly).entrySet()) {
@@ -332,6 +338,15 @@ public final class RewardsGui implements InventoryHolder {
             }
             inventory.setItem(slot, new ItemBuilder(mat).name(name).lore(lore).hideAttributes().build());
         }
+    }
+
+    /**
+     * dailyrewards.yml lets every tile choose its own slot while gui.size is separately
+     * configurable, so a reduced size turns a default slot into an out-of-bounds write and
+     * /rewards throws for everyone. The paged loops already guard; these fixed tiles did not.
+     */
+    private boolean validSlot(int slot) {
+        return slot >= 0 && slot < inventory.getSize();
     }
 
     private ItemStack buildConfigured(ConfigurationSection sec, Material defMat, String defName,

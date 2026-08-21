@@ -154,6 +154,8 @@ arena:
     enabled: true
     lead-seconds: 60
     duration-seconds: 45
+    # Hard-capped at 4: VoteGui only has layouts for 1-4 candidates, so a larger value here is
+    # silently reduced rather than showing more maps.
     max-maps: 4
     double-vote-permission: "unstablecore.vote.2x"
     double-vote-weight: 2
@@ -183,6 +185,9 @@ arena:
   # Cap on remembered player-placed blocks inside arenas. Oldest entries are evicted first.
   max-placed-blocks: 50000
   newbie:
+    # NOTE: only display-name is read. The newbie arena is always present and always nomace -
+    # ArenaManager.ensureNewbieIsNomace forces the type - so "enabled" and "type" below are
+    # inert. They are kept so existing configs still load cleanly.
     enabled: true
     type: nomace
     display-name: "<#55FFFF>&lNewbie Arena &8» &fUnder 6h"
@@ -525,7 +530,6 @@ messages:
   player-not-found: "&cPlayer not found."
   reload: "&aUnstableCore reloaded."
   spawn-set: "&aJoin spawn set to your location."
-  spawn-missing: "&cJoin spawn world is not loaded. Use &f/uc setspawn&c."
   economy-give: "&aGave &f{amount} &acoins to &f{player}&a."
   economy-take: "&aTook &f{amount} &acoins from &f{player}&a."
   economy-set: "&aSet &f{player}&a's balance to &f{amount}&a."
