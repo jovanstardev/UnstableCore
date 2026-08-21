@@ -137,7 +137,14 @@ public final class AntiGlitchListener implements Listener {
         }
         String tracked = plugin.getArenaManager().getPlayerArena(player.getUniqueId());
         boolean trackedHere = tracked != null && tracked.equalsIgnoreCase(arena.getId());
-        if (!trackedHere && !arena.contains(player.getLocation())) {
+        // "Stale" means the tag actually points somewhere else now - real evidence the player
+        // moved on while this pearl was mid-flight. A null tag just means never tracked in any
+        // arena (e.g. thrown from outside one, near spawn, while wandering); with the old
+        // "!trackedHere" check that untracked-and-not-standing-here case looked identical to
+        // staleness and every one of those pearls was wrongly cancelled with "you were moved to
+        // another map" even though nothing had moved.
+        boolean trackedElsewhere = tracked != null && !trackedHere;
+        if (trackedElsewhere && !arena.contains(player.getLocation())) {
             event.setCancelled(true);
             MessageUtil.sendConfig(player, "pearl-stale", Map.of());
             return;
