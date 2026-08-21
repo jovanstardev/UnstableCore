@@ -1,6 +1,7 @@
 package com.jovanstar.unstablecore.manager;
 
 import com.jovanstar.unstablecore.UnstableCore;
+import com.jovanstar.unstablecore.model.Kit;
 import com.jovanstar.unstablecore.util.ItemBuilder;
 import com.jovanstar.unstablecore.util.MessageUtil;
 import org.bukkit.Bukkit;
@@ -74,7 +75,7 @@ public final class ShopManager {
         }
         LoadoutManager loadouts = plugin.getLoadoutManager();
         if (item.getBoolean("reset-loadout-cooldown", false) && loadouts != null) {
-            long remain = loadouts.remainingMillis(player.getUniqueId());
+            long remain = skippableCooldownMillis(player);
             if (remain > 0L) {
                 lore.add("&7Loadout CD: &e" + EventManager.formatDurationMillis(remain));
             } else {
@@ -145,6 +146,29 @@ public final class ShopManager {
         }
     }
 
+    /**
+     * The cooldown a skip purchase would actually clear: the shared loadout timer, or the selected
+     * kit's own timer, whichever has longer left to run.
+     *
+     * <p>{@link LoadoutManager#remainingMillis} covers only the shared timer. Once kits gained
+     * individual cooldowns, a player waiting out a long per-kit timer with the shared one already
+     * expired was shown "Loadout CD: Ready" in the menu and then refused at the till - the item was
+     * unbuyable in exactly the situation it exists for. {@code resetCooldown} clears both timers, so
+     * the check has to weigh both.
+     *
+     * @param player the shopper; a null selected kit collapses this to the shared timer alone
+     * @return millis remaining, or 0 if nothing is running
+     */
+    private long skippableCooldownMillis(Player player) {
+        LoadoutManager loadouts = plugin.getLoadoutManager();
+        if (player == null || loadouts == null) {
+            return 0L;
+        }
+        KitManager kits = plugin.getKitManager();
+        Kit selected = kits == null ? null : kits.getSelectedKit(player);
+        return loadouts.effectiveRemainingMillis(player.getUniqueId(), selected);
+    }
+
     private boolean purchaseLocked(Player player, String categoryId, String itemId) {
         ConfigurationSection item = config().getConfigurationSection("categories." + categoryId + ".items." + itemId);
         if (item == null) {
@@ -185,7 +209,7 @@ public final class ShopManager {
         // Refuse before charging: with no cooldown running there is nothing to skip, and the
         // player would otherwise pay full price for a no-op.
         if (resetCd && noCdSeconds <= 0L && loadouts != null
-                && loadouts.remainingMillis(player.getUniqueId()) <= 0L) {
+                && skippableCooldownMillis(player) <= 0L) {
             MessageUtil.send(player, config().getString("messages.no-cooldown-active",
                     "&cYou have no loadout cooldown to skip right now."));
             return false;
