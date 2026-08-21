@@ -8,6 +8,7 @@ import com.jovanstar.unstablecore.manager.KitManager;
 import com.jovanstar.unstablecore.model.Kit;
 import com.jovanstar.unstablecore.util.MessageUtil;
 import org.bukkit.Bukkit;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.Material;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -189,8 +190,15 @@ public final class KitCommand implements CommandExecutor, TabCompleter {
                     MessageUtil.send(sender, "&cUsage: /kit unlock <player> <id>");
                     return true;
                 }
-                Player target = Bukkit.getPlayerExact(args[1]);
-                if (target == null) {
+                // Resolved via resolvePlayer so an offline player can be locked or unlocked too:
+                // revoking access usually happens after the fact, when the player has already
+                // logged off. It never falls back to Bukkit.getOfflinePlayer(String), which
+                // fabricates a UUID for any name - including one someone renamed into after the
+                // real target renamed away, which would silently hit the wrong account.
+                OfflinePlayer target = plugin.getStatsManager() == null
+                        ? Bukkit.getPlayerExact(args[1])
+                        : plugin.getStatsManager().resolvePlayer(args[1]);
+                if (target == null || target.getName() == null) {
                     MessageUtil.sendConfig(sender, "player-not-found", Map.of());
                     return true;
                 }
@@ -209,8 +217,15 @@ public final class KitCommand implements CommandExecutor, TabCompleter {
                     MessageUtil.send(sender, "&cUsage: /kit lock <player> <id>");
                     return true;
                 }
-                Player target = Bukkit.getPlayerExact(args[1]);
-                if (target == null) {
+                // Resolved via resolvePlayer so an offline player can be locked or unlocked too:
+                // revoking access usually happens after the fact, when the player has already
+                // logged off. It never falls back to Bukkit.getOfflinePlayer(String), which
+                // fabricates a UUID for any name - including one someone renamed into after the
+                // real target renamed away, which would silently hit the wrong account.
+                OfflinePlayer target = plugin.getStatsManager() == null
+                        ? Bukkit.getPlayerExact(args[1])
+                        : plugin.getStatsManager().resolvePlayer(args[1]);
+                if (target == null || target.getName() == null) {
                     MessageUtil.sendConfig(sender, "player-not-found", Map.of());
                     return true;
                 }
