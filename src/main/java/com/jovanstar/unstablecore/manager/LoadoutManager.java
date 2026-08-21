@@ -49,6 +49,9 @@ public final class LoadoutManager {
         pruneExpired();
         db.saveAllLoadouts(lastUse, cooldownMillis());
         db.saveAllLoadoutNoCooldown(noCooldownUntil);
+        // Rows are written incrementally as kits are claimed, so the table needs its own sweep -
+        // saveAllLoadouts only prunes loadout_cooldowns.
+        db.pruneKitCooldowns(System.currentTimeMillis() - maxCooldownMillis());
     }
 
     public long cooldownMillis() {
@@ -312,6 +315,17 @@ public final class LoadoutManager {
         }
     }
 
+    /**
+     * Longest cooldown any claim can currently impose - the shared one, or the largest per-kit
+     * override if that is bigger. A kit entry older than this cannot still be blocking anything,
+     * which is what makes it safe to prune.
+     */
+    private long maxCooldownMillis() {
+        KitManager kits = plugin.getKitManager();
+        long widest = kits == null ? 0L : kits.getMaxKitCooldownSeconds() * 1000L;
+        return Math.max(cooldownMillis(), widest);
+    }
+
     private void pruneExpired() {
         long now = System.currentTimeMillis();
         long cd = cooldownMillis();
@@ -327,6 +341,17 @@ public final class LoadoutManager {
             Map.Entry<UUID, Long> e = noIt.next();
             if (e.getValue() <= now) {
                 noIt.remove();
+            }
+        }
+        // kitLastUse holds one entry per (player, kit) pair and is loaded whole at startup, so
+        // without this it grows for every kit every player has ever claimed and is never released.
+        long kitCutoff = now - maxCooldownMillis();
+        Iterator<Map.Entry<UUID, Map<String, Long>>> kitIt = kitLastUse.entrySet().iterator();
+        while (kitIt.hasNext()) {
+            Map.Entry<UUID, Map<String, Long>> e = kitIt.next();
+            e.getValue().values().removeIf(v -> v == null || v <= kitCutoff);
+            if (e.getValue().isEmpty()) {
+                kitIt.remove();
             }
         }
     }

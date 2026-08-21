@@ -115,7 +115,23 @@ public final class RewardsManager {
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             DatabaseManager db = plugin.getDatabaseManager();
             if (db != null && db.isConnected()) {
-                db.saveRewards(uuid, snapshot);
+                // Write the CURRENT cached state, not the snapshot taken at quit time, and hold the
+                // same per-uuid lock the claim paths take so a claim cannot commit underneath us.
+                //
+                // saveRewards is a blind full-row upsert. This task can sit in the scheduler while
+                // the pool is busy, and the cache is deliberately kept until it lands - so a player
+                // who reconnects and claims in that window would have their fresh last_claim_day,
+                // streak and booster silently reverted to the quit-time values by this write. The
+                // GUI still reads the cache and looks correct, so the reward only reappears on the
+                // next rejoin: a repeatable duplicate claim.
+                //
+                // Holding the lock across the write means a reconnected player's claim waits for
+                // this one row write. That contention is per-uuid and only for a player who quit
+                // moments ago, which is a fair trade for not corrupting claim state.
+                synchronized (lockFor(uuid)) {
+                    PlayerRewards live = cache.get(uuid);
+                    db.saveRewards(uuid, live != null ? live.toRow() : snapshot);
+                }
             }
             Bukkit.getScheduler().runTask(plugin, () -> {
                 // Only evict if they are still gone - a reconnect in the meantime must keep its

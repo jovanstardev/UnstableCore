@@ -36,6 +36,14 @@ public final class KitManager {
 
     private final UnstableCore plugin;
     private final Map<String, Kit> kits = new LinkedHashMap<>();
+    /**
+     * Largest per-kit cooldown across all loaded kits, recomputed whenever kits are (re)loaded.
+     *
+     * <p>Volatile and precomputed rather than derived by iterating {@link #kits} on demand: the
+     * async autosave asks for this while the main thread may be reloading kits, and that map is a
+     * plain LinkedHashMap - iterating it off-thread risks ConcurrentModificationException.
+     */
+    private volatile int maxKitCooldownSeconds;
     private final Map<UUID, String> selected = new ConcurrentHashMap<>();
     private final Map<UUID, Set<String>> unlocked = new ConcurrentHashMap<>();
     private final Map<UUID, Map<String, ItemStack[]>> layouts = new ConcurrentHashMap<>();
@@ -151,6 +159,7 @@ public final class KitManager {
 
     public void reloadKitsFromConfig() {
         kits.clear();
+        maxKitCooldownSeconds = 0;
         File[] files = kitsFolder.listFiles((dir, name) -> name.toLowerCase(Locale.ROOT).endsWith(".yml"));
         if (files == null) {
             return;
@@ -172,6 +181,16 @@ public final class KitManager {
             kits.put(id, new Kit(id, display, icon, slot, perm, tier, price, nameColor, contents,
                     kitCooldown));
         }
+        int max = 0;
+        for (Kit kit : kits.values()) {
+            max = Math.max(max, kit.getCooldownSeconds());
+        }
+        maxKitCooldownSeconds = max;
+    }
+
+    /** Largest per-kit cooldown in seconds, or 0 when no kit overrides the shared cooldown. */
+    public int getMaxKitCooldownSeconds() {
+        return maxKitCooldownSeconds;
     }
 
     /**
