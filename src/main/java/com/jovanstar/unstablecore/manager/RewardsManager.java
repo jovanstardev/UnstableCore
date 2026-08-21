@@ -160,7 +160,13 @@ public final class RewardsManager {
                 Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
                     DatabaseManager db = plugin.getDatabaseManager();
                     if (db != null && db.isConnected()) {
-                        db.saveRewards(uuid, snapshot);
+                        // Same hazard as unload(): saveRewards is a blind full-row upsert, so a
+                        // claim committed between capturing this snapshot and the write landing
+                        // would be reverted. Re-read the live cache under the per-uuid lock.
+                        synchronized (lockFor(uuid)) {
+                            PlayerRewards live = cache.get(uuid);
+                            db.saveRewards(uuid, live != null ? live.toRow() : snapshot);
+                        }
                     }
                 });
             }

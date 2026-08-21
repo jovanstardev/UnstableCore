@@ -182,9 +182,15 @@ public final class LoadoutManager {
             return;
         }
         resetCooldown(uuid);
-        long until = System.currentTimeMillis() + (seconds * 1000L);
-        noCooldownUntil.merge(uuid, until, Math::max);
-        long finalUntil = noCooldownUntil.get(uuid);
+        // Extend from whatever the player already has, not from now. merge(..., Math::max) against
+        // "now + seconds" meant a second purchase while the first was still running was silently
+        // swallowed - max(oldExpiry, now + 1h) is the old expiry whenever more than a moment of it
+        // remains - so the player paid full price for nothing. Stacking from the current expiry
+        // gives them the time they actually bought.
+        long now = System.currentTimeMillis();
+        long base = Math.max(now, noCooldownUntil.getOrDefault(uuid, now));
+        long finalUntil = base + (seconds * 1000L);
+        noCooldownUntil.put(uuid, finalUntil);
         DatabaseManager db = plugin.getDatabaseManager();
         if (db != null && db.isConnected()) {
             Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> db.upsertLoadoutNoCooldown(uuid, finalUntil));

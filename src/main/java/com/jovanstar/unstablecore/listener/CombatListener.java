@@ -35,7 +35,15 @@ public final class CombatListener implements Listener {
 
     private static final long ELYTRA_MSG_COOLDOWN_MS = 2000L;
 
-    private record CombatTag(UUID attacker, long atMs) {
+    /**
+     * @param other      the other participant in the exchange
+     * @param wasVictim  true only for the player who actually took the hit. Both sides are tagged
+     *                   so neither can use an arena switch or spectate as a mid-fight escape, but
+     *                   only a victim's tag may be converted into a combat-log kill - crediting
+     *                   the aggressor's own disconnect to their target would let two accounts
+     *                   trade a hit, both log out, and farm two kills per exchange.
+     */
+    private record CombatTag(UUID other, long atMs, boolean wasVictim) {
     }
 
     private final UnstableCore plugin;
@@ -145,7 +153,11 @@ public final class CombatListener implements Listener {
         if (lastRealDeath != null && now - lastRealDeath < windowMs) {
             return;
         }
-        Player killer = plugin.getServer().getPlayer(tag.attacker());
+        if (!tag.wasVictim()) {
+            // This player dealt the hit rather than taking it; their disconnect is not a death.
+            return;
+        }
+        Player killer = plugin.getServer().getPlayer(tag.other());
         if (killer == null || !killer.isOnline() || killer.getUniqueId().equals(uuid)) {
             return;
         }
@@ -210,7 +222,13 @@ public final class CombatListener implements Listener {
             return;
         }
 
-        combatTags.put(victim.getUniqueId(), new CombatTag(attacker.getUniqueId(), System.currentTimeMillis()));
+        // Tag both sides. Tagging only the victim meant the aggressor was never "in combat", so
+        // the player winning a fight could switch arenas or spectate mid-fight while their target
+        // was pinned - the exact escape the tag exists to prevent, handed to the one player who
+        // should least have it.
+        long taggedAt = System.currentTimeMillis();
+        combatTags.put(victim.getUniqueId(), new CombatTag(attacker.getUniqueId(), taggedAt, true));
+        combatTags.put(attacker.getUniqueId(), new CombatTag(victim.getUniqueId(), taggedAt, false));
 
         // Hit Sound
         if (victim.getHealth() - event.getFinalDamage() > 0) {

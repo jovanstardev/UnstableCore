@@ -265,6 +265,28 @@ public final class HeldShulkerListener implements Listener {
         }
     }
 
+    /**
+     * Settles every open held-shulker session. Called from onDisable, where nothing else would:
+     * a session's staged contents live in a detached Inventory that only exists in memory, so a
+     * server stop or plugin reload with a box open threw away whatever the player had moved into
+     * it - and anything they had pulled out of the box was already gone from the item itself.
+     *
+     * <p>Writes back synchronously; forceClose is false because closing an inventory during
+     * disable would need a scheduler that no longer accepts tasks, and the server closes every
+     * open view on shutdown anyway.
+     */
+    public void shutdown() {
+        for (UUID uuid : new java.util.ArrayList<>(sessions.keySet())) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null) {
+                sessions.remove(uuid);
+                continue;
+            }
+            closeAndSave(player, false);
+        }
+        sessions.clear();
+    }
+
     private void closeAndSave(Player player, boolean forceClose) {
         Session session = sessions.remove(player.getUniqueId());
         if (session == null) {

@@ -182,6 +182,15 @@ public final class ShopManager {
             return false;
         }
 
+        // Refuse before charging: with no cooldown running there is nothing to skip, and the
+        // player would otherwise pay full price for a no-op.
+        if (resetCd && noCdSeconds <= 0L && loadouts != null
+                && loadouts.remainingMillis(player.getUniqueId()) <= 0L) {
+            MessageUtil.send(player, config().getString("messages.no-cooldown-active",
+                    "&cYou have no loadout cooldown to skip right now."));
+            return false;
+        }
+
         if (price > 0 && !plugin.getEconomyManager().takeExact(player, price)) {
             MessageUtil.send(player, MessageUtil.apply(
                     config().getString("messages.cannot-afford", "&cYou need &e{price} &ccoins for that."),

@@ -170,6 +170,11 @@ public final class UnstableCore extends JavaPlugin {
         if (itemCleanupManager != null) {
             itemCleanupManager.stop();
         }
+        if (heldShulkerListener != null) {
+            // Must run before inventories are torn down: staged shulker contents only exist in a
+            // detached Inventory until the session is settled back into the item.
+            heldShulkerListener.shutdown();
+        }
         if (mapVoteManager != null) {
             mapVoteManager.cancel();
         }

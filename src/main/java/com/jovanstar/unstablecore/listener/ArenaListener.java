@@ -557,7 +557,11 @@ public final class ArenaListener implements Listener {
         String tracked = plugin.getArenaManager().getPlayerArena(player.getUniqueId());
         if (tracked != null) {
             arena = plugin.getArenaManager().getArena(tracked);
-            if (arena != null && !arena.contains(to)) {
+            // Also clear when the arena is GONE, not only when the player walked out of it. An
+            // arena deleted or renamed while someone stood in it left them tagged to an id that
+            // no longer resolves, and nothing could ever clear it - so every "are you busy in an
+            // arena" gate answered yes for the rest of their session.
+            if (arena == null || !arena.contains(to)) {
                 arena = null;
                 plugin.getArenaManager().setPlayerArena(player.getUniqueId(), null);
             }

@@ -34,6 +34,7 @@ messages:
   cannot-afford: "&cYou need &e{price} &ccoins for that."
   no-economy: "&cEconomy is unavailable."
   inventory-full: "&cYour inventory is full."
+  no-cooldown-active: "&cYou have no loadout cooldown to skip right now."
   loadout-cooldown-skipped: "&aLoadout cooldown skipped. Normal cooldown applies after your next /loadout."
   loadout-nocooldown-granted: "&aNo /loadout cooldown for &f{time}&a. Normal cooldown returns after that."
 
@@ -185,7 +186,7 @@ categories:
         lore:
           - "&7No /loadout cooldown for 15 minutes."
           - "&7After that, normal cooldown returns."
-        price: 500
+        price: 1250
         give-item: false
         loadout-nocooldown-seconds: 900
       no_cd_1h:
@@ -196,7 +197,7 @@ categories:
         lore:
           - "&7No /loadout cooldown for 1 hour."
           - "&7After that, normal cooldown returns."
-        price: 1000
+        price: 5000
         give-item: false
         loadout-nocooldown-seconds: 3600
       coin_boost_2x:
