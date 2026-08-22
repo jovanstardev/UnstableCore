@@ -13,7 +13,13 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class LoadoutManager {
 
     public static final String NO_COOLDOWN_PERMISSION = "unstablecore.loadout.nocooldown";
-    public static final String KIT_NO_COOLDOWN_PERMISSION = "unstablecore.kit.nocooldown";
+    /**
+     * Kept out of the {@code unstablecore.kit.*} namespace on purpose. Kit unlocks live there
+     * ({@code unstablecore.kit.<id>}), so naming the bypass {@code unstablecore.kit.nocooldown}
+     * meant any rank granted {@code unstablecore.kit.*} to unlock every kit also got a
+     * permanent cooldown bypass.
+     */
+    public static final String KIT_NO_COOLDOWN_PERMISSION = "unstablecore.loadout.kit-nocooldown";
 
     private final UnstableCore plugin;
     private final Map<UUID, Long> lastUse = new ConcurrentHashMap<>();

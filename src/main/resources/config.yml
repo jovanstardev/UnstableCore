@@ -399,7 +399,10 @@ held-shulker:
   title: "&dShulker Box"
 
 kits:
-  unlock-by-permission: false
+  # Kit files already define unstablecore.kit.<id>. Those nodes always unlock the kit
+  # (purchase still works for players without the node). Kept as documentation; the
+  # check is no longer gated on this flag.
+  unlock-by-permission: true
   default-kit: law
 
 kit-rank:
