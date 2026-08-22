@@ -566,12 +566,17 @@ public final class KitManager {
         if (set != null && set.contains(kit.getId().toLowerCase(Locale.ROOT))) {
             return true;
         }
-        if (plugin.getConfig().getBoolean("kits.unlock-by-permission", false)
-                && kit.getPermission() != null && !kit.getPermission().isBlank()
-                && player.hasPermission(kit.getPermission())) {
-            return true;
-        }
-        return false;
+        return hasKitPermission(player, kit);
+    }
+
+    /**
+     * Rank / LuckPerms grants such as {@code unstablecore.kit.manepear} unlock that kit.
+     * This used to be hidden behind {@code kits.unlock-by-permission} (default false), so
+     * every kit file's permission node was ignored and ranks could not unlock anything.
+     */
+    private boolean hasKitPermission(Player player, Kit kit) {
+        String perm = kit.getPermission();
+        return perm != null && !perm.isBlank() && player.hasPermission(perm);
     }
 
     public boolean isStarter(Kit kit) {
