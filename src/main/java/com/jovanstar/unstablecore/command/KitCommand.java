@@ -38,7 +38,7 @@ public final class KitCommand implements CommandExecutor, TabCompleter {
                              @NotNull String label, @NotNull String[] args) {
         if (!sender.hasPermission("unstablecore.admin")) {
             if (sender instanceof Player player) {
-                KitsGui.open(plugin, player);
+                handlePlayerKit(player, args);
                 return true;
             }
             MessageUtil.sendConfig(sender, "no-permission", Map.of());
@@ -238,9 +238,59 @@ public final class KitCommand implements CommandExecutor, TabCompleter {
                 kits.load();
                 MessageUtil.sendConfig(sender, "kit-reloaded", Map.of());
             }
-            default -> sendHelp(sender);
+            default -> {
+                Kit named = kits.getKit(sub);
+                if (named != null && sender instanceof Player player) {
+                    selectOwnedKit(player, named);
+                } else {
+                    sendHelp(sender);
+                }
+            }
         }
         return true;
+    }
+
+    /**
+     * Players use {@code /kit} for the browser and {@code /kit <id>} to select a kit they have
+     * unlocked - including via the permission node in that kit's YAML.
+     */
+    private void handlePlayerKit(Player player, String[] args) {
+        if (args.length == 0) {
+            KitsGui.open(plugin, player);
+            return;
+        }
+        Kit kit = plugin.getKitManager().getKit(args[0]);
+        if (kit == null) {
+            MessageUtil.sendConfig(player, "kit-not-found", Map.of("kit", args[0]));
+            return;
+        }
+        selectOwnedKit(player, kit);
+    }
+
+    private void selectOwnedKit(Player player, Kit kit) {
+        KitManager kits = plugin.getKitManager();
+        if (!kits.isUnlocked(player, kit)) {
+            String perm = kit.getPermission();
+            if (perm != null && !perm.isBlank()
+                    && plugin.getConfig().getBoolean("kits.unlock-by-permission", true)) {
+                String template = plugin.getConfig().getString("messages.kit-need-permission",
+                        "&cYou need &f{permission} &cto use &f{kit}&c.");
+                if (template == null || template.isBlank()) {
+                    template = "&cYou need &f{permission} &cto use &f{kit}&c.";
+                }
+                MessageUtil.send(player, MessageUtil.apply(template, Map.of(
+                        "kit", kit.getDisplayName(),
+                        "permission", perm.trim()
+                )));
+            } else {
+                MessageUtil.sendConfig(player, "kit-locked", Map.of("kit", kit.getDisplayName()));
+            }
+            return;
+        }
+        if (kits.selectKit(player, kit.getId())) {
+            MessageUtil.sendConfig(player, "kit-selected", Map.of("kit", kit.getDisplayName()));
+            KitsGui.equipSelectedOrConfirm(plugin, player);
+        }
     }
 
     private static int nextFreeSlot(KitManager kits) {
@@ -269,6 +319,7 @@ public final class KitCommand implements CommandExecutor, TabCompleter {
 
     private static void sendHelp(CommandSender sender) {
         MessageUtil.send(sender, "&d✦ &fKit Admin");
+        MessageUtil.send(sender, "&e/kit <name> &7- select a kit (uses that kit YAML permission)");
         MessageUtil.send(sender, "&e/kit create <id> [slot] &7- create from inventory + hand icon");
         MessageUtil.send(sender, "&e/kit delete <id>");
         MessageUtil.send(sender, "&e/kit edit <id> &7- edit default contents GUI");
@@ -282,14 +333,23 @@ public final class KitCommand implements CommandExecutor, TabCompleter {
     public @Nullable List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command,
                                                 @NotNull String alias, @NotNull String[] args) {
         if (!sender.hasPermission("unstablecore.admin")) {
+            if (args.length == 1 && sender instanceof Player player) {
+                List<String> ids = new ArrayList<>();
+                for (Kit kit : plugin.getKitManager().getUnlockedKits(player)) {
+                    ids.add(kit.getId());
+                }
+                return filter(ids, args[0]);
+            }
             return List.of();
         }
         if (args.length == 1) {
-            return filter(List.of(
+            List<String> options = new ArrayList<>(List.of(
                     "create", "delete", "edit", "setcontents", "setfrominv",
                     "seticon", "setslot", "setname", "preview",
                     "unlock", "lock", "list", "reload"
-            ), args[0]);
+            ));
+            options.addAll(plugin.getKitManager().getKits().keySet());
+            return filter(options, args[0]);
         }
         if (args.length == 2) {
             String sub = args[0].toLowerCase(Locale.ROOT);

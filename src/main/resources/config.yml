@@ -399,9 +399,9 @@ held-shulker:
   title: "&dShulker Box"
 
 kits:
-  # Kit files already define unstablecore.kit.<id>. Those nodes always unlock the kit
-  # (purchase still works for players without the node). Kept as documentation; the
-  # check is no longer gated on this flag.
+  # Each kits/<id>.yml has a permission: (unstablecore.kit.<id>). When true, that node
+  # unlocks the kit (LuckPerms / ranks). Purchase still works for players without it.
+  # Nodes are registered as default:false so ops do not automatically have every kit.
   unlock-by-permission: true
   default-kit: law
 
@@ -515,6 +515,7 @@ messages:
   loadout-cooldown-reset: "&aReset loadout cooldown for &f{player}&a."
   kit-none-selected: "&cYou have no kit selected. Open &f/kits &cand pick one."
   kit-locked: "&cYou have not unlocked &f{kit}&c."
+  kit-need-permission: "&cYou need &f{permission} &cto use &f{kit}&c."
   kit-cannot-afford: "&cYou need &e{price} coins &cto unlock &f{kit}&c."
   kit-purchased: "&aUnlocked &f{kit} &afor &e{price} coins&a!"
   kit-selected: "&aSelected kit &f{kit}&a."

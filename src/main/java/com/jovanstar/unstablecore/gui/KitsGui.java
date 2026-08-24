@@ -95,13 +95,18 @@ public final class KitsGui implements InventoryHolder {
                 );
             } else {
                 builder.name("&cLocked &8| " + color + "&l" + kit.getDisplayName());
-                builder.lore(
-                        tierLine(kit),
-                        "&a$ &7Price: &e" + EconomyManager.formatCommas(kit.getPrice()) + " coins",
-                        "",
-                        "&6> Left-click &fto unlock",
-                        "&b> Right-click &fto preview"
-                );
+                java.util.List<String> lore = new java.util.ArrayList<>();
+                lore.add(tierLine(kit));
+                String perm = kit.getPermission();
+                if (plugin.getConfig().getBoolean("kits.unlock-by-permission", true)
+                        && perm != null && !perm.isBlank()) {
+                    lore.add("&7Permission: &f" + perm.trim());
+                }
+                lore.add("&a$ &7Price: &e" + EconomyManager.formatCommas(kit.getPrice()) + " coins");
+                lore.add("");
+                lore.add("&6> Left-click &fto unlock");
+                lore.add("&b> Right-click &fto preview");
+                builder.lore(lore);
             }
             inventory.setItem(slot, builder.build());
             kitBySlot.put(slot, kit.getId());
@@ -189,8 +194,23 @@ public final class KitsGui implements InventoryHolder {
         if (plugin.getKitManager().selectKit(player, kit.getId())) {
             pling(player);
             MessageUtil.sendConfig(player, "kit-selected", Map.of("kit", kit.getDisplayName()));
-            autoEquipIfEmpty(player);
+            equipSelectedOrConfirm(plugin, player);
             fill(player);
+        }
+    }
+
+    /** Lets {@code /kit <name>} reuse the same empty-inventory auto-equip as the GUI. */
+    public static void equipSelectedOrConfirm(UnstableCore plugin, Player player) {
+        if (plugin == null || player == null) {
+            return;
+        }
+        if (!KitManager.isInventoryEmpty(player)) {
+            MessageUtil.sendConfig(player, "kit-selected-inventory-not-empty", Map.of());
+            return;
+        }
+        LoadoutManager loadouts = plugin.getLoadoutManager();
+        if (loadouts != null) {
+            loadouts.tryGive(player, true);
         }
     }
 
@@ -200,14 +220,7 @@ public final class KitsGui implements InventoryHolder {
      * we refuse to silently wipe them and ask them to empty their inventory first instead.
      */
     private void autoEquipIfEmpty(Player player) {
-        if (!KitManager.isInventoryEmpty(player)) {
-            MessageUtil.sendConfig(player, "kit-selected-inventory-not-empty", Map.of());
-            return;
-        }
-        LoadoutManager loadouts = plugin.getLoadoutManager();
-        if (loadouts != null) {
-            loadouts.tryGive(player, true);
-        }
+        equipSelectedOrConfirm(plugin, player);
     }
 
     private void tryUnlock(Player player, Kit kit) {
@@ -220,7 +233,20 @@ public final class KitsGui implements InventoryHolder {
             return;
         }
         if (kit.getPrice() <= 0) {
-            MessageUtil.send(player, "&cThis kit is not available for purchase.");
+            String perm = kit.getPermission();
+            if (perm != null && !perm.isBlank()) {
+                String template = plugin.getConfig().getString("messages.kit-need-permission",
+                        "&cYou need &f{permission} &cto use &f{kit}&c.");
+                if (template == null || template.isBlank()) {
+                    template = "&cYou need &f{permission} &cto use &f{kit}&c.";
+                }
+                MessageUtil.send(player, MessageUtil.apply(template, Map.of(
+                        "kit", kit.getDisplayName(),
+                        "permission", perm.trim()
+                )));
+            } else {
+                MessageUtil.send(player, "&cThis kit is not available for purchase.");
+            }
             return;
         }
         EconomyManager eco = plugin.getEconomyManager();

@@ -37,9 +37,8 @@ commands:
     description: Opens the map vote GUI for players inside the arena during a vote
     usage: /mapvote
   kit:
-    description: Admin kit create/edit commands
-    permission: unstablecore.admin
-    usage: /kit <create|delete|edit|...>
+    description: Select a kit you have permission for, or manage kits as admin
+    usage: /kit [name|create|delete|edit|...]
   shop:
     description: Open the shop
     usage: /shop [category]
@@ -116,6 +115,9 @@ permissions:
   unstablecore.admin:
     description: Access to all UnstableCore admin commands
     default: op
+  unstablecore.kit:
+    description: Parent node that unlocks every kit (children are unstablecore.kit.<id> from kits/*.yml)
+    default: false
   unstablecore.loadout.nocooldown:
     description: Bypass /loadout cooldown permanently
     default: false

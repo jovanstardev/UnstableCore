@@ -11,6 +11,9 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.permissions.Permission;
+import org.bukkit.permissions.PermissionDefault;
+import org.bukkit.plugin.PluginManager;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
@@ -40,6 +43,8 @@ public final class KitManager {
     private final Map<UUID, Set<String>> unlocked = new ConcurrentHashMap<>();
     private final Map<UUID, Map<String, ItemStack[]>> layouts = new ConcurrentHashMap<>();
     private final Set<UUID> purchasing = ConcurrentHashMap.newKeySet();
+    /** Kit permission nodes this manager registered so a reload can drop ones that no longer exist. */
+    private final Set<String> registeredKitPermissions = new HashSet<>();
     private final Object saveLock = new Object();
     private BukkitTask saveTask;
     private boolean saveDirty;
@@ -163,12 +168,76 @@ public final class KitManager {
             Material icon = resolveMaterial(kitConfig.getString("icon", "STONE"), Material.STONE);
             int slot = kitConfig.getInt("slot", 0);
             String perm = kitConfig.getString("permission", "unstablecore.kit." + id);
+            if (perm != null) {
+                perm = perm.trim();
+            }
+            if (perm == null || perm.isBlank()) {
+                perm = "unstablecore.kit." + id;
+            }
             String tier = kitConfig.getString("tier", "Epic");
             double price = kitConfig.getDouble("price", 0);
             String nameColor = kitConfig.getString("name-color", "&d");
             ItemStack[] contents = readContents(kitConfig.getConfigurationSection("contents"));
             warnAboutReservedSlots(id, contents);
             kits.put(id, new Kit(id, display, icon, slot, perm, tier, price, nameColor, contents));
+        }
+        registerKitPermissions();
+    }
+
+    /**
+     * Publishes each kit YAML {@code permission} to Bukkit as {@code default: false}.
+     *
+     * <p>Unregistered nodes default to OP, so every operator looked unlocked for every kit and
+     * granting {@code unstablecore.kit.<id>} in LuckPerms appeared to do nothing. Registering
+     * them also lists the nodes in permission editors and lets {@code unstablecore.kit} grant
+     * every kit as a parent.
+     */
+    private void registerKitPermissions() {
+        PluginManager pm = plugin.getServer().getPluginManager();
+        for (String name : registeredKitPermissions) {
+            Permission old = pm.getPermission(name);
+            if (old != null) {
+                pm.removePermission(old);
+            }
+        }
+        registeredKitPermissions.clear();
+
+        Permission parent = pm.getPermission("unstablecore.kit");
+        if (parent == null) {
+            parent = new Permission("unstablecore.kit", "Unlock all UnstableCore kits",
+                    PermissionDefault.FALSE);
+            pm.addPermission(parent);
+        } else {
+            parent.setDefault(PermissionDefault.FALSE);
+        }
+
+        for (Kit kit : kits.values()) {
+            String name = kit.getPermission();
+            if (name == null || name.isBlank()) {
+                continue;
+            }
+            name = name.trim();
+            if (name.equalsIgnoreCase("unstablecore.kit")
+                    || name.equalsIgnoreCase("unstablecore.admin")) {
+                continue;
+            }
+            Permission child = pm.getPermission(name);
+            if (child == null) {
+                child = new Permission(name, "Unlock the " + kit.getDisplayName() + " kit",
+                        PermissionDefault.FALSE);
+                pm.addPermission(child);
+            } else {
+                child.setDefault(PermissionDefault.FALSE);
+            }
+            if (!parent.getChildren().containsKey(child.getName())) {
+                child.addParent(parent, true);
+            }
+            registeredKitPermissions.add(name);
+        }
+
+        parent.recalculatePermissibles();
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            player.recalculatePermissions();
         }
     }
 
@@ -487,6 +556,7 @@ public final class KitManager {
                 "unstablecore.kit." + key, "Epic", 0, "&d", contents);
         kits.put(key, kit);
         saveKits();
+        registerKitPermissions();
         return true;
     }
 
@@ -499,6 +569,7 @@ public final class KitManager {
         if (file.exists() && !file.delete()) {
             plugin.getLogger().warning("Could not delete kit file: " + file.getName());
         }
+        registerKitPermissions();
         return true;
     }
 
@@ -508,6 +579,7 @@ public final class KitManager {
         }
         kits.put(kit.getId(), kit);
         saveKitFile(kit);
+        registerKitPermissions();
     }
 
     public boolean isUnlocked(Player player, Kit kit) {
@@ -526,12 +598,15 @@ public final class KitManager {
 
     /**
      * Rank / LuckPerms grants such as {@code unstablecore.kit.manepear} unlock that kit.
-     * This used to be hidden behind {@code kits.unlock-by-permission} (default false), so
-     * every kit file's permission node was ignored and ranks could not unlock anything.
+     * Gated on {@code kits.unlock-by-permission} (default true). Nodes are registered as
+     * {@code default: false} so operators do not automatically pass this check.
      */
     private boolean hasKitPermission(Player player, Kit kit) {
+        if (!plugin.getConfig().getBoolean("kits.unlock-by-permission", true)) {
+            return false;
+        }
         String perm = kit.getPermission();
-        return perm != null && !perm.isBlank() && player.hasPermission(perm);
+        return perm != null && !perm.isBlank() && player.hasPermission(perm.trim());
     }
 
     public boolean isStarter(Kit kit) {
