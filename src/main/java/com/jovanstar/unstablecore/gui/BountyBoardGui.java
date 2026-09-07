@@ -10,7 +10,6 @@ import com.jovanstar.unstablecore.util.ItemBuilder;
 import com.jovanstar.unstablecore.util.MessageUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
-import org.bukkit.OfflinePlayer;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
@@ -161,11 +160,11 @@ public final class BountyBoardGui implements InventoryHolder {
 
     private ItemStack bountyHead(Bounty bounty) {
         FileConfiguration cfg = cfg();
-        OfflinePlayer target = Bukkit.getOfflinePlayer(bounty.target());
         ItemStack head = new ItemBuilder(Material.PLAYER_HEAD).build();
         SkullMeta meta = (SkullMeta) head.getItemMeta();
         if (meta != null) {
-            meta.setOwningPlayer(target);
+            // Cached textures - an offline target must not cost a Mojang lookup per board open.
+            plugin.getSkinCacheManager().applySkull(meta, bounty.target(), bounty.targetName());
             head.setItemMeta(meta);
         }
         Map<String, String> ph = Map.of(

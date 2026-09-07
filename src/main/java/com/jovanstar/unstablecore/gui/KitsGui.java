@@ -10,6 +10,7 @@ import com.jovanstar.unstablecore.util.MessageUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.Sound;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.ClickType;
 import org.bukkit.inventory.Inventory;
@@ -55,6 +56,8 @@ public final class KitsGui implements InventoryHolder {
                 .lore("&7Select a kit to fight with.")
                 .hideAttributes()
                 .build());
+
+        placeCategoryHeaders();
 
         String selectedId = kits.getSelectedId(player.getUniqueId());
         LoadoutManager loadouts = plugin.getLoadoutManager();
@@ -139,6 +142,37 @@ public final class KitsGui implements InventoryHolder {
                 .build());
     }
 
+    /**
+     * Draws the decorative section labels configured under guis.kits.categories. A label owns no
+     * kit - clicks on it do nothing - and it is drawn before the kits, so a kit whose slot lands
+     * on a label simply covers it: something the player can buy matters more than a sign.
+     */
+    private void placeCategoryHeaders() {
+        ConfigurationSection categories = plugin.getConfig().getConfigurationSection("guis.kits.categories");
+        if (categories == null) {
+            return;
+        }
+        for (String key : categories.getKeys(false)) {
+            ConfigurationSection sec = categories.getConfigurationSection(key);
+            if (sec == null) {
+                continue;
+            }
+            int slot = sec.getInt("slot", -1);
+            if (slot < 0 || slot >= 54 || slot == EDIT_SLOT || slot == CLOSE_SLOT || slot == INFO_SLOT) {
+                continue;
+            }
+            Material material = Material.matchMaterial(sec.getString("material", "OAK_SIGN"));
+            if (material == null || material.isAir()) {
+                material = Material.OAK_SIGN;
+            }
+            inventory.setItem(slot, new ItemBuilder(material)
+                    .name(sec.getString("name", "&6&l" + key.toUpperCase(Locale.ROOT)))
+                    .lore(sec.getStringList("lore"))
+                    .hideAttributes()
+                    .build());
+        }
+    }
+
     private static boolean isStarter(Kit kit) {
         return "starter".equalsIgnoreCase(kit.getTier());
     }
@@ -201,7 +235,7 @@ public final class KitsGui implements InventoryHolder {
         if (plugin.getKitManager().selectKit(player, kit.getId())) {
             pling(player);
             MessageUtil.sendConfig(player, "kit-selected", Map.of("kit", kit.getDisplayName()));
-            autoEquipIfEmpty(player);
+            autoEquipIfEmpty(plugin, player);
             fill(player);
         }
     }
@@ -212,7 +246,7 @@ public final class KitsGui implements InventoryHolder {
      * we never wipe them silently: a {@link KitConfirmGui} asks first, with a bin-and-equip
      * button, a "sort it myself" /trash shortcut, and a cancel.
      */
-    private void autoEquipIfEmpty(Player player) {
+    static void autoEquipIfEmpty(UnstableCore plugin, Player player) {
         LoadoutManager loadouts = plugin.getLoadoutManager();
         if (loadouts == null) {
             return;
@@ -238,7 +272,7 @@ public final class KitsGui implements InventoryHolder {
         if (isStarter(kit)) {
             if (plugin.getKitManager().selectKit(player, kit.getId())) {
                 pling(player);
-                autoEquipIfEmpty(player);
+                autoEquipIfEmpty(plugin, player);
             }
             fill(player);
             return;
@@ -259,21 +293,9 @@ public final class KitsGui implements InventoryHolder {
             ));
             return;
         }
-        if (!plugin.getKitManager().tryPurchaseUnlock(player, kit)) {
-            MessageUtil.sendConfig(player, "kit-cannot-afford", Map.of(
-                    "kit", kit.getDisplayName(),
-                    "price", EconomyManager.formatCommas(kit.getPrice())
-            ));
-            return;
-        }
-        plugin.getKitManager().selectKit(player, kit.getId());
-        MessageUtil.sendConfig(player, "kit-purchased", Map.of(
-                "kit", kit.getDisplayName(),
-                "price", EconomyManager.formatCommas(kit.getPrice())
-        ));
-        autoEquipIfEmpty(player);
-        pling(player);
-        fill(player);
+        // Never buy on the raw click: a misclick must not spend coins. The purchase itself -
+        // with every check re-run at confirm time - lives in KitPurchaseConfirmGui.
+        KitPurchaseConfirmGui.open(plugin, player, kit);
     }
 
     private static void pling(Player player) {

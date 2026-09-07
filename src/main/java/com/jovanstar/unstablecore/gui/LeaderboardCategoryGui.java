@@ -1,6 +1,5 @@
 package com.jovanstar.unstablecore.gui;
 
-import com.destroystokyo.paper.profile.PlayerProfile;
 import com.jovanstar.unstablecore.UnstableCore;
 import com.jovanstar.unstablecore.leaderboard.LeaderboardCategory;
 import com.jovanstar.unstablecore.leaderboard.LeaderboardEntry;
@@ -141,8 +140,9 @@ public final class LeaderboardCategoryGui implements InventoryHolder {
         ItemStack head = new ItemStack(Material.PLAYER_HEAD);
         SkullMeta meta = (SkullMeta) head.getItemMeta();
         if (meta != null) {
-            PlayerProfile profile = Bukkit.createProfile(entry.uuid(), entry.name());
-            meta.setPlayerProfile(profile);
+            // Never hand Paper a texture-less profile: it would resolve every head against the
+            // Mojang session server on send (45 per page) and get the server rate limited.
+            plugin.getSkinCacheManager().applySkull(meta, entry.uuid(), entry.name());
             head.setItemMeta(meta);
         }
         return new ItemBuilder(head)
@@ -179,7 +179,7 @@ public final class LeaderboardCategoryGui implements InventoryHolder {
         ItemStack head = new ItemStack(Material.PLAYER_HEAD);
         SkullMeta meta = (SkullMeta) head.getItemMeta();
         if (meta != null) {
-            meta.setPlayerProfile(Bukkit.createProfile(viewer.getUniqueId(), viewer.getName()));
+            plugin.getSkinCacheManager().applySkull(meta, viewer.getUniqueId(), viewer.getName());
             head.setItemMeta(meta);
         }
         String name = MessageUtil.apply(cfg.getString("gui.buttons.viewer.name", "&#00ffae{name}"), ph);

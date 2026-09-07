@@ -32,10 +32,13 @@ public final class KitConfirmGui implements InventoryHolder {
     private final UnstableCore plugin;
     private final Inventory inventory;
     private final String kitId;
+    private final long armedAtMillis;
 
     private KitConfirmGui(UnstableCore plugin, Player player, Kit kit) {
         this.plugin = plugin;
         this.kitId = kit.getId();
+        this.armedAtMillis = System.currentTimeMillis()
+                + Math.max(0L, plugin.getConfig().getLong("guis.confirm-arm-ms", 800L));
         this.inventory = Bukkit.createInventory(this, 27,
                 MessageUtil.parse("&c⚠ &fBin items &7& &fequip " + kit.getDisplayName() + "&7?"));
         fill(kit);
@@ -86,12 +89,26 @@ public final class KitConfirmGui implements InventoryHolder {
 
     public void handleClick(Player player, int slot) {
         switch (slot) {
-            case CONFIRM_SLOT -> confirmEquip(player);
+            case CONFIRM_SLOT -> {
+                if (armed()) {
+                    confirmEquip(player);
+                }
+            }
             case TRASH_SLOT -> DisposalGui.openWithReturn(plugin, player);
             case CANCEL_SLOT -> KitsGui.open(plugin, player);
             default -> {
             }
         }
+    }
+
+    /**
+     * Swallows clicks on the destructive confirm button for the first moments after this screen
+     * opens, so spam-clicking a kit in the kits menu cannot click through onto a wipe button
+     * that opens at the same cursor position. Cancel is deliberately not gated - backing out
+     * must always work instantly.
+     */
+    private boolean armed() {
+        return System.currentTimeMillis() >= armedAtMillis;
     }
 
     private void confirmEquip(Player player) {

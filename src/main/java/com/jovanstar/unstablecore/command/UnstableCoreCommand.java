@@ -155,6 +155,7 @@ public final class UnstableCoreCommand implements CommandExecutor, TabCompleter 
             MessageUtil.send(sender, "&e/unstablecore arena <name> type <mace|nomace>");
             MessageUtil.send(sender, "&e/unstablecore arena delete <name>");
             MessageUtil.send(sender, "&e/unstablecore arena rotate");
+            MessageUtil.send(sender, "&e/unstablecore arena resetall");
             MessageUtil.send(sender, "&e/unstablecore arena list");
             return;
         }
@@ -203,6 +204,12 @@ public final class UnstableCoreCommand implements CommandExecutor, TabCompleter 
             } else {
                 MessageUtil.sendConfig(sender, "arena-not-found", Map.of());
             }
+            return;
+        }
+
+        if (sub.equals("resetall")) {
+            plugin.getArenaManager().runFullReset();
+            MessageUtil.send(sender, "&aArena reset started: joins locked, players evacuated, regeneration queued.");
             return;
         }
 
@@ -543,11 +550,11 @@ public final class UnstableCoreCommand implements CommandExecutor, TabCompleter 
         }
         if (args[0].equalsIgnoreCase("arena")) {
             if (args.length == 2) {
-                List<String> opts = new ArrayList<>(List.of("create", "delete", "rotate", "list", "setnewbie", "permanent"));
+                List<String> opts = new ArrayList<>(List.of("create", "delete", "rotate", "resetall", "list", "setnewbie", "permanent"));
                 opts.addAll(plugin.getArenaManager().getArenas().keySet());
                 return filter(opts, args[1]);
             }
-            if (args.length == 3 && !List.of("create", "delete", "rotate", "list", "setnewbie", "permanent")
+            if (args.length == 3 && !List.of("create", "delete", "rotate", "resetall", "list", "setnewbie", "permanent")
                     .contains(args[1].toLowerCase())) {
                 return filter(List.of("center", "type"), args[2]);
             }

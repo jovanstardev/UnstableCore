@@ -24,6 +24,8 @@ import com.jovanstar.unstablecore.listener.GuiListener;
 import com.jovanstar.unstablecore.listener.HeldShulkerListener;
 import com.jovanstar.unstablecore.listener.LeaderboardListener;
 import com.jovanstar.unstablecore.listener.PlayerListener;
+import com.jovanstar.unstablecore.listener.WorldLockListener;
+import com.jovanstar.unstablecore.listener.ItemRestrictionListener;
 import com.jovanstar.unstablecore.manager.ActionBarManager;
 import com.jovanstar.unstablecore.manager.AfkZoneManager;
 import com.jovanstar.unstablecore.manager.ArenaManager;
@@ -36,6 +38,7 @@ import com.jovanstar.unstablecore.manager.ItemCleanupManager;
 import com.jovanstar.unstablecore.manager.KillstreakManager;
 import com.jovanstar.unstablecore.manager.KitManager;
 import com.jovanstar.unstablecore.manager.LeaderboardManager;
+import com.jovanstar.unstablecore.manager.SkinCacheManager;
 import com.jovanstar.unstablecore.manager.LiveGuiRefresher;
 import com.jovanstar.unstablecore.manager.LoadoutManager;
 import com.jovanstar.unstablecore.manager.MapVoteManager;
@@ -78,6 +81,7 @@ public final class UnstableCore extends JavaPlugin {
     private RewardsManager rewardsManager;
     private BountyManager bountyManager;
     private LeaderboardManager leaderboardManager;
+    private SkinCacheManager skinCacheManager;
     private ItemCleanupManager itemCleanupManager;
     private ArenaListener arenaListener;
     private CombatListener combatListener;
@@ -114,6 +118,7 @@ public final class UnstableCore extends JavaPlugin {
         this.playtimeManager = new PlaytimeManager();
         this.killstreakManager = new KillstreakManager(this);
         this.leaderboardManager = new LeaderboardManager(this);
+        this.skinCacheManager = new SkinCacheManager(this);
         this.tagManager = new TagManager(this);
         this.tagManager.load();
 
@@ -216,6 +221,9 @@ public final class UnstableCore extends JavaPlugin {
         }
         if (leaderboardManager != null) {
             leaderboardManager.shutdown();
+        }
+        if (skinCacheManager != null) {
+            skinCacheManager.shutdown();
         }
         if (databaseManager != null) {
             databaseManager.close();
@@ -330,6 +338,8 @@ public final class UnstableCore extends JavaPlugin {
         this.arenaListener = new ArenaListener(this);
         Bukkit.getPluginManager().registerEvents(arenaListener, this);
         Bukkit.getPluginManager().registerEvents(new AntiGlitchListener(this), this);
+        Bukkit.getPluginManager().registerEvents(new WorldLockListener(this), this);
+        Bukkit.getPluginManager().registerEvents(new ItemRestrictionListener(this), this);
         this.heldShulkerListener = new HeldShulkerListener(this);
         Bukkit.getPluginManager().registerEvents(heldShulkerListener, this);
         Bukkit.getPluginManager().registerEvents(new GuiListener(this), this);
@@ -422,6 +432,10 @@ public final class UnstableCore extends JavaPlugin {
 
     public LeaderboardManager getLeaderboardManager() {
         return leaderboardManager;
+    }
+
+    public SkinCacheManager getSkinCacheManager() {
+        return skinCacheManager;
     }
 
     public ItemCleanupManager getItemCleanupManager() {

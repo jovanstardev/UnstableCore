@@ -8,6 +8,7 @@ import com.jovanstar.unstablecore.gui.KitAdminEditGui;
 import com.jovanstar.unstablecore.gui.KitConfirmGui;
 import com.jovanstar.unstablecore.gui.KitEditGui;
 import com.jovanstar.unstablecore.gui.KitPreviewGui;
+import com.jovanstar.unstablecore.gui.KitPurchaseConfirmGui;
 import com.jovanstar.unstablecore.gui.KitsGui;
 import com.jovanstar.unstablecore.gui.LeaderboardCategoryGui;
 import com.jovanstar.unstablecore.gui.LeaderboardMenuGui;
@@ -78,6 +79,7 @@ public final class GuiListener implements Listener {
                 || topHolder instanceof DisposalGui
                 || topHolder instanceof KitsGui
                 || topHolder instanceof KitConfirmGui
+                || topHolder instanceof KitPurchaseConfirmGui
                 || topHolder instanceof KitPreviewGui
                 || topHolder instanceof KitEditGui
                 || topHolder instanceof KitAdminEditGui)) {
@@ -100,6 +102,7 @@ public final class GuiListener implements Listener {
         event.setCancelled(true);
         if (topHolder instanceof KitsGui
                 || topHolder instanceof KitConfirmGui
+                || topHolder instanceof KitPurchaseConfirmGui
                 || topHolder instanceof KitPreviewGui
                 || topHolder instanceof LeaderboardMenuGui
                 || topHolder instanceof LeaderboardCategoryGui
@@ -165,6 +168,9 @@ public final class GuiListener implements Listener {
                 gui.handleClick(player, slot, click);
                 syncCursor(player);
             } else if (topHolder instanceof KitConfirmGui gui) {
+                gui.handleClick(player, slot);
+                syncCursor(player);
+            } else if (topHolder instanceof KitPurchaseConfirmGui gui) {
                 gui.handleClick(player, slot);
                 syncCursor(player);
             } else if (topHolder instanceof KitPreviewGui gui) {
@@ -247,6 +253,7 @@ public final class GuiListener implements Listener {
                 || holder instanceof BountyBoardGui || holder instanceof PlaceBountyGui
                 || holder instanceof LeaderboardMenuGui || holder instanceof LeaderboardCategoryGui
                 || holder instanceof KitsGui || holder instanceof KitConfirmGui
+                || holder instanceof KitPurchaseConfirmGui
                 || holder instanceof KitPreviewGui) {
             event.setCancelled(true);
             if (event.getWhoClicked() instanceof Player player) {
@@ -281,6 +288,7 @@ public final class GuiListener implements Listener {
             }
             if (holder instanceof KitsGui
                     || holder instanceof KitConfirmGui
+                    || holder instanceof KitPurchaseConfirmGui
                     || holder instanceof KitPreviewGui
                     || holder instanceof ShopGui
                     || holder instanceof ArenaGui

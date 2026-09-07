@@ -6,6 +6,9 @@ database:
   migrate-from-yaml: true
   sqlite:
     file: data.db
+    # How long a write waits for another writer to finish before failing with "database is
+    # locked". Raise if you still see SQLITE_BUSY in the console.
+    busy-timeout-millis: 5000
   mysql:
     host: localhost
     port: 3306
@@ -145,7 +148,26 @@ streak-event:
     style: SOLID
     update-ticks: 20
 
+# Hourly arena regeneration. `/unstablecore arena resetall` locks arena joins, moves everyone in
+# an arena world to spawn, then runs the console commands below (AsyncArenas pastes the
+# schematics). Regenerating while players receive chunks of that world crashed the server twice
+# (Sep 1 and Sep 7 2026, "Exception ticking world"), which is why joins stay locked for the
+# whole window. Have the Skript timer call this command instead of AsyncArenas directly.
 arena:
+  reset:
+    lock-seconds: 45              # arena joins refused for this long; regeneration takes 5-25 s
+    command-delay-ticks: 40       # wait for evacuation teleports to land before pasting
+    console-commands:
+      - "asyncarenas reset capital"
+      - "asyncarenas reset fullmist"
+      - "asyncarenas reset highwater"
+      - "asyncarenas reset lawhq"
+      - "asyncarenas reset merchantcity"
+      - "asyncarenas reset jadencastle"
+    starting-message: "&d&lᴜɴꜱᴛᴀʙʟᴇ ꜰꜰᴀ &8» &fArenas are being reset, you have been moved to spawn."
+    locked-message: "&c&l(!) &r&cArenas are being reset, try again in &f{seconds}s&c."
+    done-message: "&d&lᴜɴꜱᴛᴀʙʟᴇ ꜰꜰᴀ &8» &fAll arenas have just been reset, come and fight!"
+    done-sound: ENTITY_PLAYER_LEVELUP
   rotate-interval-seconds: 7200
   rotate-broadcast: "<b><gradient:#A100FF:#E9D5FF>UNSTABLE KITPVP</gradient></b> &8» &fMap is rotated and new map is &a{map}"
   rotate-sound: UI_TOAST_CHALLENGE_COMPLETE
@@ -604,3 +626,54 @@ messages:
   tag-clear-cooldown: "&cYou must wait before clearing your tag again."
   tag-no-own: "&cYou do not own {category} Tags. &7(/store)"
   kill-reward: "&a+&f{amount} &acoins &8• &7Kill reward"
+
+# World lock: players may only be in the join spawn world (join.spawn.world) and the worlds
+# arenas live in. Teleports and portals anywhere else are cancelled; a player who ends up in
+# another world anyway is sent back to spawn. Falling into the void also returns to spawn
+# instead of killing.
+world-lock:
+  enabled: true
+  # Worlds allowed on top of the spawn world and the arena worlds (e.g. an event world).
+  extra-allowed-worlds: []
+  # Players with this permission (default: op) are never restricted - builders, staff.
+  bypass-permission: unstablecore.worldlock.bypass
+  # Cancel nether/end portals for everyone without the bypass.
+  block-portals: true
+  # How often (seconds) to sweep for players who slipped into a locked world.
+  sweep-seconds: 5
+  void:
+    enabled: true
+    # Blocks below the world floor before the rescue triggers.
+    depth: 4
+  message: "&cYou can't go there."
+  void-message: "&7You fell into the void and were sent back to spawn."
+
+item-restrictions:
+  enabled: true
+  # Enchantments capped at a maximum level. Anything above the cap is lowered to it wherever it
+  # turns up: inventory, armour, hands, cursor, ender chest, containers a player opens, items
+  # picked up, shulker boxes, bundles and enchanted books. Use 0 to remove one entirely.
+  # Names are vanilla keys: density, breach, wind_burst, sharpness, ...
+  enchant-limits:
+    density: 4
+  # Look inside shulker boxes and bundles too.
+  scan-containers: true
+  # How often (seconds) to re-check everyone online.
+  sweep-seconds: 10
+  message: "&cDensity above IV is disabled here. Your item was adjusted."
+  anvils:
+    disabled: true
+    # Players with this permission (default: op) may still use anvils.
+    bypass-permission: unstablecore.anvil.bypass
+    message: "&cAnvils are disabled on this server."
+
+# Player-head skin cache (leaderboard, stats and bounty GUIs).
+# Heads are built from cached textures so the server never asks Mojang's session server for
+# 45 profiles every time someone opens /lb (that got the server rate limited - HTTP 429).
+# Unknown offline players are resolved one at a time in the background and stored in the
+# database, so each player is looked up at most once per refresh window.
+skins:
+  fetch-interval-millis: 1500   # one background lookup at most every 1.5 s (~40/min)
+  refresh-days: 7               # re-check a cached skin after this many days
+  fail-retry-minutes: 15        # wait this long before retrying a failed lookup
+  fail-backoff-seconds: 60      # pause all lookups this long after any failure

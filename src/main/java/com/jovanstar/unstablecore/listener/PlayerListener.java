@@ -107,6 +107,9 @@ public final class PlayerListener implements Listener {
         if (plugin.getKitManager() != null) {
             plugin.getKitManager().ensureDefaultKit(player);
         }
+        if (plugin.getSkinCacheManager() != null) {
+            plugin.getSkinCacheManager().capture(player);
+        }
         if (plugin.getLeaderboardManager() != null) {
             plugin.getLeaderboardManager().syncProfile(player);
         }

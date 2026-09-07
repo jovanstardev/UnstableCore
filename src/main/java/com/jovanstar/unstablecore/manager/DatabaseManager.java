@@ -84,6 +84,13 @@ public final class DatabaseManager {
             hikari.setJdbcUrl("jdbc:sqlite:" + file.getAbsolutePath());
             hikari.setDriverClassName("org.sqlite.JDBC");
             hikari.addDataSourceProperty("journal_mode", "WAL");
+            // WAL allows one writer at a time. Without a busy timeout a second writer (an async
+            // stats flush colliding with a main-thread reward claim) fails instantly with
+            // SQLITE_BUSY instead of waiting a few milliseconds - the Sep 2026 logs show daily and
+            // milestone claims lost exactly that way. 5 s is far above any real write here.
+            hikari.addDataSourceProperty("busy_timeout",
+                    String.valueOf(Math.max(1000, plugin.getConfig().getInt("database.sqlite.busy-timeout-millis", 5000))));
+            hikari.addDataSourceProperty("synchronous", "NORMAL");
             hikari.setMaximumPoolSize(Math.max(2, plugin.getConfig().getInt("database.pool-size", 4)));
         }
 
@@ -211,6 +218,16 @@ public final class DatabaseManager {
             // expensive once player_profiles has thousands of rows (every unique player ever seen).
             createIndex(st, "idx_player_profiles_balance", "player_profiles", "balance DESC");
             createIndex(st, "idx_player_profiles_playtime", "player_profiles", "playtime_ticks DESC");
+            // Cached skin textures for GUI heads - see SkinCacheManager. TEXT columns cannot carry a
+            // DEFAULT on MySQL, so the signature is nullable and normalised to "" on read.
+            st.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS player_skins (
+                      uuid VARCHAR(36) NOT NULL PRIMARY KEY,
+                      texture_value TEXT NOT NULL,
+                      texture_signature TEXT NULL,
+                      updated_at BIGINT NOT NULL DEFAULT 0
+                    )
+                    """);
         }
     }
 
@@ -1803,6 +1820,74 @@ public final class DatabaseManager {
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Failed to delete bounty " + target, e);
         }
+    }
+
+    // ---- player skins (SkinCacheManager) ----
+
+    public record SkinRow(UUID uuid, String value, String signature, long updatedAt) {}
+
+    private String upsertSkinSql() {
+        if (mysql) {
+            return """
+                    INSERT INTO player_skins (uuid, texture_value, texture_signature, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON DUPLICATE KEY UPDATE
+                      texture_value = VALUES(texture_value),
+                      texture_signature = VALUES(texture_signature),
+                      updated_at = VALUES(updated_at)
+                    """;
+        }
+        return """
+                INSERT INTO player_skins (uuid, texture_value, texture_signature, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(uuid) DO UPDATE SET
+                  texture_value = excluded.texture_value,
+                  texture_signature = excluded.texture_signature,
+                  updated_at = excluded.updated_at
+                """;
+    }
+
+    /** Must not be called on the main thread. */
+    public void upsertSkin(UUID uuid, String value, String signature, long updatedAt) {
+        if (uuid == null || value == null || value.isBlank() || !isConnected()) {
+            return;
+        }
+        try (Connection c = getConnection(); PreparedStatement ps = c.prepareStatement(upsertSkinSql())) {
+            ps.setString(1, uuid.toString());
+            ps.setString(2, value);
+            ps.setString(3, signature == null ? "" : signature);
+            ps.setLong(4, updatedAt);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.WARNING, "Failed to save cached skin for " + uuid, e);
+        }
+    }
+
+    /** Must not be called on the main thread. */
+    public List<SkinRow> loadAllSkins() {
+        List<SkinRow> out = new ArrayList<>();
+        if (!isConnected()) {
+            return out;
+        }
+        try (Connection c = getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT uuid, texture_value, texture_signature, updated_at FROM player_skins");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                try {
+                    out.add(new SkinRow(
+                            UUID.fromString(rs.getString(1)),
+                            rs.getString(2),
+                            nullToEmpty(rs.getString(3)),
+                            rs.getLong(4)
+                    ));
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.WARNING, "Failed to load cached skins from database", e);
+        }
+        return out;
     }
 
     private static String nullToEmpty(String s) {

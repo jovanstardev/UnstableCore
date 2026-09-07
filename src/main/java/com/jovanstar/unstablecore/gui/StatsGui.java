@@ -154,7 +154,8 @@ public final class StatsGui implements InventoryHolder {
                 ItemStack head = builder.build();
                 SkullMeta meta = (SkullMeta) head.getItemMeta();
                 if (meta != null) {
-                    meta.setOwningPlayer(target);
+                    // Offline targets would otherwise trigger a Mojang lookup per open.
+                    plugin.getSkinCacheManager().applySkull(meta, target.getUniqueId(), target.getName());
                     head.setItemMeta(meta);
                     builder = new ItemBuilder(head);
                 }

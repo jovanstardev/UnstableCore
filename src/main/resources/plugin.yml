@@ -101,6 +101,12 @@ permissions:
   unstablecore.admin:
     description: Access to all UnstableCore admin commands
     default: op
+  unstablecore.worldlock.bypass:
+    description: Not restricted to the spawn and arena worlds (builders, staff)
+    default: op
+  unstablecore.anvil.bypass:
+    description: May use anvils while they are disabled for everyone else
+    default: op
   unstablecore.loadout.nocooldown:
     description: Bypass /loadout cooldown permanently
     default: false

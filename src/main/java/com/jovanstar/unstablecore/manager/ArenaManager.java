@@ -785,7 +785,123 @@ public final class ArenaManager {
                 || type.name().contains("GATE");
     }
 
+    // ---- scheduled arena regeneration (AsyncArenas orchestration) ----
+
+    /**
+     * Epoch millis until which arena joins are refused. AsyncArenas pastes the arena schematics
+     * from its own thread through FAWE; if a player is receiving chunks of that world at the same
+     * moment the main thread trips over the half-rewritten block-entity map and the whole server
+     * crashes ("Exception ticking world", crash reports 2026-09-01 and 2026-09-07). Both crashes
+     * had players running /arena within seconds of the hourly reset. Emptying the arena worlds
+     * first and refusing joins until the paste is done removes every viewer of those chunks.
+     */
+    private volatile long resetLockUntil;
+    private BukkitTask resetDoneTask;
+
+    public boolean isResetLocked() {
+        return System.currentTimeMillis() < resetLockUntil;
+    }
+
+    public long resetSecondsLeft() {
+        long left = resetLockUntil - System.currentTimeMillis();
+        return left <= 0 ? 0 : (left + 999) / 1000;
+    }
+
+    /** Where evacuated players go: the same spawn /unstablecore setspawn writes. */
+    public Location spawnLocation() {
+        String worldName = plugin.getConfig().getString("join.spawn.world", "world");
+        World world = Bukkit.getWorld(worldName);
+        if (world == null) {
+            return null;
+        }
+        return new Location(world,
+                plugin.getConfig().getDouble("join.spawn.x", 0.5),
+                plugin.getConfig().getDouble("join.spawn.y", 64.0),
+                plugin.getConfig().getDouble("join.spawn.z", 0.5),
+                (float) plugin.getConfig().getDouble("join.spawn.yaw", 0.0),
+                (float) plugin.getConfig().getDouble("join.spawn.pitch", 0.0));
+    }
+
+    /** Teleports every player standing in a world that contains an arena to spawn. */
+    public int evacuateArenaWorlds(String message) {
+        Location spawn = spawnLocation();
+        if (spawn == null) {
+            plugin.getLogger().warning("Cannot evacuate arenas: join.spawn.world is not loaded.");
+            return 0;
+        }
+        int moved = 0;
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            World world = player.getWorld();
+            if (world.equals(spawn.getWorld()) || !hasArenasInWorld(world.getName())) {
+                continue;
+            }
+            clearPlayer(player.getUniqueId());
+            player.teleportAsync(spawn);
+            if (message != null && !message.isBlank()) {
+                MessageUtil.send(player, message);
+            }
+            moved++;
+        }
+        return moved;
+    }
+
+    /**
+     * Full reset cycle: lock joins, move everyone out, run the configured console commands
+     * (the AsyncArenas resets) once the teleports have landed, and announce when the lock ends.
+     * Called by {@code /unstablecore arena resetall}, which the hourly Skript timer now invokes
+     * instead of calling AsyncArenas directly.
+     */
+    public void runFullReset() {
+        FileConfiguration cfg = plugin.getConfig();
+        long lockSeconds = Math.max(5L, cfg.getLong("arena.reset.lock-seconds", 45L));
+        long delayTicks = Math.max(1L, cfg.getLong("arena.reset.command-delay-ticks", 40L));
+        List<String> commands = cfg.getStringList("arena.reset.console-commands");
+
+        resetLockUntil = System.currentTimeMillis() + lockSeconds * 1000L;
+        if (resetDoneTask != null) {
+            resetDoneTask.cancel();
+        }
+
+        String starting = cfg.getString("arena.reset.starting-message",
+                "&d&lᴜɴꜱᴛᴀʙʟᴇ ꜰꜰᴀ &8» &fArenas are being reset, you have been moved to spawn.");
+        int moved = evacuateArenaWorlds(starting);
+        plugin.getLogger().info("Arena reset: locked joins for " + lockSeconds + "s, evacuated " + moved + " player(s).");
+
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            for (String command : commands) {
+                if (command == null || command.isBlank()) {
+                    continue;
+                }
+                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
+            }
+        }, delayTicks);
+
+        resetDoneTask = Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            resetDoneTask = null;
+            String done = cfg.getString("arena.reset.done-message",
+                    "&d&lᴜɴꜱᴛᴀʙʟᴇ ꜰꜰᴀ &8» &fAll arenas have just been reset, come and fight!");
+            MessageUtil.broadcast(done);
+            String soundName = cfg.getString("arena.reset.done-sound", "ENTITY_PLAYER_LEVELUP");
+            if (soundName != null && !soundName.isBlank()) {
+                try {
+                    Sound sound = Sound.valueOf(soundName.toUpperCase(Locale.ROOT));
+                    for (Player player : Bukkit.getOnlinePlayers()) {
+                        player.playSound(player.getLocation(), sound, 1f, 1f);
+                    }
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        }, lockSeconds * 20L);
+    }
+
     public boolean teleportToArena(Player player, String arenaKey) {
+        if (isResetLocked()) {
+            MessageUtil.send(player, MessageUtil.apply(
+                    plugin.getConfig().getString("arena.reset.locked-message",
+                            "&c&l(!) &r&cArenas are being reset, try again in &f{seconds}s&c."),
+                    Map.of("seconds", String.valueOf(resetSecondsLeft()))));
+            return false;
+        }
         Arena arena;
         if ("newbie".equalsIgnoreCase(arenaKey)) {
             arena = newbieArena;
