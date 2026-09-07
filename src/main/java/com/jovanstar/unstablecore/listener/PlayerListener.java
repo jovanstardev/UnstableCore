@@ -132,6 +132,13 @@ public final class PlayerListener implements Listener {
         if (url == null || url.isBlank()) {
             return;
         }
+        // Bedrock clients (Geyser/Floodgate) cannot load Java packs: Geyser answers DECLINED and
+        // the server then kicks them with "This server requires a custom resource pack" - seen
+        // on every Bedrock join right after this pack moved out of server.properties. They keep
+        // the vanilla fallback sound instead.
+        if (isBedrockPlayer(player)) {
+            return;
+        }
         byte[] hash = parseSha1(plugin.getConfig().getString("killstreak.announcer.resource-pack.sha1", ""));
         if (hash == null) {
             plugin.getLogger().warning("killstreak.announcer.resource-pack.sha1 must be 40 hex "
@@ -146,6 +153,19 @@ public final class PlayerListener implements Listener {
         } catch (Exception e) {
             plugin.getLogger().warning("Failed to send the announcer resource pack: " + e.getMessage());
         }
+    }
+
+    /**
+     * Floodgate gives Bedrock players a version-0 UUID (00000000-0000-0000-0009-xxxxxxxxxxxx)
+     * and, by default, a "." name prefix. Checked without a Floodgate API dependency.
+     */
+    private static boolean isBedrockPlayer(Player player) {
+        UUID uuid = player.getUniqueId();
+        if (uuid.version() == 0 || uuid.getMostSignificantBits() == 0L) {
+            return true;
+        }
+        String name = player.getName();
+        return name != null && name.startsWith(".");
     }
 
     /** 40 hex characters -> the 20-byte digest the client verifies the download against. */
