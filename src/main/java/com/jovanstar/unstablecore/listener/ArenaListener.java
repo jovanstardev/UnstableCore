@@ -4,6 +4,7 @@ import com.jovanstar.unstablecore.UnstableCore;
 import com.jovanstar.unstablecore.model.Arena;
 import com.jovanstar.unstablecore.model.ArenaType;
 import com.jovanstar.unstablecore.util.MessageUtil;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Tag;
@@ -48,8 +49,11 @@ public final class ArenaListener implements Listener {
     private final UnstableCore plugin;
     private final EnumSet<Material> bushMaterials = EnumSet.noneOf(Material.class);
     private final Map<UUID, Long> breakMsgCooldown = new ConcurrentHashMap<>();
+    /** Last time each player was pushed out of a bush - see the note in {@link #onMove}. */
+    private final Map<UUID, Long> pushCooldown = new ConcurrentHashMap<>();
     private boolean antiBush;
     private double pushStrength;
+    private long pushCooldownMs;
 
     public ArenaListener(UnstableCore plugin) {
         this.plugin = plugin;
@@ -60,6 +64,12 @@ public final class ArenaListener implements Listener {
         bushMaterials.clear();
         antiBush = plugin.getConfig().getBoolean("anti-bush.enabled", true);
         pushStrength = plugin.getConfig().getDouble("anti-bush.push-strength", 0.45);
+        // Two ticks. Long enough to cut the velocity packets several-fold, short enough that the
+        // push still out-runs a sprinting player - at 150ms+ a sprint (~0.28 blocks/tick) very
+        // nearly cancels the 0.45 push, which would weaken the anti-hiding protection itself.
+        // Clamped so a bad config value cannot restore the old every-packet behaviour either.
+        pushCooldownMs = Math.max(50L, Math.min(1000L,
+                plugin.getConfig().getLong("anti-bush.push-cooldown-ms", 100L)));
         List<String> mats = plugin.getConfig().getStringList("anti-bush.materials");
         for (String name : mats) {
             try {
@@ -644,6 +654,18 @@ public final class ArenaListener implements Listener {
             block = above;
         }
 
+        // A player standing in a bush sends ~20 movement packets a second, and the original code
+        // answered every one of them with a fresh setVelocity. Pushing a few times a second ejects
+        // them just as reliably while cutting the velocity packets - and the scheduled tasks below
+        // - by roughly an order of magnitude.
+        long now = System.currentTimeMillis();
+        UUID id = player.getUniqueId();
+        Long lastPush = pushCooldown.get(id);
+        if (lastPush != null && now - lastPush < pushCooldownMs) {
+            return;
+        }
+        pushCooldown.put(id, now);
+
         Vector push = player.getLocation().toVector()
                 .subtract(block.getLocation().add(0.5, 0, 0.5).toVector())
                 .setY(0);
@@ -654,7 +676,18 @@ public final class ArenaListener implements Listener {
             push = new Vector(1, 0, 0);
         }
         push.normalize().multiply(pushStrength).setY(0.12);
-        player.setVelocity(push);
+
+        // Applying velocity from inside PlayerMoveEvent handling contradicts the very move the
+        // client just sent, so the server rejects the follow-up position, logs "moved wrongly" and
+        // rubber-bands the player - which is what arena regulars report as lag. Landing the push on
+        // the next tick, outside move handling, ejects them exactly the same way without the
+        // desync. Same reason the anticheat was seeing setback-shaped movement here.
+        final Vector applied = push;
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            if (player.isOnline()) {
+                player.setVelocity(applied);
+            }
+        });
     }
 
     private Arena resolveArena(Player player, Location loc) {
@@ -715,6 +748,7 @@ public final class ArenaListener implements Listener {
 
     public void clearPlayer(UUID uuid) {
         breakMsgCooldown.remove(uuid);
+        pushCooldown.remove(uuid);
     }
 
     private void sendNaturalBreak(Player player) {

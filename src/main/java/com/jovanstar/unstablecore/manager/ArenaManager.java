@@ -17,6 +17,8 @@ import org.bukkit.block.Block;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.util.ArrayDeque;
@@ -950,6 +952,7 @@ public final class ArenaManager {
                 playerArena.put(player.getUniqueId(), arena.getId());
                 MessageUtil.sendConfig(player, "arena-teleported", Map.of("map", arena.getDisplayName()));
                 giveRandomKitIfEmpty(player);
+                applyArrivalProtection(player);
 
                 String title = MessageUtil.apply(
                         plugin.getConfig().getString("arena.teleport-title", "&a&l{map}"),
@@ -1228,6 +1231,109 @@ public final class ArenaManager {
     public void clearPlayer(UUID uuid) {
         playerArena.remove(uuid);
         mineBypass.remove(uuid);
+        arrivalProtectionUntil.remove(uuid);
+        BukkitTask task = arrivalProtectionTasks.remove(uuid);
+        if (task != null) {
+            task.cancel();
+        }
+    }
+
+    // ---- arrival protection ----
+
+    /**
+     * Players landing in an arena were being killed before they could move: spawn spots are
+     * picked near the action, so a crystal or mace hit lands the moment the teleport completes.
+     * Every arena entry now grants a few seconds of Resistance (amplifier 4 = no damage taken).
+     * The window ends early the moment the protected player attacks someone, so it cannot be
+     * used as a free opening hit.
+     */
+    private final Map<UUID, Long> arrivalProtectionUntil = new ConcurrentHashMap<>();
+    private final Map<UUID, BukkitTask> arrivalProtectionTasks = new ConcurrentHashMap<>();
+
+    public boolean isArrivalProtected(UUID uuid) {
+        Long until = arrivalProtectionUntil.get(uuid);
+        return until != null && until > System.currentTimeMillis();
+    }
+
+    private int arrivalProtectionAmplifier() {
+        return Math.max(0, Math.min(255, plugin.getConfig().getInt("arena.arrival-protection.amplifier", 4)));
+    }
+
+    private int arrivalProtectionTicks() {
+        double seconds = plugin.getConfig().getDouble("arena.arrival-protection.seconds", 3.0);
+        return (int) Math.max(1L, Math.round(seconds * 20.0));
+    }
+
+    public void applyArrivalProtection(Player player) {
+        FileConfiguration cfg = plugin.getConfig();
+        if (!cfg.getBoolean("arena.arrival-protection.enabled", true) || !player.isOnline()) {
+            return;
+        }
+        UUID uuid = player.getUniqueId();
+        int ticks = arrivalProtectionTicks();
+        int amplifier = arrivalProtectionAmplifier();
+
+        // A new entry while still protected (e.g. /arena spam) restarts the window rather than
+        // stacking: cancel the old end task, replace the effect.
+        BukkitTask old = arrivalProtectionTasks.remove(uuid);
+        if (old != null) {
+            old.cancel();
+        }
+
+        boolean particles = cfg.getBoolean("arena.arrival-protection.particles", false);
+        // Vanilla merges this with any Resistance the player already has: a stronger or longer
+        // existing effect wins, a weaker one is kept hidden and restored when ours expires.
+        player.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, ticks, amplifier, false, particles, true));
+        arrivalProtectionUntil.put(uuid, System.currentTimeMillis() + ticks * 50L);
+
+        String seconds = formatSeconds(ticks);
+        MessageUtil.send(player, MessageUtil.apply(
+                cfg.getString("arena.arrival-protection.message", "&a&l✔ &aSpawn protection for &f{seconds}s&a."),
+                Map.of("seconds", seconds)));
+
+        arrivalProtectionTasks.put(uuid, Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            arrivalProtectionTasks.remove(uuid);
+            if (arrivalProtectionUntil.remove(uuid) == null) {
+                return;
+            }
+            Player online = Bukkit.getPlayer(uuid);
+            if (online != null) {
+                MessageUtil.send(online, cfg.getString("arena.arrival-protection.end-message", "&7Spawn protection ended."));
+            }
+        }, ticks));
+    }
+
+    /**
+     * Ends the window early (the protected player attacked someone). Only OUR effect is removed:
+     * a stronger or longer Resistance from elsewhere is left alone, and an effect vanilla hid
+     * underneath ours is put back.
+     */
+    public void endArrivalProtection(Player player, boolean attacked) {
+        UUID uuid = player.getUniqueId();
+        BukkitTask task = arrivalProtectionTasks.remove(uuid);
+        if (task != null) {
+            task.cancel();
+        }
+        if (arrivalProtectionUntil.remove(uuid) == null) {
+            return;
+        }
+        PotionEffect current = player.getPotionEffect(PotionEffectType.RESISTANCE);
+        if (current != null && current.getAmplifier() == arrivalProtectionAmplifier()
+                && current.getDuration() <= arrivalProtectionTicks()) {
+            PotionEffect hidden = current.getHiddenPotionEffect();
+            player.removePotionEffect(PotionEffectType.RESISTANCE);
+            if (hidden != null) {
+                player.addPotionEffect(hidden);
+            }
+        }
+        String key = attacked ? "arena.arrival-protection.attack-end-message" : "arena.arrival-protection.end-message";
+        String def = attacked ? "&cYou attacked - spawn protection removed." : "&7Spawn protection ended.";
+        MessageUtil.send(player, plugin.getConfig().getString(key, def));
+    }
+
+    private static String formatSeconds(int ticks) {
+        double seconds = ticks / 20.0;
+        return seconds == Math.floor(seconds) ? String.valueOf((int) seconds) : String.valueOf(seconds);
     }
 
     public boolean hasMineBypass(UUID uuid) {

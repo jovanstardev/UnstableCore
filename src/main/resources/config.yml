@@ -168,6 +168,18 @@ arena:
     locked-message: "&c&l(!) &r&cArenas are being reset, try again in &f{seconds}s&c."
     done-message: "&d&lᴜɴꜱᴛᴀʙʟᴇ ꜰꜰᴀ &8» &fAll arenas have just been reset, come and fight!"
     done-sound: ENTITY_PLAYER_LEVELUP
+  # Every arena entry (/arena, /sword, map rotation, newbie arena) grants Resistance for a few
+  # seconds so nobody is crystalled or maced before they can move. Amplifier 4 (Resistance V)
+  # means no damage at all. The window ends early the moment the protected player hits someone.
+  arrival-protection:
+    enabled: true
+    seconds: 3
+    amplifier: 4
+    break-on-attack: true
+    particles: false
+    message: "&a&l✔ &aSpawn protection for &f{seconds}s&a."
+    end-message: "&7Spawn protection ended."
+    attack-end-message: "&cYou attacked - spawn protection removed."
   rotate-interval-seconds: 7200
   rotate-broadcast: "<b><gradient:#A100FF:#E9D5FF>UNSTABLE KITPVP</gradient></b> &8» &fMap is rotated and new map is &a{map}"
   rotate-sound: UI_TOAST_CHALLENGE_COMPLETE
@@ -528,13 +540,20 @@ settings-defaults:
 
 cleanup:
   enabled: true
-  interval-seconds: 900
-  warnings: [30, 15, 5, 3, 2, 1]
+  # At ~370 deaths an hour on a busy day, a 900s cycle let a full kit's worth of drops from
+  # roughly ninety deaths pile up in the arena before anything was swept. Dropped items are the
+  # largest single source of entity-tracking packets in an FFA arena, so the cycle is kept short.
+  interval-seconds: 300
+  warnings: [15, 5, 3, 2, 1]
   warning-message: "<b><gradient:#A100FF:#E9D5FF>UNSTABLE FFA</gradient></b> &8» &fDropped items will be cleared in <#A100FF>{seconds}s &f!"
   cleared-message: "<b><gradient:#A100FF:#E9D5FF>UNSTABLE FFA</gradient></b> &8» &fDropped items have been &acleared&f."
 
 anti-bush:
   enabled: true
+  # Minimum gap between two pushes of the same player. The push is applied a tick after the move
+  # that triggered it, so it no longer contradicts the client's own movement mid-packet - that
+  # contradiction is what produced the "moved wrongly" rubber-banding in arenas. Clamped 50-1000.
+  push-cooldown-ms: 100
   materials:
     - TALL_GRASS
     - SHORT_GRASS

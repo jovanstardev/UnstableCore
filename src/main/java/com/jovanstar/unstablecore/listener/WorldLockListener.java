@@ -46,10 +46,24 @@ public final class WorldLockListener implements Listener {
     private final UnstableCore plugin;
     private final Map<UUID, Long> lastVoidRescue = new ConcurrentHashMap<>();
 
+    /**
+     * Cached because {@link #onMove} runs for every movement packet of every player - about twenty
+     * a second each - and every read of these two went through the config's string-path lookup.
+     * Refreshed by {@link #reloadSettings()} on /uc reload, so behaviour is unchanged.
+     */
+    private boolean voidEnabled;
+    private int voidDepth;
+
     public WorldLockListener(UnstableCore plugin) {
         this.plugin = plugin;
+        reloadSettings();
         long sweep = 20L * Math.max(2, plugin.getConfig().getInt("world-lock.sweep-seconds", 5));
         Bukkit.getScheduler().runTaskTimer(plugin, this::sweep, sweep, sweep);
+    }
+
+    public void reloadSettings() {
+        voidEnabled = plugin.getConfig().getBoolean("world-lock.void.enabled", true);
+        voidDepth = plugin.getConfig().getInt("world-lock.void.depth", 4);
     }
 
     /**
@@ -182,15 +196,14 @@ public final class WorldLockListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onMove(PlayerMoveEvent event) {
-        if (!plugin.getConfig().getBoolean("world-lock.void.enabled", true)) {
+        if (!voidEnabled) {
             return;
         }
         Location to = event.getTo();
         if (to == null || to.getWorld() == null) {
             return;
         }
-        int depth = plugin.getConfig().getInt("world-lock.void.depth", 4);
-        if (to.getY() >= to.getWorld().getMinHeight() - depth) {
+        if (to.getY() >= to.getWorld().getMinHeight() - voidDepth) {
             return;
         }
         Player player = event.getPlayer();
@@ -212,7 +225,7 @@ public final class WorldLockListener implements Listener {
         if (event.getCause() != EntityDamageEvent.DamageCause.VOID || !(event.getEntity() instanceof Player)) {
             return;
         }
-        if (plugin.getConfig().getBoolean("world-lock.void.enabled", true)) {
+        if (voidEnabled) {
             event.setCancelled(true);
         }
     }

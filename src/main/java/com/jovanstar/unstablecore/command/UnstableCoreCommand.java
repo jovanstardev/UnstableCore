@@ -76,6 +76,7 @@ public final class UnstableCoreCommand implements CommandExecutor, TabCompleter 
             case "setspawn" -> handleSetSpawn(sender);
             case "clearechests" -> handleClearEnderChests(sender);
             case "loadout" -> handleLoadout(sender, args);
+            case "afk" -> handleAfk(sender, args);
             default -> sendHelp(sender);
         }
         return true;
@@ -492,6 +493,45 @@ public final class UnstableCoreCommand implements CommandExecutor, TabCompleter 
         MessageUtil.sendConfig(sender, "loadout-cooldown-reset", Map.of("player", name));
     }
 
+    private void handleAfk(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            MessageUtil.send(sender, "&e/unstablecore afk reset <user>");
+            MessageUtil.send(sender, "&e/unstablecore afk info <user>");
+            return;
+        }
+        String sub = args[1].toLowerCase(Locale.ROOT);
+        if (sub.equals("reset")) {
+            if (args.length < 3) {
+                MessageUtil.send(sender, "&cUsage: /unstablecore afk reset <user>");
+                return;
+            }
+            OfflinePlayer target = plugin.getStatsManager().resolvePlayer(args[2]);
+            if (target == null) {
+                MessageUtil.sendConfig(sender, "player-not-found", Map.of());
+                return;
+            }
+            plugin.getAfkZoneManager().resetDailyEarned(target.getUniqueId());
+            MessageUtil.send(sender, "&aReset daily AFK coins limit for &e" + args[2] + "&a.");
+            return;
+        }
+        if (sub.equals("info")) {
+            if (args.length < 3) {
+                MessageUtil.send(sender, "&cUsage: /unstablecore afk info <user>");
+                return;
+            }
+            OfflinePlayer target = plugin.getStatsManager().resolvePlayer(args[2]);
+            if (target == null) {
+                MessageUtil.sendConfig(sender, "player-not-found", Map.of());
+                return;
+            }
+            int earned = plugin.getAfkZoneManager().getEarnedToday(target.getUniqueId());
+            int cap = plugin.getAfkZoneManager().getDailyCap();
+            MessageUtil.send(sender, "&e" + args[2] + " &7has earned &e" + earned + "&7/&e" + (cap > 0 ? cap : "Unlimited") + " &7AFK coins today.");
+            return;
+        }
+        MessageUtil.send(sender, "&cUnknown AFK subcommand.");
+    }
+
     private void sendHelp(CommandSender sender) {
         MessageUtil.send(sender, "&d&lUnstableCore &7commands:");
         MessageUtil.send(sender, "&e/unstablecore arena ...");
@@ -523,8 +563,16 @@ public final class UnstableCoreCommand implements CommandExecutor, TabCompleter 
             return List.of();
         }
         if (args.length == 1) {
-            return filter(List.of("arena", "economy", "event", "mine", "shop", "vote", "setspawn", "loadout",
+            return filter(List.of("afk", "arena", "economy", "event", "mine", "shop", "vote", "setspawn", "loadout",
                     "clearechests", "reload"), args[0]);
+        }
+        if (args[0].equalsIgnoreCase("afk")) {
+            if (args.length == 2) {
+                return filter(List.of("reset", "info"), args[1]);
+            }
+            if (args.length == 3) {
+                return null;
+            }
         }
         if (args[0].equalsIgnoreCase("loadout")) {
             if (args.length == 2) {

@@ -39,6 +39,14 @@ public final class RewardsCommand implements CommandExecutor, TabCompleter {
         RewardsManager.Tab tab = RewardsManager.Tab.DAILY;
         if (args.length >= 1) {
             String a = args[0].toLowerCase(Locale.ROOT);
+            if (a.equals("claimmonthly") || (a.equals("claim") && args.length >= 2 && args[1].toLowerCase(Locale.ROOT).startsWith("m"))) {
+                plugin.getRewardsManager().claimMonthlyRankReward(player);
+                return true;
+            }
+            if (a.startsWith("m") && args.length >= 2 && args[1].equalsIgnoreCase("claim")) {
+                plugin.getRewardsManager().claimMonthlyRankReward(player);
+                return true;
+            }
             if (a.startsWith("w")) {
                 tab = RewardsManager.Tab.WEEKLY;
             } else if (a.startsWith("m")) {
@@ -54,12 +62,18 @@ public final class RewardsCommand implements CommandExecutor, TabCompleter {
                                                 @NotNull String alias, @NotNull String[] args) {
         if (args.length == 1) {
             List<String> out = new ArrayList<>();
-            for (String s : List.of("daily", "weekly", "monthly")) {
+            for (String s : List.of("daily", "weekly", "monthly", "claim")) {
                 if (s.startsWith(args[0].toLowerCase(Locale.ROOT))) {
                     out.add(s);
                 }
             }
             return out;
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("claim")) {
+            return "monthly".startsWith(args[1].toLowerCase(Locale.ROOT)) ? List.of("monthly") : List.of();
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("monthly")) {
+            return "claim".startsWith(args[1].toLowerCase(Locale.ROOT)) ? List.of("claim") : List.of();
         }
         return List.of();
     }

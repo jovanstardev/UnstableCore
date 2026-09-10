@@ -7,6 +7,9 @@ world: ""
 tick-seconds: 5
 reward-interval: 300
 default-reward: 5
+# Maximum coins a player can earn in the AFK zone per day (in 24hrs).
+# Set to 0 or -1 to disable.
+daily-cap: 1000
 
 rewards:
   - permission: group.monarch
@@ -31,5 +34,7 @@ messages:
     - "&7&oStay for {minutes} minutes in water to receive your reward of &f{amount} Coins&7&o."
     - ""
   leave: "<#FF9C59>&lUUFFA &8• &7You left the zone. Progress reset."
-  reward: "<#FF9C59>&l+{amount} &lCOINS &8• &7AFK Reward received!"
-  actionbar: "&e&lAFK ZONE &8| &fReward: &e{amount} &8| &fProgress: &e{progress}s &7/ &e{interval}s"
+  reward: "<#FF9C59>&l+{amount} &lCOINS &8• &7AFK Reward received! &8(&e{earned}&7/&e{cap}&8)"
+  actionbar: "&e&lAFK ZONE &8| &fReward: &e{amount} &8| &fProgress: &e{progress}s &7/ &e{interval}s &8| &7Today: &e{earned}&7/&e{cap}"
+  actionbar-capped: "&e&lAFK ZONE &8| &cDaily Cap Reached &8(&e{earned}&7/&e{cap}&8)"
+  cap-reached: "<#FF9C59>&lUUFFA &8• &cYou have reached your daily AFK coin cap of {cap} coins for today."

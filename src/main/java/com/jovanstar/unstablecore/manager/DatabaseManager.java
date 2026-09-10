@@ -13,8 +13,10 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
@@ -96,6 +98,7 @@ public final class DatabaseManager {
 
         dataSource = new HikariDataSource(hikari);
         createTables();
+        ensurePlayerRewardsSchema();
         migrateFromYamlIfNeeded();
         plugin.getLogger().info("Database connected (" + (mysql ? "MySQL" : "SQLite") + ").");
     }
@@ -118,6 +121,44 @@ public final class DatabaseManager {
         dataSource = null;
         if (ds != null && !ds.isClosed()) {
             ds.close();
+        }
+    }
+
+    private void ensurePlayerRewardsSchema() throws SQLException {
+        try (Connection c = getConnection()) {
+            Set<String> columns = new HashSet<>();
+            if (mysql) {
+                try (PreparedStatement ps = c.prepareStatement(
+                        "SHOW COLUMNS FROM player_rewards");
+                     ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        columns.add(rs.getString("Field"));
+                    }
+                }
+            } else {
+                try (PreparedStatement ps = c.prepareStatement(
+                        "PRAGMA table_info(player_rewards)");
+                     ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        columns.add(rs.getString("name"));
+                    }
+                }
+            }
+            if (!columns.contains("rank_monthly_payout_month")) {
+                try (Statement st = c.createStatement()) {
+                    st.executeUpdate("ALTER TABLE player_rewards ADD COLUMN rank_monthly_payout_month VARCHAR(16) NOT NULL DEFAULT ''");
+                }
+            }
+            if (!columns.contains("rank_monthly_payout_time")) {
+                try (Statement st = c.createStatement()) {
+                    st.executeUpdate("ALTER TABLE player_rewards ADD COLUMN rank_monthly_payout_time BIGINT NOT NULL DEFAULT 0");
+                }
+            }
+            if (!columns.contains("rank_monthly_payout_amount")) {
+                try (Statement st = c.createStatement()) {
+                    st.executeUpdate("ALTER TABLE player_rewards ADD COLUMN rank_monthly_payout_amount DOUBLE NOT NULL DEFAULT 0");
+                }
+            }
         }
     }
 
@@ -192,7 +233,17 @@ public final class DatabaseManager {
                       month_id VARCHAR(16) NOT NULL DEFAULT '',
                       month_days INTEGER NOT NULL DEFAULT 0,
                       month_claimed TEXT NOT NULL DEFAULT '',
+                      rank_monthly_payout_month VARCHAR(16) NOT NULL DEFAULT '',
+                      rank_monthly_payout_time BIGINT NOT NULL DEFAULT 0,
+                      rank_monthly_payout_amount DOUBLE NOT NULL DEFAULT 0,
                       booster_until BIGINT NOT NULL DEFAULT 0
+                    )
+                    """);
+            st.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS player_afk (
+                      uuid VARCHAR(36) NOT NULL PRIMARY KEY,
+                      day_id VARCHAR(16) NOT NULL,
+                      coins_earned INTEGER NOT NULL DEFAULT 0
                     )
                     """);
             st.executeUpdate("""
@@ -1466,10 +1517,13 @@ public final class DatabaseManager {
             String monthId,
             int monthDays,
             String monthClaimed,
+            String rankMonthlyPayoutMonth,
+            long rankMonthlyPayoutTime,
+            double rankMonthlyPayoutAmount,
             long boosterUntil
     ) {
         public static RewardsRow empty() {
-            return new RewardsRow(0, "", "", "", 0, "", "", 0, "", 0L);
+            return new RewardsRow(0, "", "", "", 0, "", "", 0, "", "", 0L, 0.0, 0L);
         }
     }
 
@@ -1480,7 +1534,9 @@ public final class DatabaseManager {
         try (Connection c = getConnection();
              PreparedStatement ps = c.prepareStatement(
                      "SELECT streak, last_claim_day, last_login_day, week_id, week_days, week_claimed, "
-                             + "month_id, month_days, month_claimed, booster_until FROM player_rewards WHERE uuid = ?")) {
+                             + "month_id, month_days, month_claimed, rank_monthly_payout_month, "
+                             + "rank_monthly_payout_time, rank_monthly_payout_amount, booster_until "
+                             + "FROM player_rewards WHERE uuid = ?")) {
             ps.setString(1, uuid.toString());
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
@@ -1494,7 +1550,10 @@ public final class DatabaseManager {
                             nullToEmpty(rs.getString(7)),
                             rs.getInt(8),
                             nullToEmpty(rs.getString(9)),
-                            rs.getLong(10)
+                            nullToEmpty(rs.getString(10)),
+                            rs.getLong(11),
+                            rs.getDouble(12),
+                            rs.getLong(13)
                     );
                 }
             }
@@ -1518,8 +1577,9 @@ public final class DatabaseManager {
                 ? """
                 INSERT INTO player_rewards
                 (uuid, streak, last_claim_day, last_login_day, week_id, week_days, week_claimed,
-                 month_id, month_days, month_claimed, booster_until)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 month_id, month_days, month_claimed, rank_monthly_payout_month, rank_monthly_payout_time,
+                 rank_monthly_payout_amount, booster_until)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
                   streak = VALUES(streak),
                   last_claim_day = VALUES(last_claim_day),
@@ -1530,13 +1590,17 @@ public final class DatabaseManager {
                   month_id = VALUES(month_id),
                   month_days = VALUES(month_days),
                   month_claimed = VALUES(month_claimed),
+                  rank_monthly_payout_month = VALUES(rank_monthly_payout_month),
+                  rank_monthly_payout_time = VALUES(rank_monthly_payout_time),
+                  rank_monthly_payout_amount = VALUES(rank_monthly_payout_amount),
                   booster_until = VALUES(booster_until)
                 """
                 : """
                 INSERT INTO player_rewards
                 (uuid, streak, last_claim_day, last_login_day, week_id, week_days, week_claimed,
-                 month_id, month_days, month_claimed, booster_until)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 month_id, month_days, month_claimed, rank_monthly_payout_month, rank_monthly_payout_time,
+                 rank_monthly_payout_amount, booster_until)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(uuid) DO UPDATE SET
                   streak = excluded.streak,
                   last_claim_day = excluded.last_claim_day,
@@ -1547,6 +1611,9 @@ public final class DatabaseManager {
                   month_id = excluded.month_id,
                   month_days = excluded.month_days,
                   month_claimed = excluded.month_claimed,
+                  rank_monthly_payout_month = excluded.rank_monthly_payout_month,
+                  rank_monthly_payout_time = excluded.rank_monthly_payout_time,
+                  rank_monthly_payout_amount = excluded.rank_monthly_payout_amount,
                   booster_until = excluded.booster_until
                 """;
         try (Connection c = getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
@@ -1560,7 +1627,10 @@ public final class DatabaseManager {
             ps.setString(8, row.monthId());
             ps.setInt(9, row.monthDays());
             ps.setString(10, row.monthClaimed());
-            ps.setLong(11, row.boosterUntil());
+            ps.setString(11, row.rankMonthlyPayoutMonth());
+            ps.setLong(12, row.rankMonthlyPayoutTime());
+            ps.setDouble(13, row.rankMonthlyPayoutAmount());
+            ps.setLong(14, row.boosterUntil());
             ps.executeUpdate();
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Failed to save rewards for " + uuid, e);
@@ -1672,8 +1742,9 @@ public final class DatabaseManager {
                 ? """
                 INSERT INTO player_rewards
                 (uuid, streak, last_claim_day, last_login_day, week_id, week_days, week_claimed,
-                 month_id, month_days, month_claimed, booster_until)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 month_id, month_days, month_claimed, rank_monthly_payout_month, rank_monthly_payout_time,
+                 rank_monthly_payout_amount, booster_until)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
                   streak = VALUES(streak),
                   last_claim_day = VALUES(last_claim_day),
@@ -1684,13 +1755,17 @@ public final class DatabaseManager {
                   month_id = VALUES(month_id),
                   month_days = VALUES(month_days),
                   month_claimed = VALUES(month_claimed),
+                  rank_monthly_payout_month = VALUES(rank_monthly_payout_month),
+                  rank_monthly_payout_time = VALUES(rank_monthly_payout_time),
+                  rank_monthly_payout_amount = VALUES(rank_monthly_payout_amount),
                   booster_until = VALUES(booster_until)
                 """
                 : """
                 INSERT INTO player_rewards
                 (uuid, streak, last_claim_day, last_login_day, week_id, week_days, week_claimed,
-                 month_id, month_days, month_claimed, booster_until)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 month_id, month_days, month_claimed, rank_monthly_payout_month, rank_monthly_payout_time,
+                 rank_monthly_payout_amount, booster_until)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(uuid) DO UPDATE SET
                   streak = excluded.streak,
                   last_claim_day = excluded.last_claim_day,
@@ -1701,6 +1776,9 @@ public final class DatabaseManager {
                   month_id = excluded.month_id,
                   month_days = excluded.month_days,
                   month_claimed = excluded.month_claimed,
+                  rank_monthly_payout_month = excluded.rank_monthly_payout_month,
+                  rank_monthly_payout_time = excluded.rank_monthly_payout_time,
+                  rank_monthly_payout_amount = excluded.rank_monthly_payout_amount,
                   booster_until = excluded.booster_until
                 """;
         try (PreparedStatement ps = c.prepareStatement(sql)) {
@@ -1714,8 +1792,64 @@ public final class DatabaseManager {
             ps.setString(8, row.monthId());
             ps.setInt(9, row.monthDays());
             ps.setString(10, row.monthClaimed());
-            ps.setLong(11, row.boosterUntil());
+            ps.setString(11, row.rankMonthlyPayoutMonth());
+            ps.setLong(12, row.rankMonthlyPayoutTime());
+            ps.setDouble(13, row.rankMonthlyPayoutAmount());
+            ps.setLong(14, row.boosterUntil());
             ps.executeUpdate();
+        }
+    }
+
+    public record AfkDailyRow(String dayId, int coinsEarned) {
+        public static AfkDailyRow empty() {
+            return new AfkDailyRow("", 0);
+        }
+    }
+
+    public AfkDailyRow loadAfkDaily(UUID uuid) {
+        if (uuid == null) {
+            return AfkDailyRow.empty();
+        }
+        String sql = "SELECT day_id, coins_earned FROM player_afk WHERE uuid = ?";
+        try (Connection c = getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, uuid.toString());
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return new AfkDailyRow(nullToEmpty(rs.getString(1)), rs.getInt(2));
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to load AFK daily for " + uuid, e);
+        }
+        return AfkDailyRow.empty();
+    }
+
+    public void saveAfkDaily(UUID uuid, AfkDailyRow row) {
+        if (uuid == null || row == null) {
+            return;
+        }
+        String sql = mysql
+                ? """
+                INSERT INTO player_afk (uuid, day_id, coins_earned)
+                VALUES (?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                  day_id = VALUES(day_id),
+                  coins_earned = VALUES(coins_earned)
+                """
+                : """
+                INSERT INTO player_afk (uuid, day_id, coins_earned)
+                VALUES (?, ?, ?)
+                ON CONFLICT(uuid) DO UPDATE SET
+                  day_id = excluded.day_id,
+                  coins_earned = excluded.coins_earned
+                """;
+        try (Connection c = getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, uuid.toString());
+            ps.setString(2, row.dayId());
+            ps.setInt(3, row.coinsEarned());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to save AFK daily for " + uuid, e);
         }
     }
 

@@ -13,13 +13,19 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.WeekFields;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import net.luckperms.api.LuckPerms;
+import net.luckperms.api.LuckPermsProvider;
+import net.luckperms.api.event.EventSubscription;
+import net.luckperms.api.event.user.UserDataRecalculateEvent;
 
 public final class RewardsManager {
 
@@ -27,10 +33,13 @@ public final class RewardsManager {
 
     public enum DayState { CLAIMABLE, CLAIMED, LOCKED }
 
+    public static final long RANK_MONTHLY_COOLDOWN_MS = 30L * 24 * 60 * 60 * 1000L;
+
     private final UnstableCore plugin;
     private final Map<UUID, PlayerRewards> cache = new ConcurrentHashMap<>();
     private final Set<UUID> claiming = ConcurrentHashMap.newKeySet();
     private final Map<UUID, Object> locks = new ConcurrentHashMap<>();
+    private EventSubscription<UserDataRecalculateEvent> lpSubscription;
 
     public RewardsManager(UnstableCore plugin) {
         this.plugin = plugin;
@@ -182,6 +191,7 @@ public final class RewardsManager {
             boolean hasDaily;
             boolean hasWeekly;
             boolean hasMonthly;
+            double rankPaid = 0.0;
             synchronized (lockFor(uuid)) {
                 PlayerRewards data = cache.computeIfAbsent(uuid, this::load);
                 if (registerLoginDay(data)) {
@@ -190,6 +200,17 @@ public final class RewardsManager {
                 hasDaily = claimableDailyDay(data) > 0;
                 hasWeekly = hasUnclaimedMilestone(data, true);
                 hasMonthly = hasUnclaimedMilestone(data, false);
+                rankPaid = maybeGrantRankMonthlyPayout(player, data);
+            }
+            if (rankPaid > 0) {
+                double coinsAwarded = rankPaid;
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (player.isOnline()) {
+                        msg(player, "monthly-rank-paid", Map.of(
+                                "coins", EconomyManager.format(coinsAwarded)
+                        ));
+                    }
+                });
             }
             if (!hasDaily && !hasWeekly && !hasMonthly) {
                 return;
@@ -206,6 +227,285 @@ public final class RewardsManager {
                     msg(player, "unclaimed-monthly", Map.of());
                 }
             });
+        });
+    }
+
+    public static double resolveRankMonthlyPayout(String[] permissions) {
+        if (permissions == null || permissions.length == 0) {
+            return 0.0;
+        }
+        double payout = 0.0;
+        for (String permission : permissions) {
+            if (permission == null) {
+                continue;
+            }
+            String normalized = permission.trim().toLowerCase(Locale.ROOT);
+            if (normalized.isEmpty()) {
+                continue;
+            }
+            switch (normalized) {
+                case "monthly.crow" -> payout = Math.max(payout, 1100.0);
+                case "monthly.talon" -> payout = Math.max(payout, 2750.0);
+                case "monthly.raven", "monthly.flame" -> payout = Math.max(payout, 6500.0);
+                default -> {
+                }
+            }
+        }
+        return payout;
+    }
+
+    public static String[] currentMonthlyPermissions(Player player) {
+        if (player == null) {
+            return new String[0];
+        }
+        return new String[] {
+                "monthly.crow",
+                "monthly.talon",
+                "monthly.raven",
+                "monthly.flame"
+        };
+    }
+
+    public static double calculatePayoutDue(
+            double highestEligibleTier,
+            long lastPayoutTime,
+            double amountPaidInCycle,
+            long now,
+            long cooldownMs
+    ) {
+        if (highestEligibleTier <= 0) {
+            return 0.0;
+        }
+        if (lastPayoutTime <= 0 || (now - lastPayoutTime) >= cooldownMs) {
+            return highestEligibleTier;
+        }
+        double diff = highestEligibleTier - amountPaidInCycle;
+        return diff > 0 ? diff : 0.0;
+    }
+
+    public double maybeGrantRankMonthlyPayout(Player player, PlayerRewards data) {
+        return maybeGrantRankMonthlyPayout(player, data, System.currentTimeMillis());
+    }
+
+    public double maybeGrantRankMonthlyPayout(Player player, PlayerRewards data, long now) {
+        if (player == null || data == null || !plugin.getEconomyManager().isReady()) {
+            return 0.0;
+        }
+        double highestEligible = resolveRankMonthlyPayout(Arrays.stream(currentMonthlyPermissions(player))
+                .filter(player::hasPermission)
+                .toArray(String[]::new));
+        if (highestEligible <= 0) {
+            return 0.0;
+        }
+
+        String currentMonthKey = monthId(today());
+
+        double toPay = calculatePayoutDue(
+                highestEligible,
+                data.rankMonthlyPayoutTime,
+                data.rankMonthlyPayoutAmount,
+                now,
+                RANK_MONTHLY_COOLDOWN_MS
+        );
+
+        if (toPay <= 0) {
+            return 0.0;
+        }
+
+        long newPayoutTime = (data.rankMonthlyPayoutTime <= 0 || (now - data.rankMonthlyPayoutTime) >= RANK_MONTHLY_COOLDOWN_MS)
+                ? now
+                : data.rankMonthlyPayoutTime;
+        double newPayoutAmount = highestEligible;
+
+        PlayerRewards proposed = PlayerRewards.from(data.toRow());
+        proposed.rankMonthlyPayoutMonth = currentMonthKey;
+        proposed.rankMonthlyPayoutTime = newPayoutTime;
+        proposed.rankMonthlyPayoutAmount = newPayoutAmount;
+
+        if (!plugin.getEconomyManager().deposit(player, toPay)) {
+            plugin.getLogger().warning("Rank monthly reward deposit failed for " + player.getName()
+                    + " (" + toPay + " coins) - leaving payout for a later retry.");
+            return 0.0;
+        }
+        plugin.getLogger().info("Rank monthly reward: deposited " + toPay + " coins to " + player.getName() + " via Vault economy.");
+
+        data.rankMonthlyPayoutMonth = currentMonthKey;
+        data.rankMonthlyPayoutTime = newPayoutTime;
+        data.rankMonthlyPayoutAmount = newPayoutAmount;
+        cache.put(player.getUniqueId(), data);
+        save(player.getUniqueId(), data);
+        return toPay;
+    }
+
+    public void handleRealtimeRankCheck(Player player) {
+        if (player == null || !player.isOnline() || !plugin.getEconomyManager().isReady()) {
+            return;
+        }
+        UUID uuid = player.getUniqueId();
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            double paid;
+            synchronized (lockFor(uuid)) {
+                PlayerRewards data = cache.computeIfAbsent(uuid, this::load);
+                paid = maybeGrantRankMonthlyPayout(player, data);
+            }
+            if (paid > 0) {
+                double coinsAwarded = paid;
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (player.isOnline()) {
+                        msg(player, "monthly-rank-paid", Map.of(
+                                "coins", EconomyManager.format(coinsAwarded)
+                        ));
+                    }
+                });
+            }
+        });
+    }
+
+    public void registerLuckPermsListener() {
+        if (Bukkit.getPluginManager().getPlugin("LuckPerms") == null) {
+            return;
+        }
+        try {
+            LuckPerms lp = LuckPermsProvider.get();
+            this.lpSubscription = lp.getEventBus().subscribe(plugin, UserDataRecalculateEvent.class, event -> {
+                Player player = Bukkit.getPlayer(event.getUser().getUniqueId());
+                if (player != null && player.isOnline()) {
+                    handleRealtimeRankCheck(player);
+                }
+            });
+        } catch (Throwable t) {
+            plugin.getLogger().warning("Failed to subscribe to LuckPerms UserDataRecalculateEvent: " + t.getMessage());
+        }
+    }
+
+    public void unregisterLuckPermsListener() {
+        if (lpSubscription != null) {
+            try {
+                lpSubscription.close();
+            } catch (Throwable ignored) {
+            }
+            lpSubscription = null;
+        }
+    }
+
+    public void resetRankMonthlyPayout(UUID uuid) {
+        if (uuid == null) {
+            return;
+        }
+        synchronized (lockFor(uuid)) {
+            PlayerRewards data = cache.computeIfAbsent(uuid, this::load);
+            data.rankMonthlyPayoutTime = 0L;
+            data.rankMonthlyPayoutAmount = 0.0;
+            data.rankMonthlyPayoutMonth = "";
+            cache.put(uuid, data);
+            save(uuid, data);
+        }
+    }
+
+    public void claimMonthlyRankReward(Player player) {
+        claimMonthlyRankReward(player, false);
+    }
+
+    public void claimMonthlyRankReward(Player player, boolean force) {
+        if (player == null || !player.isOnline()) {
+            return;
+        }
+        if (!isEnabled()) {
+            msg(player, "disabled", Map.of());
+            return;
+        }
+        if (!plugin.getEconomyManager().isReady()) {
+            msg(player, "economy-unavailable", Map.of());
+            return;
+        }
+
+        double highestEligible = resolveRankMonthlyPayout(Arrays.stream(currentMonthlyPermissions(player))
+                .filter(player::hasPermission)
+                .toArray(String[]::new));
+
+        if (highestEligible <= 0) {
+            msg(player, "monthly-rank-none", Map.of());
+            return;
+        }
+
+        UUID uuid = player.getUniqueId();
+        if (!claiming.add(uuid)) {
+            msg(player, "busy", Map.of());
+            return;
+        }
+
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                synchronized (lockFor(uuid)) {
+                    PlayerRewards data = cache.computeIfAbsent(uuid, this::load);
+                    long now = System.currentTimeMillis();
+                    String currentMonthKey = monthId(today());
+
+                    double toPay;
+                    if (force) {
+                        toPay = highestEligible;
+                    } else {
+                        toPay = calculatePayoutDue(
+                                highestEligible,
+                                data.rankMonthlyPayoutTime,
+                                data.rankMonthlyPayoutAmount,
+                                now,
+                                RANK_MONTHLY_COOLDOWN_MS
+                        );
+                    }
+
+                    if (toPay <= 0) {
+                        long timeSince = now - data.rankMonthlyPayoutTime;
+                        long remaining = Math.max(0, RANK_MONTHLY_COOLDOWN_MS - timeSince);
+                        String formattedRemaining = formatDuration(remaining);
+                        Bukkit.getScheduler().runTask(plugin, () -> {
+                            if (player.isOnline()) {
+                                msg(player, "monthly-rank-cooldown", Map.of("time", formattedRemaining));
+                            }
+                        });
+                        return;
+                    }
+
+                    long newPayoutTime = (force || data.rankMonthlyPayoutTime <= 0 || (now - data.rankMonthlyPayoutTime) >= RANK_MONTHLY_COOLDOWN_MS)
+                            ? now
+                            : data.rankMonthlyPayoutTime;
+                    double newPayoutAmount = highestEligible;
+
+                    PlayerRewards proposed = PlayerRewards.from(data.toRow());
+                    proposed.rankMonthlyPayoutMonth = currentMonthKey;
+                    proposed.rankMonthlyPayoutTime = newPayoutTime;
+                    proposed.rankMonthlyPayoutAmount = newPayoutAmount;
+
+                    if (!plugin.getEconomyManager().deposit(player, toPay)) {
+                        plugin.getLogger().warning("Rank monthly reward deposit failed for " + player.getName()
+                                + " (" + toPay + " coins).");
+                        Bukkit.getScheduler().runTask(plugin, () -> {
+                            if (player.isOnline()) {
+                                msg(player, "economy-unavailable", Map.of());
+                            }
+                        });
+                        return;
+                    }
+                    plugin.getLogger().info("Rank monthly reward: deposited " + toPay + " coins to " + player.getName() + " via Vault economy (force=" + force + ").");
+
+                    data.rankMonthlyPayoutMonth = currentMonthKey;
+                    data.rankMonthlyPayoutTime = newPayoutTime;
+                    data.rankMonthlyPayoutAmount = newPayoutAmount;
+                    cache.put(uuid, data);
+                    save(uuid, data);
+
+                    double coinsAwarded = toPay;
+                    Bukkit.getScheduler().runTask(plugin, () -> {
+                        if (player.isOnline()) {
+                            msg(player, "monthly-rank-paid", Map.of(
+                                    "coins", EconomyManager.format(coinsAwarded)
+                            ));
+                        }
+                    });
+                }
+            } finally {
+                claiming.remove(uuid);
+            }
         });
     }
 
@@ -631,9 +931,21 @@ public final class RewardsManager {
     public void msg(Player player, String key, Map<String, String> placeholders) {
         String raw = cfg().getString("messages." + key, "");
         if (raw == null || raw.isBlank()) {
+            raw = defaultMessage(key);
+        }
+        if (raw == null || raw.isBlank()) {
             return;
         }
         MessageUtil.send(player, MessageUtil.apply(raw, placeholders));
+    }
+
+    private static String defaultMessage(String key) {
+        return switch (key) {
+            case "monthly-rank-paid" -> "<b><gradient:#A100FF:#E9D5FF>UNSTABLE FFA</gradient></b> &8» &aYou received your monthly rank reward of &e+{coins} coins&a!";
+            case "monthly-rank-cooldown" -> "<b><gradient:#A100FF:#E9D5FF>UNSTABLE FFA</gradient></b> &8» &cYou already claimed your monthly coins! Available again in &e{time}&c.";
+            case "monthly-rank-none" -> "<b><gradient:#A100FF:#E9D5FF>UNSTABLE FFA</gradient></b> &8» &cYou do not have a donor rank with monthly coin rewards (Crow, Talon, Raven/Flame).";
+            default -> "";
+        };
     }
 
     public static final class PlayerRewards {
@@ -646,6 +958,9 @@ public final class RewardsManager {
         public String monthId = "";
         public int monthDays;
         public final Set<Integer> monthClaimed = ConcurrentHashMap.newKeySet();
+        public String rankMonthlyPayoutMonth = "";
+        public long rankMonthlyPayoutTime;
+        public double rankMonthlyPayoutAmount;
         public long boosterUntil;
 
         public static PlayerRewards empty() {
@@ -666,6 +981,9 @@ public final class RewardsManager {
             r.monthId = row.monthId() == null ? "" : row.monthId();
             r.monthDays = row.monthDays();
             r.monthClaimed.addAll(parseInts(row.monthClaimed()));
+            r.rankMonthlyPayoutMonth = row.rankMonthlyPayoutMonth() == null ? "" : row.rankMonthlyPayoutMonth();
+            r.rankMonthlyPayoutTime = row.rankMonthlyPayoutTime();
+            r.rankMonthlyPayoutAmount = row.rankMonthlyPayoutAmount();
             r.boosterUntil = row.boosterUntil();
             return r;
         }
@@ -681,6 +999,9 @@ public final class RewardsManager {
                     monthId,
                     monthDays,
                     joinInts(monthClaimed),
+                    rankMonthlyPayoutMonth,
+                    rankMonthlyPayoutTime,
+                    rankMonthlyPayoutAmount,
                     boosterUntil
             );
         }

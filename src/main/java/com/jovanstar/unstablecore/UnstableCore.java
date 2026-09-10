@@ -2,6 +2,7 @@ package com.jovanstar.unstablecore;
 
 import com.jovanstar.unstablecore.command.ArenasCommand;
 import com.jovanstar.unstablecore.command.BountyCommand;
+import com.jovanstar.unstablecore.command.ClaimMonthlyCommand;
 import com.jovanstar.unstablecore.command.DisposalCommand;
 import com.jovanstar.unstablecore.command.KillstreakCommand;
 import com.jovanstar.unstablecore.command.KitCommand;
@@ -85,6 +86,7 @@ public final class UnstableCore extends JavaPlugin {
     private ItemCleanupManager itemCleanupManager;
     private ArenaListener arenaListener;
     private CombatListener combatListener;
+    private WorldLockListener worldLockListener;
     private HeldShulkerListener heldShulkerListener;
     private org.bukkit.scheduler.BukkitTask autosaveTask;
 
@@ -112,6 +114,7 @@ public final class UnstableCore extends JavaPlugin {
 
         this.economyManager = new EconomyManager(this);
         this.economyManager.setup();
+        this.rewardsManager.registerLuckPermsListener();
 
         this.bountyManager = new BountyManager(this);
 
@@ -225,6 +228,9 @@ public final class UnstableCore extends JavaPlugin {
         if (skinCacheManager != null) {
             skinCacheManager.shutdown();
         }
+        if (rewardsManager != null) {
+            rewardsManager.unregisterLuckPermsListener();
+        }
         if (databaseManager != null) {
             databaseManager.close();
         }
@@ -276,6 +282,9 @@ public final class UnstableCore extends JavaPlugin {
         if (arenaListener != null) {
             arenaListener.reloadSettings();
         }
+        if (worldLockListener != null) {
+            worldLockListener.reloadSettings();
+        }
     }
 
     private void registerCommands() {
@@ -306,6 +315,10 @@ public final class UnstableCore extends JavaPlugin {
         getCommand("rewards").setTabCompleter(rewards);
         getCommand("daily").setExecutor(rewards);
         getCommand("daily").setTabCompleter(rewards);
+
+        ClaimMonthlyCommand claimMonthly = new ClaimMonthlyCommand(this);
+        getCommand("claimmonthly").setExecutor(claimMonthly);
+        getCommand("claimmonthly").setTabCompleter(claimMonthly);
 
         DisposalCommand disposal = new DisposalCommand(this);
         getCommand("trash").setExecutor(disposal);
@@ -338,7 +351,8 @@ public final class UnstableCore extends JavaPlugin {
         this.arenaListener = new ArenaListener(this);
         Bukkit.getPluginManager().registerEvents(arenaListener, this);
         Bukkit.getPluginManager().registerEvents(new AntiGlitchListener(this), this);
-        Bukkit.getPluginManager().registerEvents(new WorldLockListener(this), this);
+        this.worldLockListener = new WorldLockListener(this);
+        Bukkit.getPluginManager().registerEvents(worldLockListener, this);
         Bukkit.getPluginManager().registerEvents(new ItemRestrictionListener(this), this);
         this.heldShulkerListener = new HeldShulkerListener(this);
         Bukkit.getPluginManager().registerEvents(heldShulkerListener, this);

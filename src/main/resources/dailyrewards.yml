@@ -214,3 +214,7 @@ messages:
   unclaimed-daily: "<b><gradient:#A100FF:#E9D5FF>UNSTABLE FFA</gradient></b> &8» &fYou have unclaimed daily reward &7(/rewards)"
   unclaimed-weekly: "<b><gradient:#A100FF:#E9D5FF>UNSTABLE FFA</gradient></b> &8» &fYou have unclaimed weekly rewards &7(/rewards weekly)"
   unclaimed-monthly: "<b><gradient:#A100FF:#E9D5FF>UNSTABLE FFA</gradient></b> &8» &fYou have unclaimed monthly rewards &7(/rewards monthly)"
+  monthly-rank-paid: "<b><gradient:#A100FF:#E9D5FF>UNSTABLE FFA</gradient></b> &8» &aYou have received your monthly rank reward of &e+{coins} coins&a!"
+  monthly-rank-cooldown: "<b><gradient:#A100FF:#E9D5FF>UNSTABLE FFA</gradient></b> &8» &cYou already claimed your monthly coins! Available again in &e{time}&c."
+  monthly-rank-none: "<b><gradient:#A100FF:#E9D5FF>UNSTABLE FFA</gradient></b> &8» &cYou do not have a donor rank with monthly coin rewards (Crow, Talon, Raven/Flame)."
+

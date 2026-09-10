@@ -245,6 +245,26 @@ public final class CombatListener implements Listener {
         }
     }
 
+    /**
+     * Arrival protection is one-way: the moment the protected player lands a hit on someone
+     * else, their own immunity ends. Runs after cancellation checks (HIGH, ignoreCancelled) so a
+     * blocked hit - mace in a no-mace arena, a hit on a teammate - does not cost the window.
+     */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onProtectedAttack(EntityDamageByEntityEvent event) {
+        if (!(event.getEntity() instanceof Player victim)) {
+            return;
+        }
+        Player attacker = resolveAttacker(event);
+        if (attacker == null || attacker.equals(victim)) {
+            return;
+        }
+        if (plugin.getConfig().getBoolean("arena.arrival-protection.break-on-attack", true)
+                && plugin.getArenaManager().isArrivalProtected(attacker.getUniqueId())) {
+            plugin.getArenaManager().endArrivalProtection(attacker, true);
+        }
+    }
+
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onDamage(EntityDamageByEntityEvent event) {
         if (!(event.getEntity() instanceof Player victim)) {
