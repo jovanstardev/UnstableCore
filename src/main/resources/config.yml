@@ -194,6 +194,7 @@ arena:
     double-vote-permission: "unstablecore.vote.2x"
     double-vote-weight: 2
     refresh-ticks: 20
+    start-broadcast: "<b><gradient:#A100FF:#E9D5FF>UNSTABLE KITPVP</gradient></b> &8» &fMap vote started! Type &d/mapvote &fin the arena to choose the next map &8(&f{time}&8)"
     end-broadcast: "<b><gradient:#A100FF:#E9D5FF>UNSTABLE KITPVP</gradient></b> &8» &fVote ended - next map is &a{map} &8(&f{percent}%&8)"
     voted-message: "&aVoted for &f{map} &8(&f{percent}%&8)&a."
     not-in-arena: "&cYou must be inside the arena to vote for the next map."

@@ -30,6 +30,11 @@ public final class MapVoteManager {
     private final Map<UUID, Integer> voteWeights = new ConcurrentHashMap<>();
     private BukkitTask endTask;
     private BukkitTask refreshTask;
+    // Rotation stamp of the period this vote was started for. Recorded at start and copied into
+    // lastCompletedRotation when the vote ends so tick() won't open a second vote for the same
+    // period - reading getLastRotation() after rotateActive() would capture the *new* period's
+    // stamp instead and silently skip the next vote.
+    private long voteRotationStamp = -1L;
     private long lastCompletedRotation = -1L;
 
     public MapVoteManager(UnstableCore plugin) {
@@ -144,6 +149,13 @@ public final class MapVoteManager {
         int duration = Math.max(5, plugin.getConfig().getInt("arena.vote.duration-seconds", 45));
         voting = true;
         voteEndsAt = System.currentTimeMillis() + duration * 1000L;
+        voteRotationStamp = plugin.getArenaManager().getLastRotation();
+
+        MessageUtil.broadcastFiltered(plugin.getConfig().getString("arena.vote.start-broadcast", ""), Map.of(
+                "time", EventManager.formatDurationMillis(duration * 1000L),
+                "seconds", String.valueOf(duration),
+                "maps", String.valueOf(candidates.size())
+        ), plugin.getSettingsManager().filter(SettingsManager.ROTATION_ALERTS));
 
         if (endTask != null) {
             endTask.cancel();
@@ -238,7 +250,7 @@ public final class MapVoteManager {
             plugin.getArenaManager().rotateActive(true, winnerId);
         }
 
-        lastCompletedRotation = plugin.getArenaManager().getLastRotation();
+        lastCompletedRotation = voteRotationStamp;
         candidates.clear();
         votes.clear();
         voteWeights.clear();
