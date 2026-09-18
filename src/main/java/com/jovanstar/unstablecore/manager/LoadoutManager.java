@@ -16,9 +16,9 @@ public final class LoadoutManager {
     public static final String NO_COOLDOWN_PERMISSION = "unstablecore.loadout.nocooldown";
     /**
      * Kept out of the {@code unstablecore.kit.*} namespace on purpose. Kit unlocks live there
-     * ({@code unstablecore.kit.<id>}, see KitManager's default permission), so naming the bypass
-     * {@code unstablecore.kit.nocooldown} meant any rank granted {@code unstablecore.kit.*} to
-     * unlock every kit silently also got permanent cooldown bypass.
+     * ({@code unstablecore.kit.<id>}), so naming the bypass {@code unstablecore.kit.nocooldown}
+     * meant any rank granted {@code unstablecore.kit.*} to unlock every kit also got a
+     * permanent cooldown bypass.
      */
     public static final String KIT_NO_COOLDOWN_PERMISSION = "unstablecore.loadout.kit-nocooldown";
 
