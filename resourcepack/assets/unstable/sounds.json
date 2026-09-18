@@ -1,0 +1,22 @@
+{
+  "announcer.mega_kill": {
+    "category": "master",
+    "subtitle": "Mega Kill",
+    "sounds": [
+      {
+        "name": "unstable:announcer/mega_kill",
+        "stream": false
+      }
+    ]
+  },
+  "announcer.monster_kill": {
+    "category": "master",
+    "subtitle": "Monster Kill",
+    "sounds": [
+      {
+        "name": "unstable:announcer/monster_kill",
+        "stream": false
+      }
+    ]
+  }
+}

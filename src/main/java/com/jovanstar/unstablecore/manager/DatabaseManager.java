@@ -22,7 +22,13 @@ import java.util.logging.Level;
 public final class DatabaseManager {
 
     private final UnstableCore plugin;
-    private HikariDataSource dataSource;
+    /**
+     * Volatile because async DB tasks read it while the main thread nulls it in {@link #close()}.
+     * Every use snapshots it into a local first: isConnected() then getConnection() would otherwise
+     * be a check-then-dereference across threads, turning a clean "not connected" SQLException into
+     * an NPE for any write still in flight when the plugin disables.
+     */
+    private volatile HikariDataSource dataSource;
     private boolean mysql;
 
     public DatabaseManager(UnstableCore plugin) {
@@ -88,21 +94,24 @@ public final class DatabaseManager {
     }
 
     public boolean isConnected() {
-        return dataSource != null && !dataSource.isClosed();
+        HikariDataSource ds = dataSource;
+        return ds != null && !ds.isClosed();
     }
 
     public Connection getConnection() throws SQLException {
-        if (!isConnected()) {
+        HikariDataSource ds = dataSource;
+        if (ds == null || ds.isClosed()) {
             throw new SQLException("Database is not connected.");
         }
-        return dataSource.getConnection();
+        return ds.getConnection();
     }
 
     public void close() {
-        if (dataSource != null && !dataSource.isClosed()) {
-            dataSource.close();
-        }
+        HikariDataSource ds = dataSource;
         dataSource = null;
+        if (ds != null && !ds.isClosed()) {
+            ds.close();
+        }
     }
 
     private void createTables() throws SQLException {
@@ -142,6 +151,14 @@ public final class DatabaseManager {
                     CREATE TABLE IF NOT EXISTS loadout_cooldowns (
                       uuid VARCHAR(36) NOT NULL PRIMARY KEY,
                       last_use BIGINT NOT NULL
+                    )
+                    """);
+            st.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS kit_cooldowns (
+                      uuid VARCHAR(36) NOT NULL,
+                      kit_id VARCHAR(64) NOT NULL,
+                      last_use BIGINT NOT NULL,
+                      PRIMARY KEY (uuid, kit_id)
                     )
                     """);
             st.executeUpdate("""
@@ -194,159 +211,7 @@ public final class DatabaseManager {
             // expensive once player_profiles has thousands of rows (every unique player ever seen).
             createIndex(st, "idx_player_profiles_balance", "player_profiles", "balance DESC");
             createIndex(st, "idx_player_profiles_playtime", "player_profiles", "playtime_ticks DESC");
-            st.executeUpdate("""
-                    CREATE TABLE IF NOT EXISTS duels (
-                      duel_id VARCHAR(36) NOT NULL PRIMARY KEY,
-                      challenger VARCHAR(36) NOT NULL,
-                      target VARCHAR(36) NOT NULL,
-                      kit_id VARCHAR(64) NOT NULL DEFAULT '',
-                      arena_id VARCHAR(64) NOT NULL DEFAULT '',
-                      wager DOUBLE NOT NULL DEFAULT 0,
-                      state VARCHAR(16) NOT NULL,
-                      escrowed INTEGER NOT NULL DEFAULT 0,
-                      payout_done INTEGER NOT NULL DEFAULT 0,
-                      snapshot_challenger TEXT NOT NULL DEFAULT '',
-                      snapshot_target TEXT NOT NULL DEFAULT '',
-                      created_at BIGINT NOT NULL DEFAULT 0,
-                      updated_at BIGINT NOT NULL DEFAULT 0
-                    )
-                    """);
-            st.executeUpdate("""
-                    CREATE TABLE IF NOT EXISTS duel_stats (
-                      uuid VARCHAR(36) NOT NULL PRIMARY KEY,
-                      wins INTEGER NOT NULL DEFAULT 0,
-                      losses INTEGER NOT NULL DEFAULT 0,
-                      current_streak INTEGER NOT NULL DEFAULT 0,
-                      best_streak INTEGER NOT NULL DEFAULT 0,
-                      coins_wagered DOUBLE NOT NULL DEFAULT 0,
-                      coins_won DOUBLE NOT NULL DEFAULT 0,
-                      coins_lost DOUBLE NOT NULL DEFAULT 0,
-                      duels_played INTEGER NOT NULL DEFAULT 0,
-                      elo INTEGER NOT NULL DEFAULT 1000,
-                      ranked_wins INTEGER NOT NULL DEFAULT 0,
-                      ranked_losses INTEGER NOT NULL DEFAULT 0,
-                      casual_wins INTEGER NOT NULL DEFAULT 0,
-                      casual_losses INTEGER NOT NULL DEFAULT 0
-                    )
-                    """);
-            try {
-                st.executeUpdate("ALTER TABLE duel_stats ADD COLUMN elo INTEGER NOT NULL DEFAULT 1000");
-            } catch (SQLException ignored) {
-                // column already exists
-            }
-            try {
-                st.executeUpdate("ALTER TABLE duel_stats ADD COLUMN ranked_wins INTEGER NOT NULL DEFAULT 0");
-            } catch (SQLException ignored) {
-                // column already exists
-            }
-            try {
-                st.executeUpdate("ALTER TABLE duel_stats ADD COLUMN ranked_losses INTEGER NOT NULL DEFAULT 0");
-            } catch (SQLException ignored) {
-                // column already exists
-            }
-            try {
-                st.executeUpdate("ALTER TABLE duel_stats ADD COLUMN casual_wins INTEGER NOT NULL DEFAULT 0");
-            } catch (SQLException ignored) {
-                // column already exists
-            }
-            try {
-                st.executeUpdate("ALTER TABLE duel_stats ADD COLUMN casual_losses INTEGER NOT NULL DEFAULT 0");
-            } catch (SQLException ignored) {
-                // column already exists
-            }
-            st.executeUpdate("""
-                    CREATE TABLE IF NOT EXISTS duel_history (
-                      duel_id VARCHAR(36) NOT NULL PRIMARY KEY,
-                      challenger VARCHAR(36) NOT NULL,
-                      challenger_name VARCHAR(32) NOT NULL DEFAULT '',
-                      target VARCHAR(36) NOT NULL,
-                      target_name VARCHAR(32) NOT NULL DEFAULT '',
-                      winner VARCHAR(36) NOT NULL DEFAULT '',
-                      kit_id VARCHAR(64) NOT NULL DEFAULT '',
-                      arena_id VARCHAR(64) NOT NULL DEFAULT '',
-                      wager DOUBLE NOT NULL DEFAULT 0,
-                      payout DOUBLE NOT NULL DEFAULT 0,
-                      result VARCHAR(24) NOT NULL DEFAULT '',
-                      started_at BIGINT NOT NULL DEFAULT 0,
-                      ended_at BIGINT NOT NULL DEFAULT 0
-                    )
-                    """);
-            createIndex(st, "idx_duel_history_challenger", "duel_history", "challenger");
-            createIndex(st, "idx_duel_history_target", "duel_history", "target");
-            // Pre-duel inventories owed to a player who is currently offline. Held in memory by
-            // DuelManager until they next join; persisted here so a restart in that window - which
-            // is exactly when a mid-duel disconnect is most likely - doesn't silently drop them.
-            st.executeUpdate("""
-                    CREATE TABLE IF NOT EXISTS pending_restores (
-                      uuid VARCHAR(36) NOT NULL PRIMARY KEY,
-                      snapshot TEXT NOT NULL,
-                      created_at BIGINT NOT NULL DEFAULT 0
-                    )
-                    """);
         }
-    }
-
-    public record PendingRestoreRow(UUID uuid, String snapshot, long createdAt) {
-    }
-
-    private String upsertPendingRestoreSql() {
-        if (mysql) {
-            return """
-                    INSERT INTO pending_restores (uuid, snapshot, created_at) VALUES (?, ?, ?)
-                    ON DUPLICATE KEY UPDATE snapshot = VALUES(snapshot), created_at = VALUES(created_at)
-                    """;
-        }
-        return """
-                INSERT INTO pending_restores (uuid, snapshot, created_at) VALUES (?, ?, ?)
-                ON CONFLICT(uuid) DO UPDATE SET snapshot = excluded.snapshot, created_at = excluded.created_at
-                """;
-    }
-
-    public void upsertPendingRestore(UUID uuid, String snapshot, long createdAt) {
-        if (!isConnected() || uuid == null || snapshot == null || snapshot.isBlank()) {
-            return;
-        }
-        try (Connection c = getConnection(); PreparedStatement ps = c.prepareStatement(upsertPendingRestoreSql())) {
-            ps.setString(1, uuid.toString());
-            ps.setString(2, snapshot);
-            ps.setLong(3, createdAt);
-            ps.executeUpdate();
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to persist pending inventory restore for " + uuid, e);
-        }
-    }
-
-    public void deletePendingRestore(UUID uuid) {
-        if (!isConnected() || uuid == null) {
-            return;
-        }
-        try (Connection c = getConnection();
-             PreparedStatement ps = c.prepareStatement("DELETE FROM pending_restores WHERE uuid = ?")) {
-            ps.setString(1, uuid.toString());
-            ps.executeUpdate();
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to clear pending inventory restore for " + uuid, e);
-        }
-    }
-
-    public List<PendingRestoreRow> loadAllPendingRestores() {
-        List<PendingRestoreRow> out = new ArrayList<>();
-        if (!isConnected()) {
-            return out;
-        }
-        try (Connection c = getConnection();
-             PreparedStatement ps = c.prepareStatement("SELECT uuid, snapshot, created_at FROM pending_restores");
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                try {
-                    out.add(new PendingRestoreRow(UUID.fromString(rs.getString(1)), rs.getString(2), rs.getLong(3)));
-                } catch (IllegalArgumentException ignored) {
-                }
-            }
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to load pending inventory restores", e);
-        }
-        return out;
     }
 
     /**
@@ -866,10 +731,9 @@ public final class DatabaseManager {
     /**
      * Batched form of {@link #upsertProfile} for the periodic online-player sync.
      *
-     * <p>That sync used to schedule one async task - and therefore take one pooled connection and
-     * run one statement - per online player, every cycle. At a few hundred players that is a burst
-     * of hundreds of tasks contending over a pool of 4-20 connections, every 30 seconds, for what
-     * is a single batched write.
+     * <p>One statement for the whole cycle. Per-player tasks would each take a pooled connection,
+     * so a few hundred players meant hundreds of tasks contending over 4-20 connections every 30
+     * seconds for what is a single batched write.
      */
     public void upsertProfiles(List<ProfileRow> rows) {
         if (!isConnected() || rows == null || rows.isEmpty()) {
@@ -1022,9 +886,9 @@ public final class DatabaseManager {
         try (Connection c = getConnection()) {
             c.setAutoCommit(false);
             try {
-                // See saveAllSettings for why this no longer wipes the table first. Un-equipping
-                // already issues its own targeted deleteTag(); the per-row delete here covers the
-                // (defensive) case of a blank value left in the map.
+                // Upsert rather than wipe-and-reinsert, for the reason given on saveAllSettings.
+                // Un-equipping issues its own targeted deleteTag(); the per-row delete below only
+                // covers a blank value defensively left in the map.
                 try (PreparedStatement ps = c.prepareStatement(upsertTagSql());
                      PreparedStatement del = c.prepareStatement("DELETE FROM player_tags WHERE uuid = ?")) {
                     for (Map.Entry<UUID, String> e : tags.entrySet()) {
@@ -1078,6 +942,77 @@ public final class DatabaseManager {
         }
     }
 
+    private String upsertKitCooldownSql() {
+        if (mysql) {
+            return """
+                    INSERT INTO kit_cooldowns (uuid, kit_id, last_use) VALUES (?, ?, ?)
+                    ON DUPLICATE KEY UPDATE last_use = VALUES(last_use)
+                    """;
+        }
+        return """
+                INSERT INTO kit_cooldowns (uuid, kit_id, last_use) VALUES (?, ?, ?)
+                ON CONFLICT(uuid, kit_id) DO UPDATE SET last_use = excluded.last_use
+                """;
+    }
+
+    /** uuid -> (kitId -> last claim millis). */
+    public Map<UUID, Map<String, Long>> loadAllKitCooldowns() {
+        Map<UUID, Map<String, Long>> out = new ConcurrentHashMap<>();
+        try (Connection c = getConnection();
+             PreparedStatement ps = c.prepareStatement("SELECT uuid, kit_id, last_use FROM kit_cooldowns");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                try {
+                    out.computeIfAbsent(UUID.fromString(rs.getString(1)), u -> new ConcurrentHashMap<>())
+                            .put(rs.getString(2), rs.getLong(3));
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to load kit cooldowns from database", e);
+        }
+        return out;
+    }
+
+    public void upsertKitCooldown(UUID uuid, String kitId, long lastUse) {
+        if (uuid == null || kitId == null) {
+            return;
+        }
+        try (Connection c = getConnection();
+             PreparedStatement ps = c.prepareStatement(upsertKitCooldownSql())) {
+            ps.setString(1, uuid.toString());
+            ps.setString(2, kitId);
+            ps.setLong(3, lastUse);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to save kit cooldown", e);
+        }
+    }
+
+    public void deleteKitCooldowns(UUID uuid) {
+        if (uuid == null) {
+            return;
+        }
+        try (Connection c = getConnection();
+             PreparedStatement ps = c.prepareStatement("DELETE FROM kit_cooldowns WHERE uuid = ?")) {
+            ps.setString(1, uuid.toString());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to clear kit cooldowns", e);
+        }
+    }
+
+    /** Drops rows older than the longest configured kit cooldown so the table cannot grow forever. */
+    public void pruneKitCooldowns(long olderThanMs) {
+        try (Connection c = getConnection();
+             PreparedStatement ps = c.prepareStatement("DELETE FROM kit_cooldowns WHERE last_use <= ?")) {
+            ps.setLong(1, olderThanMs);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to prune kit cooldowns", e);
+        }
+    }
+
     public Map<UUID, Long> loadAllLoadouts() {
         Map<UUID, Long> out = new ConcurrentHashMap<>();
         try (Connection c = getConnection();
@@ -1106,10 +1041,10 @@ public final class DatabaseManager {
         try (Connection c = getConnection()) {
             c.setAutoCommit(false);
             try {
-                // See saveAllSettings for why this no longer wipes the table first. Expired
-                // cooldowns are pruned by an explicit age predicate rather than by omission, so a
-                // momentarily-empty in-memory map can't silently clear everyone's cooldown (which
-                // here would hand every player an immediate free re-gear).
+                // Upsert rather than wipe-and-reinsert, for the reason given on saveAllSettings.
+                // Expired cooldowns are pruned by an explicit age predicate rather than by
+                // omission, so a momentarily-empty in-memory map cannot silently clear everyone's
+                // cooldown - which here would hand every player an immediate free re-gear.
                 try (PreparedStatement expire = c.prepareStatement(
                         "DELETE FROM loadout_cooldowns WHERE last_use <= ?")) {
                     expire.setLong(1, now - Math.max(0L, cooldownMs));
@@ -1868,287 +1803,6 @@ public final class DatabaseManager {
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Failed to delete bounty " + target, e);
         }
-    }
-
-    // ---------------------------------------------------------------------------------------
-    // Duels
-    // ---------------------------------------------------------------------------------------
-
-    public record DuelRow(String duelId, UUID challenger, UUID target, String kitId, String arenaId,
-                           double wager, String state, boolean escrowed, boolean payoutDone,
-                           String snapshotChallenger, String snapshotTarget,
-                           long createdAt, long updatedAt) {
-    }
-
-    private String upsertDuelSql() {
-        if (mysql) {
-            return """
-                    INSERT INTO duels (duel_id, challenger, target, kit_id, arena_id, wager, state,
-                      escrowed, payout_done, snapshot_challenger, snapshot_target, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON DUPLICATE KEY UPDATE
-                      arena_id = VALUES(arena_id), wager = VALUES(wager), state = VALUES(state),
-                      escrowed = VALUES(escrowed), payout_done = VALUES(payout_done),
-                      snapshot_challenger = VALUES(snapshot_challenger),
-                      snapshot_target = VALUES(snapshot_target), updated_at = VALUES(updated_at)
-                    """;
-        }
-        return """
-                INSERT INTO duels (duel_id, challenger, target, kit_id, arena_id, wager, state,
-                  escrowed, payout_done, snapshot_challenger, snapshot_target, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(duel_id) DO UPDATE SET
-                  arena_id = excluded.arena_id, wager = excluded.wager, state = excluded.state,
-                  escrowed = excluded.escrowed, payout_done = excluded.payout_done,
-                  snapshot_challenger = excluded.snapshot_challenger,
-                  snapshot_target = excluded.snapshot_target, updated_at = excluded.updated_at
-                """;
-    }
-
-    public void upsertDuel(DuelRow row) {
-        if (!isConnected() || row == null) {
-            return;
-        }
-        try (Connection c = getConnection(); PreparedStatement ps = c.prepareStatement(upsertDuelSql())) {
-            ps.setString(1, row.duelId());
-            ps.setString(2, row.challenger().toString());
-            ps.setString(3, row.target().toString());
-            ps.setString(4, row.kitId() == null ? "" : row.kitId());
-            ps.setString(5, row.arenaId() == null ? "" : row.arenaId());
-            ps.setDouble(6, row.wager());
-            ps.setString(7, row.state());
-            ps.setInt(8, row.escrowed() ? 1 : 0);
-            ps.setInt(9, row.payoutDone() ? 1 : 0);
-            ps.setString(10, row.snapshotChallenger() == null ? "" : row.snapshotChallenger());
-            ps.setString(11, row.snapshotTarget() == null ? "" : row.snapshotTarget());
-            ps.setLong(12, row.createdAt());
-            ps.setLong(13, row.updatedAt());
-            ps.executeUpdate();
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to upsert duel " + row.duelId(), e);
-        }
-    }
-
-    public void deleteDuel(String duelId) {
-        if (!isConnected() || duelId == null) {
-            return;
-        }
-        try (Connection c = getConnection();
-             PreparedStatement ps = c.prepareStatement("DELETE FROM duels WHERE duel_id = ?")) {
-            ps.setString(1, duelId);
-            ps.executeUpdate();
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to delete duel " + duelId, e);
-        }
-    }
-
-    /** Rows left over from a previous run that never reached a terminal state - used for crash recovery. */
-    public List<DuelRow> loadAllDuels() {
-        List<DuelRow> out = new ArrayList<>();
-        if (!isConnected()) {
-            return out;
-        }
-        try (Connection c = getConnection();
-             PreparedStatement ps = c.prepareStatement(
-                     "SELECT duel_id, challenger, target, kit_id, arena_id, wager, state, escrowed, "
-                             + "payout_done, snapshot_challenger, snapshot_target, created_at, updated_at FROM duels");
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                try {
-                    out.add(new DuelRow(
-                            rs.getString(1),
-                            UUID.fromString(rs.getString(2)),
-                            UUID.fromString(rs.getString(3)),
-                            rs.getString(4), rs.getString(5), rs.getDouble(6), rs.getString(7),
-                            rs.getInt(8) != 0, rs.getInt(9) != 0, rs.getString(10), rs.getString(11),
-                            rs.getLong(12), rs.getLong(13)
-                    ));
-                } catch (IllegalArgumentException ignored) {
-                }
-            }
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to load duels from database", e);
-        }
-        return out;
-    }
-
-    public record DuelStatsRow(int wins, int losses, int currentStreak, int bestStreak,
-                                double coinsWagered, double coinsWon, double coinsLost, int duelsPlayed, int elo,
-                                int rankedWins, int rankedLosses, int casualWins, int casualLosses) {
-        public static DuelStatsRow empty() {
-            return new DuelStatsRow(0, 0, 0, 0, 0, 0, 0, 0, 1000, 0, 0, 0, 0);
-        }
-    }
-
-    public Map<UUID, DuelStatsRow> loadAllDuelStats() {
-        Map<UUID, DuelStatsRow> out = new ConcurrentHashMap<>();
-        if (!isConnected()) {
-            return out;
-        }
-        try (Connection c = getConnection();
-             PreparedStatement ps = c.prepareStatement(
-                     "SELECT uuid, wins, losses, current_streak, best_streak, coins_wagered, "
-                             + "coins_won, coins_lost, duels_played, elo, ranked_wins, ranked_losses, "
-                             + "casual_wins, casual_losses FROM duel_stats");
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                try {
-                    out.put(UUID.fromString(rs.getString(1)), new DuelStatsRow(
-                            rs.getInt(2), rs.getInt(3), rs.getInt(4), rs.getInt(5),
-                            rs.getDouble(6), rs.getDouble(7), rs.getDouble(8), rs.getInt(9),
-                            rs.getInt(10) == 0 ? 1000 : rs.getInt(10),
-                            rs.getInt(11), rs.getInt(12), rs.getInt(13), rs.getInt(14)
-                    ));
-                } catch (IllegalArgumentException ignored) {
-                }
-            }
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to load duel stats from database", e);
-        }
-        return out;
-    }
-
-    private String upsertDuelStatsSql() {
-        if (mysql) {
-            return """
-                    INSERT INTO duel_stats (uuid, wins, losses, current_streak, best_streak,
-                      coins_wagered, coins_won, coins_lost, duels_played, elo,
-                      ranked_wins, ranked_losses, casual_wins, casual_losses)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON DUPLICATE KEY UPDATE
-                      wins = VALUES(wins), losses = VALUES(losses),
-                      current_streak = VALUES(current_streak), best_streak = VALUES(best_streak),
-                      coins_wagered = VALUES(coins_wagered), coins_won = VALUES(coins_won),
-                      coins_lost = VALUES(coins_lost), duels_played = VALUES(duels_played),
-                      elo = VALUES(elo), ranked_wins = VALUES(ranked_wins),
-                      ranked_losses = VALUES(ranked_losses), casual_wins = VALUES(casual_wins),
-                      casual_losses = VALUES(casual_losses)
-                    """;
-        }
-        return """
-                INSERT INTO duel_stats (uuid, wins, losses, current_streak, best_streak,
-                  coins_wagered, coins_won, coins_lost, duels_played, elo,
-                  ranked_wins, ranked_losses, casual_wins, casual_losses)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(uuid) DO UPDATE SET
-                  wins = excluded.wins, losses = excluded.losses,
-                  current_streak = excluded.current_streak, best_streak = excluded.best_streak,
-                  coins_wagered = excluded.coins_wagered, coins_won = excluded.coins_won,
-                  coins_lost = excluded.coins_lost, duels_played = excluded.duels_played,
-                  elo = excluded.elo, ranked_wins = excluded.ranked_wins,
-                  ranked_losses = excluded.ranked_losses, casual_wins = excluded.casual_wins,
-                  casual_losses = excluded.casual_losses
-                """;
-    }
-
-    public void upsertDuelStats(UUID uuid, DuelStatsRow row) {
-        if (!isConnected() || uuid == null || row == null) {
-            return;
-        }
-        try (Connection c = getConnection(); PreparedStatement ps = c.prepareStatement(upsertDuelStatsSql())) {
-            ps.setString(1, uuid.toString());
-            ps.setInt(2, row.wins());
-            ps.setInt(3, row.losses());
-            ps.setInt(4, row.currentStreak());
-            ps.setInt(5, row.bestStreak());
-            ps.setDouble(6, row.coinsWagered());
-            ps.setDouble(7, row.coinsWon());
-            ps.setDouble(8, row.coinsLost());
-            ps.setInt(9, row.duelsPlayed());
-            ps.setInt(10, row.elo());
-            ps.setInt(11, row.rankedWins());
-            ps.setInt(12, row.rankedLosses());
-            ps.setInt(13, row.casualWins());
-            ps.setInt(14, row.casualLosses());
-            ps.executeUpdate();
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to upsert duel stats for " + uuid, e);
-        }
-    }
-
-    public record DuelHistoryRow(String duelId, UUID challenger, String challengerName, UUID target,
-                                  String targetName, UUID winner, String kitId, String arenaId,
-                                  double wager, double payout, String result, long startedAt, long endedAt) {
-    }
-
-    public void insertDuelHistory(DuelHistoryRow row) {
-        if (!isConnected() || row == null) {
-            return;
-        }
-        String sql = """
-                INSERT INTO duel_history (duel_id, challenger, challenger_name, target, target_name,
-                  winner, kit_id, arena_id, wager, payout, result, started_at, ended_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """;
-        try (Connection c = getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
-            ps.setString(1, row.duelId());
-            ps.setString(2, row.challenger().toString());
-            ps.setString(3, row.challengerName() == null ? "" : row.challengerName());
-            ps.setString(4, row.target().toString());
-            ps.setString(5, row.targetName() == null ? "" : row.targetName());
-            ps.setString(6, row.winner() == null ? "" : row.winner().toString());
-            ps.setString(7, row.kitId() == null ? "" : row.kitId());
-            ps.setString(8, row.arenaId() == null ? "" : row.arenaId());
-            ps.setDouble(9, row.wager());
-            ps.setDouble(10, row.payout());
-            ps.setString(11, row.result() == null ? "" : row.result());
-            ps.setLong(12, row.startedAt());
-            ps.setLong(13, row.endedAt());
-            ps.executeUpdate();
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to insert duel history row " + row.duelId(), e);
-        }
-    }
-
-    public List<DuelHistoryRow> loadDuelHistory(UUID player, int limit, int offset) {
-        List<DuelHistoryRow> out = new ArrayList<>();
-        if (!isConnected() || player == null) {
-            return out;
-        }
-        String sql = "SELECT duel_id, challenger, challenger_name, target, target_name, winner, "
-                + "kit_id, arena_id, wager, payout, result, started_at, ended_at FROM duel_history "
-                + "WHERE challenger = ? OR target = ? ORDER BY ended_at DESC LIMIT ? OFFSET ?";
-        try (Connection c = getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
-            ps.setString(1, player.toString());
-            ps.setString(2, player.toString());
-            ps.setInt(3, Math.max(1, Math.min(200, limit)));
-            ps.setInt(4, Math.max(0, offset));
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    String winnerStr = rs.getString(6);
-                    out.add(new DuelHistoryRow(
-                            rs.getString(1),
-                            UUID.fromString(rs.getString(2)), rs.getString(3),
-                            UUID.fromString(rs.getString(4)), rs.getString(5),
-                            (winnerStr == null || winnerStr.isBlank()) ? null : UUID.fromString(winnerStr),
-                            rs.getString(7), rs.getString(8), rs.getDouble(9), rs.getDouble(10),
-                            rs.getString(11), rs.getLong(12), rs.getLong(13)
-                    ));
-                }
-            }
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to load duel history for " + player, e);
-        }
-        return out;
-    }
-
-    public int countDuelHistory(UUID player) {
-        if (!isConnected() || player == null) {
-            return 0;
-        }
-        String sql = "SELECT COUNT(*) FROM duel_history WHERE challenger = ? OR target = ?";
-        try (Connection c = getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
-            ps.setString(1, player.toString());
-            ps.setString(2, player.toString());
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    return rs.getInt(1);
-                }
-            }
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to count duel history for " + player, e);
-        }
-        return 0;
     }
 
     private static String nullToEmpty(String s) {

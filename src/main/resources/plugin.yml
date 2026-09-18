@@ -95,22 +95,7 @@ commands:
   leaderboard:
     description: Open UnstableCore leaderboards
     aliases: [leaderboards, lb]
-    usage: /leaderboard [coins|kills|biggest_killstreak|deaths|playtime|duel_wins|duel_best_streak|duel_coins_won|duel_elo|reload]
-  duel:
-    description: Challenge a player to a kit+map+wager duel
-    usage: /duel <player|accept|deny|cancel|toggle|history|forceend>
-  leave:
-    description: Leave the post-duel grace period early
-    usage: /leave
-  dueladmin:
-    description: Staff duel inspection/cleanup tools
-    aliases: [duels, duelarena, da]
-    permission: unstablecore.duel.admin
-    usage: /dueladmin <list|inspect|forceend|arena|setspawn1|setspawn2|setcenter|spawns>
-  spec:
-    description: Spectate an active duel
-    aliases: [spectate]
-    usage: /spec <player>
+    usage: /leaderboard [coins|kills|biggest_killstreak|deaths|playtime|reload]
 
 permissions:
   unstablecore.admin:
@@ -125,6 +110,12 @@ permissions:
   unstablecore.loadout.kit-nocooldown:
     description: Bypass per-kit /loadout cooldowns permanently
     default: false
+  # default: op (not false, unlike the cooldown-bypass nodes above) - this exists so staff can
+  # build and fly right up to the border while setting a map up, not as a purchasable perk, so
+  # ops need it without a separate grant.
+  unstablecore.border.bypass:
+    description: Exempt from the world-border push-back buffer zone
+    default: op
   unstablecore.vote.2x:
     description: Map votes count as 2x
     default: false
@@ -137,15 +128,6 @@ permissions:
   unstablecore.leaderboard.reload:
     description: Reload leaderboard config
     default: op
-  unstablecore.duel:
-    description: Access to /duel and /leave
-    default: true
-  unstablecore.duel.admin:
-    description: Access to /dueladmin staff tools and /duel forceend
-    default: op
-  unstablecore.duel.spectate:
-    description: Access to /spec
-    default: true
   tags.emoji:
     description: Access to emoji tags
     default: false

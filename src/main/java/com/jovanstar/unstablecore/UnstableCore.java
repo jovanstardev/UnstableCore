@@ -3,19 +3,15 @@ package com.jovanstar.unstablecore;
 import com.jovanstar.unstablecore.command.ArenasCommand;
 import com.jovanstar.unstablecore.command.BountyCommand;
 import com.jovanstar.unstablecore.command.DisposalCommand;
-import com.jovanstar.unstablecore.command.DuelAdminCommand;
-import com.jovanstar.unstablecore.command.DuelCommand;
 import com.jovanstar.unstablecore.command.KillstreakCommand;
 import com.jovanstar.unstablecore.command.KitCommand;
 import com.jovanstar.unstablecore.command.KitsCommand;
 import com.jovanstar.unstablecore.command.LeaderboardCommand;
-import com.jovanstar.unstablecore.command.LeaveCommand;
 import com.jovanstar.unstablecore.command.LoadoutCommand;
 import com.jovanstar.unstablecore.command.MapVoteCommand;
 import com.jovanstar.unstablecore.command.RewardsCommand;
 import com.jovanstar.unstablecore.command.SettingsCommand;
 import com.jovanstar.unstablecore.command.ShopCommand;
-import com.jovanstar.unstablecore.command.SpectateCommand;
 import com.jovanstar.unstablecore.command.StatsCommand;
 import com.jovanstar.unstablecore.command.SwordCommand;
 import com.jovanstar.unstablecore.command.TagsCommand;
@@ -24,22 +20,17 @@ import com.jovanstar.unstablecore.listener.ArenaListener;
 import com.jovanstar.unstablecore.listener.AntiGlitchListener;
 import com.jovanstar.unstablecore.listener.BountyListener;
 import com.jovanstar.unstablecore.listener.CombatListener;
-import com.jovanstar.unstablecore.listener.DuelListener;
 import com.jovanstar.unstablecore.listener.GuiListener;
 import com.jovanstar.unstablecore.listener.HeldShulkerListener;
 import com.jovanstar.unstablecore.listener.LeaderboardListener;
 import com.jovanstar.unstablecore.listener.PlayerListener;
+import com.jovanstar.unstablecore.listener.WorldBorderListener;
 import com.jovanstar.unstablecore.manager.ActionBarManager;
 import com.jovanstar.unstablecore.manager.AfkZoneManager;
 import com.jovanstar.unstablecore.manager.ArenaManager;
 import com.jovanstar.unstablecore.manager.BountyManager;
 import com.jovanstar.unstablecore.manager.ConfigManager;
 import com.jovanstar.unstablecore.manager.DatabaseManager;
-import com.jovanstar.unstablecore.manager.DuelArenaManager;
-import com.jovanstar.unstablecore.manager.DuelManager;
-import com.jovanstar.unstablecore.manager.DuelQueueManager;
-import com.jovanstar.unstablecore.manager.DuelScoreboardManager;
-import com.jovanstar.unstablecore.manager.DuelStatsManager;
 import com.jovanstar.unstablecore.manager.EconomyManager;
 import com.jovanstar.unstablecore.manager.EventManager;
 import com.jovanstar.unstablecore.manager.ItemCleanupManager;
@@ -52,8 +43,8 @@ import com.jovanstar.unstablecore.manager.MapVoteManager;
 import com.jovanstar.unstablecore.manager.PlaytimeManager;
 import com.jovanstar.unstablecore.manager.RewardsManager;
 import com.jovanstar.unstablecore.manager.SettingsManager;
+import com.jovanstar.unstablecore.manager.EnderChestManager;
 import com.jovanstar.unstablecore.manager.ShopManager;
-import com.jovanstar.unstablecore.manager.SpectatorManager;
 import com.jovanstar.unstablecore.manager.StatsManager;
 import com.jovanstar.unstablecore.manager.TagManager;
 import com.jovanstar.unstablecore.placeholder.UnstablePlaceholders;
@@ -77,6 +68,7 @@ public final class UnstableCore extends JavaPlugin {
     private PlaytimeManager playtimeManager;
     private TagManager tagManager;
     private ShopManager shopManager;
+    private EnderChestManager enderChestManager;
     private KitManager kitManager;
     private LoadoutManager loadoutManager;
     private ActionBarManager actionBarManager;
@@ -88,15 +80,10 @@ public final class UnstableCore extends JavaPlugin {
     private BountyManager bountyManager;
     private LeaderboardManager leaderboardManager;
     private ItemCleanupManager itemCleanupManager;
-    private DuelArenaManager duelArenaManager;
-    private DuelStatsManager duelStatsManager;
-    private DuelManager duelManager;
-    private DuelQueueManager duelQueueManager;
-    private SpectatorManager spectatorManager;
-    private DuelScoreboardManager duelScoreboardManager;
     private ArenaListener arenaListener;
     private CombatListener combatListener;
     private HeldShulkerListener heldShulkerListener;
+    private WorldBorderListener worldBorderListener;
     private org.bukkit.scheduler.BukkitTask autosaveTask;
 
     @Override
@@ -144,6 +131,7 @@ public final class UnstableCore extends JavaPlugin {
         this.afkZoneManager.start();
 
         this.shopManager = new ShopManager(this);
+        this.enderChestManager = new EnderChestManager(this);
         this.kitManager = new KitManager(this);
         this.loadoutManager = new LoadoutManager(this);
         this.actionBarManager = new ActionBarManager(this);
@@ -154,17 +142,6 @@ public final class UnstableCore extends JavaPlugin {
 
         this.itemCleanupManager = new ItemCleanupManager(this);
         this.itemCleanupManager.start();
-
-        this.duelArenaManager = new DuelArenaManager(this);
-        this.duelStatsManager = new DuelStatsManager(this);
-        this.duelManager = new DuelManager(this, duelArenaManager, duelStatsManager);
-        this.duelManager.start();
-
-        this.duelQueueManager = new DuelQueueManager(this);
-        this.duelQueueManager.start();
-
-        this.spectatorManager = new SpectatorManager(this);
-        this.duelScoreboardManager = new DuelScoreboardManager(this);
 
         autosaveTask = Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
             killstreakManager.save();
@@ -198,17 +175,10 @@ public final class UnstableCore extends JavaPlugin {
         if (itemCleanupManager != null) {
             itemCleanupManager.stop();
         }
-        if (duelQueueManager != null) {
-            duelQueueManager.stop();
-        }
-        if (spectatorManager != null) {
-            spectatorManager.shutdown();
-        }
-        if (duelScoreboardManager != null) {
-            duelScoreboardManager.shutdown();
-        }
-        if (duelManager != null) {
-            duelManager.shutdown();
+        if (heldShulkerListener != null) {
+            // Must run before inventories are torn down: staged shulker contents only exist in a
+            // detached Inventory until the session is settled back into the item.
+            heldShulkerListener.shutdown();
         }
         if (mapVoteManager != null) {
             mapVoteManager.cancel();
@@ -262,6 +232,14 @@ public final class UnstableCore extends JavaPlugin {
         if (kitManager != null) {
             kitManager.savePlayerData();
         }
+        if (arenaManager != null) {
+            // Flush arenas.yml and the dirty placed-block set BEFORE loadAll() swaps in a freshly
+            // read data.yml. arenaManager.reload() below repopulates placedBlocks from whatever is
+            // on disk, so without this every block players placed since the last autosave (up to
+            // 5 minutes' worth) is forgotten - and forgotten player-placed blocks are treated as
+            // natural terrain, which the arena protection then refuses to let anyone break.
+            arenaManager.shutdown();
+        }
         configManager.loadAll();
         MessageUtil.init(this);
         tagManager.load();
@@ -292,10 +270,9 @@ public final class UnstableCore extends JavaPlugin {
         if (arenaListener != null) {
             arenaListener.reloadSettings();
         }
-        if (duelArenaManager != null) {
-            duelArenaManager.reload();
+        if (worldBorderListener != null) {
+            worldBorderListener.reloadSettings();
         }
-
     }
 
     private void registerCommands() {
@@ -349,22 +326,6 @@ public final class UnstableCore extends JavaPlugin {
         LeaderboardCommand leaderboard = new LeaderboardCommand(this);
         getCommand("leaderboard").setExecutor(leaderboard);
         getCommand("leaderboard").setTabCompleter(leaderboard);
-
-        DuelCommand duel = new DuelCommand(this);
-        getCommand("duel").setExecutor(duel);
-        getCommand("duel").setTabCompleter(duel);
-
-        getCommand("leave").setExecutor(new LeaveCommand(this));
-
-        DuelAdminCommand duelAdmin = new DuelAdminCommand(this);
-        getCommand("dueladmin").setExecutor(duelAdmin);
-        getCommand("dueladmin").setTabCompleter(duelAdmin);
-        getCommand("duels").setExecutor(duelAdmin);
-        getCommand("duels").setTabCompleter(duelAdmin);
-
-        SpectateCommand spectate = new SpectateCommand(this);
-        getCommand("spec").setExecutor(spectate);
-        getCommand("spec").setTabCompleter(spectate);
     }
 
     private void registerListeners() {
@@ -376,10 +337,11 @@ public final class UnstableCore extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new AntiGlitchListener(this), this);
         this.heldShulkerListener = new HeldShulkerListener(this);
         Bukkit.getPluginManager().registerEvents(heldShulkerListener, this);
+        this.worldBorderListener = new WorldBorderListener(this);
+        Bukkit.getPluginManager().registerEvents(worldBorderListener, this);
         Bukkit.getPluginManager().registerEvents(new GuiListener(this), this);
         Bukkit.getPluginManager().registerEvents(new BountyListener(this), this);
         Bukkit.getPluginManager().registerEvents(new LeaderboardListener(this), this);
-        Bukkit.getPluginManager().registerEvents(new DuelListener(this), this);
         if (itemCleanupManager != null) {
             Bukkit.getPluginManager().registerEvents(itemCleanupManager, this);
         }
@@ -423,6 +385,10 @@ public final class UnstableCore extends JavaPlugin {
 
     public TagManager getTagManager() {
         return tagManager;
+    }
+
+    public EnderChestManager getEnderChestManager() {
+        return enderChestManager;
     }
 
     public ShopManager getShopManager() {
@@ -469,26 +435,6 @@ public final class UnstableCore extends JavaPlugin {
         return itemCleanupManager;
     }
 
-    public DuelManager getDuelManager() {
-        return duelManager;
-    }
-
-    public DuelStatsManager getDuelStatsManager() {
-        return duelStatsManager;
-    }
-
-    public DuelQueueManager getDuelQueueManager() {
-        return duelQueueManager;
-    }
-
-    public SpectatorManager getSpectatorManager() {
-        return spectatorManager;
-    }
-
-    public DuelScoreboardManager getDuelScoreboardManager() {
-        return duelScoreboardManager;
-    }
-
     public ArenaListener getArenaListener() {
         return arenaListener;
     }
@@ -499,5 +445,9 @@ public final class UnstableCore extends JavaPlugin {
 
     public HeldShulkerListener getHeldShulkerListener() {
         return heldShulkerListener;
+    }
+
+    public WorldBorderListener getWorldBorderListener() {
+        return worldBorderListener;
     }
 }

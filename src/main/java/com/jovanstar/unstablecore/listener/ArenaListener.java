@@ -606,7 +606,11 @@ public final class ArenaListener implements Listener {
         String tracked = plugin.getArenaManager().getPlayerArena(player.getUniqueId());
         if (tracked != null) {
             arena = plugin.getArenaManager().getArena(tracked);
-            if (arena != null && !arena.contains(to)) {
+            // Also clear when the arena is GONE, not only when the player walked out of it. An
+            // arena deleted or renamed while someone stood in it left them tagged to an id that
+            // no longer resolves, and nothing could ever clear it - so every "are you busy in an
+            // arena" gate answered yes for the rest of their session.
+            if (arena == null || !arena.contains(to)) {
                 arena = null;
                 plugin.getArenaManager().setPlayerArena(player.getUniqueId(), null);
             }
@@ -623,9 +627,8 @@ public final class ArenaListener implements Listener {
 
         // Only the bush push-back below is optional. The arena entry/exit tracking above must run
         // regardless: it is the sole path that clears a player's arena tag when they walk out, and
-        // several systems (duel requests, the duel queue, build protection) refuse to act on a
-        // player still tagged as in-arena. Gating it on anti-bush.enabled left anyone who left an
-        // arena permanently tagged - and so permanently unable to duel - on servers with the
+        // build protection refuses to act on a player still tagged as in-arena. Gating it on
+        // anti-bush.enabled left anyone who left an arena permanently tagged on servers with the
         // toggle off.
         if (!antiBush || arena == null || arena.getType() != ArenaType.NOMACE) {
             return;

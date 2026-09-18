@@ -4,6 +4,7 @@ slot: 16
 permission: "unstablecore.kit.dangermarlowww"
 tier: Common
 price: 400
+cooldown: 600
 name-color: "&x&3&7&3&7&3&7"
 contents:
   '0':

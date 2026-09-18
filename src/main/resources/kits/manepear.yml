@@ -4,6 +4,7 @@ slot: 22
 permission: "unstablecore.kit.manepear"
 tier: Uncommon
 price: 1200
+cooldown: 180
 name-color: "&x&e&7&5&4&2&f"
 contents:
   '0':

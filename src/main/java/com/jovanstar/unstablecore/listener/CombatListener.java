@@ -35,7 +35,15 @@ public final class CombatListener implements Listener {
 
     private static final long ELYTRA_MSG_COOLDOWN_MS = 2000L;
 
-    private record CombatTag(UUID attacker, long atMs) {
+    /**
+     * @param other      the other participant in the exchange
+     * @param wasVictim  true only for the player who actually took the hit. Both sides are tagged
+     *                   so neither can use an arena switch or spectate as a mid-fight escape, but
+     *                   only a victim's tag may be converted into a combat-log kill - crediting
+     *                   the aggressor's own disconnect to their target would let two accounts
+     *                   trade a hit, both log out, and farm two kills per exchange.
+     */
+    private record CombatTag(UUID other, long atMs, boolean wasVictim) {
     }
 
     private final UnstableCore plugin;
@@ -64,17 +72,12 @@ public final class CombatListener implements Listener {
             return;
         }
         Player victim = event.getEntity();
-        // Must be the *committed* duel check, not isInDuel(): the latter is already true while a
-        // duel request merely sits pending, so gating on it meant a player with a standing request
-        // (trivially kept alive - requests are free and re-sendable every few seconds) died in FFA
-        // with no killstreak reset, no death recorded, and no kill reward, streak credit or bounty
-        // payout for whoever actually killed them.
-        if (plugin.getDuelManager() != null && plugin.getDuelManager().isInCombatDuel(victim.getUniqueId())) {
-            // Duel deaths are handled entirely by DuelListener/DuelManager - never feed FFA
-            // kill/streak/bounty systems from a duel.
-            return;
-        }
         recentDeathHandled.put(victim.getUniqueId(), System.currentTimeMillis());
+        // Death ends combat: the tag only exists to punish leaving a fight alive, so a dead player
+        // who respawns at spawn is no longer "in combat". Without this the tag lingered for the
+        // full combat-tag.seconds after death, so a just-respawned player was told "you can't do
+        // that while in combat" for kit swaps, arena joins and the like.
+        combatTags.remove(victim.getUniqueId());
         int brokenStreak = plugin.getKillstreakManager().getStreak(victim.getUniqueId());
         Player killer = victim.getKiller();
 
@@ -137,13 +140,6 @@ public final class CombatListener implements Listener {
      */
     public void handleQuitCombatTag(Player victim) {
         UUID uuid = victim.getUniqueId();
-        // Committed-duel check, not isInDuel() - otherwise a standing duel request also converted
-        // an FFA combat-log into a free escape (see onDeath for the same fix).
-        if (plugin.getDuelManager() != null && plugin.getDuelManager().isInCombatDuel(uuid)) {
-            // Duel disconnects are forfeits handled by DuelManager.handleDisconnect, routed to
-            // duel payout instead of FFA killstreak - never double-credit both systems.
-            return;
-        }
         CombatTag tag = combatTags.remove(uuid);
         if (tag == null || !plugin.getConfig().getBoolean("combat-tag.enabled", true)) {
             return;
@@ -157,7 +153,11 @@ public final class CombatListener implements Listener {
         if (lastRealDeath != null && now - lastRealDeath < windowMs) {
             return;
         }
-        Player killer = plugin.getServer().getPlayer(tag.attacker());
+        if (!tag.wasVictim()) {
+            // This player dealt the hit rather than taking it; their disconnect is not a death.
+            return;
+        }
+        Player killer = plugin.getServer().getPlayer(tag.other());
         if (killer == null || !killer.isOnline() || killer.getUniqueId().equals(uuid)) {
             return;
         }
@@ -196,7 +196,7 @@ public final class CombatListener implements Listener {
         }
     }
 
-    /** Whether the player is currently within the post-hit combat-tag window (used by duel-request validation). */
+    /** Whether the player is currently within the post-hit combat-tag window. */
     public boolean isCombatTagged(UUID uuid) {
         if (uuid == null || !plugin.getConfig().getBoolean("combat-tag.enabled", true)) {
             return false;
@@ -222,15 +222,13 @@ public final class CombatListener implements Listener {
             return;
         }
 
-        // Combat Tagging. Committed-duel check again: with plain isInDuel(), simply holding a
-        // pending duel request made a player un-taggable, so they could brawl in FFA and still
-        // pass every "not in combat" gate (arena join, /spec, queue join) as an instant escape.
-        boolean inDuel = plugin.getDuelManager() != null
-                && (plugin.getDuelManager().isInCombatDuel(victim.getUniqueId())
-                || plugin.getDuelManager().isInCombatDuel(attacker.getUniqueId()));
-        if (!inDuel) {
-            combatTags.put(victim.getUniqueId(), new CombatTag(attacker.getUniqueId(), System.currentTimeMillis()));
-        }
+        // Tag both sides. Tagging only the victim meant the aggressor was never "in combat", so
+        // the player winning a fight could switch arenas or spectate mid-fight while their target
+        // was pinned - the exact escape the tag exists to prevent, handed to the one player who
+        // should least have it.
+        long taggedAt = System.currentTimeMillis();
+        combatTags.put(victim.getUniqueId(), new CombatTag(attacker.getUniqueId(), taggedAt, true));
+        combatTags.put(attacker.getUniqueId(), new CombatTag(victim.getUniqueId(), taggedAt, false));
 
         // Hit Sound
         if (victim.getHealth() - event.getFinalDamage() > 0) {

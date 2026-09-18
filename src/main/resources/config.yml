@@ -16,9 +16,9 @@ database:
 
 newbie-hours: 6
 
-# How long a chat prompt (duel wager, bounty amount, leaderboard search) keeps capturing
-# what the player types before it gives up. Without a limit, a prompt the player never
-# answered would swallow their chat for the rest of the session.
+# How long a chat prompt (bounty amount, leaderboard search) keeps capturing what the player
+# types before it gives up. Without a limit, a prompt the player never answered would swallow
+# their chat for the rest of the session.
 chat-prompt-timeout-seconds: 60
 
 kill-reward: 10
@@ -50,6 +50,43 @@ killstreak:
   milestones:
     enabled: true
     values: [5, 10, 15, 20, 25, 50, 100]
+  # Announcer voice lines on killstreak milestones. Fires only on the milestone values above,
+  # picking the highest tier the streak has reached: 5-9 announce mega kill, 10+ monster kill.
+  #
+  # "sound" is a resource-pack key (see the resourcepack/ folder and its README). Players without
+  # the pack silently ignore it, so "fallback" - a normal vanilla sound - is played to everyone
+  # and the voice just layers on top for those who have the pack. Nothing breaks either way.
+  announcer:
+    enabled: true
+    # Sound slider the voice obeys. MASTER is always audible; PLAYERS respects that slider.
+    category: MASTER
+    # Sends the announcer pack as an ADDITIONAL pack on join, stacked on top of any pack another
+    # plugin already applies (ItemsAdder, SkinVault). Use this instead of server.properties on a
+    # server that already serves a pack - server.properties holds only one, so setting it there
+    # makes the two packs replace each other.
+    #
+    # Leave url blank to disable. sha1 must be the 40-character hash of the uploaded zip; if it
+    # does not match, clients re-download every join or refuse the pack.
+    resource-pack:
+      url: ""
+      sha1: ""
+      prompt: "&dUnstable &fAnnouncer &7- adds killstreak voice lines"
+      required: false
+    tiers:
+      5:
+        sound: "unstable:announcer.mega_kill"
+        fallback: ENTITY_ENDER_DRAGON_GROWL
+        volume: 1.0
+        pitch: 1.0
+        # false = only the player who got the streak hears it
+        broadcast: false
+      10:
+        sound: "unstable:announcer.monster_kill"
+        fallback: ENTITY_WITHER_SPAWN
+        volume: 1.0
+        pitch: 1.0
+        # true = the whole server hears it (players who muted streak alerts are skipped)
+        broadcast: true
 
 kill-messages:
   enabled: true
@@ -117,6 +154,8 @@ arena:
     enabled: true
     lead-seconds: 60
     duration-seconds: 45
+    # Hard-capped at 4: VoteGui only has layouts for 1-4 candidates, so a larger value here is
+    # silently reduced rather than showing more maps.
     max-maps: 4
     double-vote-permission: "unstablecore.vote.2x"
     double-vote-weight: 2
@@ -146,6 +185,9 @@ arena:
   # Cap on remembered player-placed blocks inside arenas. Oldest entries are evicted first.
   max-placed-blocks: 50000
   newbie:
+    # NOTE: only display-name is read. The newbie arena is always present and always nomace -
+    # ArenaManager.ensureNewbieIsNomace forces the type - so "enabled" and "type" below are
+    # inert. They are kept so existing configs still load cleanly.
     enabled: true
     type: nomace
     display-name: "<#55FFFF>&lNewbie Arena &8» &fUnder 6h"
@@ -389,10 +431,17 @@ sword:
 loadout:
   cooldown-seconds: 1800
   # Re-gear a player on respawn when they have a completely empty inventory.
-  # Always respects (and consumes) cooldown-seconds above, so it can't be used to skip it,
-  # and never touches a non-empty inventory. Set to false for a stricter "one kit per
-  # cooldown, dying costs you it" ruleset.
+  # Never touches a non-empty inventory. Set to false to disable respawn re-gearing entirely.
   give-on-respawn: true
+  # What that respawn re-gear hands out:
+  #   default  - the free starter kit (kits.default-kit below, normally "law"). Ignores and does
+  #              not consume cooldown-seconds, because that kit is free to claim anyway.
+  #   none     - nothing; players respawn empty and must claim a kit themselves.
+  #   selected - the player's own selected kit, gated on and consuming cooldown-seconds.
+  # Leave this on "default". With "selected", a player whose cooldown has lapsed gets their
+  # premium kit back every time they die, which makes dying a faster way to re-gear than
+  # waiting out the cooldown and defeats the point of having one.
+  respawn-kit: default
 
 held-shulker:
   enabled: true
@@ -442,6 +491,10 @@ join:
     z: 0.5
     yaw: 0.0
     pitch: 0.0
+    # Blocks within this many blocks of the spawn point above: item drops (anyone without
+    # unstablecore.admin) and building. Measured horizontally from the spawn x/z, so set it wide
+    # enough to cover the whole spawn build - drops just outside the radius are still allowed.
+    protect-radius: 25
   title:
     enabled: true
     title: ""
@@ -475,13 +528,31 @@ anti-bush:
     - FLOWERING_AZALEA
   push-strength: 0.45
 
+world-border:
+  # Shoves players back while they are still short of the world border, so they never reach the
+  # edge itself. Vanilla only reacts once they are already touching it, which leaves the border
+  # usable as a wall to fight against and as the spot clip cheats aim for.
+  push-back:
+    enabled: true
+    # How many blocks clear of the border the buffer zone starts. Worlds whose border is smaller
+    # than two of these are skipped - there would be no interior left to stand in.
+    distance: 5.0
+    # Horizontal shove, in the same units as anti-bush.push-strength.
+    push-strength: 0.55
+    # Small upward hop so ground friction doesn't eat the shove.
+    push-up: 0.12
+
 messages:
   no-permission: "&cYou don't have permission."
+  pearl-stale: "&7Your ender pearl fizzled - you were moved to another map while it was in the air."
+  pearl-border: "&cYour ender pearl landed outside the world border."
+  pearl-border-buffer: "&cYour ender pearl landed too close to the world border."
+  # Shown when the border push-back fires. Blank pushes silently.
+  world-border-push: "&c&l(!) &r&cYou can't go past the world border."
   player-only: "&cPlayers only."
   player-not-found: "&cPlayer not found."
   reload: "&aUnstableCore reloaded."
   spawn-set: "&aJoin spawn set to your location."
-  spawn-missing: "&cJoin spawn world is not loaded. Use &f/uc setspawn&c."
   economy-give: "&aGave &f{amount} &acoins to &f{player}&a."
   economy-take: "&aTook &f{amount} &acoins from &f{player}&a."
   economy-set: "&aSet &f{player}&a's balance to &f{amount}&a."
@@ -503,6 +574,9 @@ messages:
   arena-natural-break: "&c&l(!) &r&cSorry, you can't break natural blocks."
   arena-nomace-no-place: "&c&l(!) &r&cYou can't place blocks in no-mace arenas."
   arena-nomace-no-elytra: "&c&l(!) &r&cElytra flying is disabled in no-mace arenas."
+  arena-boundary-blocked: "&c&l(!) &r&cYou can't leave the arena boundary like that."
+  spawn-drop-blocked: "&c&l(!) &r&cYou can't drop items at spawn."
+  echest-wiped: "&c&l(!) &r&cYour ender chest was cleared by a server-wide reset."
   mine-bypass-on: "&aMine bypass &fenabled&a. You can break/place natural arena blocks."
   mine-bypass-off: "&cMine bypass &fdisabled&c. Natural arena blocks are protected again."
   arena-newbie-set: "&aNewbie arena (nomace / under 6h) spawn updated."
@@ -511,14 +585,17 @@ messages:
   sword-none: "&cNo sword arena is configured. Set sword.arena-id or create a nomace arena."
   loadout-given: "&aLoadout claimed!"
   loadout-cooldown: "&cLoadout available in &f{time}&c."
+  loadout-kit-cooldown: "&f{kit} &cis on cooldown for &f{time}&c."
   loadout-no-kit: "&cSelect an unlocked kit first with &f/kits&c."
+  loadout-arena-blocked: "&cYou can't change your kit while inside an arena."
   loadout-cooldown-reset: "&aReset loadout cooldown for &f{player}&a."
   kit-none-selected: "&cYou have no kit selected. Open &f/kits &cand pick one."
   kit-locked: "&cYou have not unlocked &f{kit}&c."
   kit-cannot-afford: "&cYou need &e{price} coins &cto unlock &f{kit}&c."
   kit-purchased: "&aUnlocked &f{kit} &afor &e{price} coins&a!"
   kit-selected: "&aSelected kit &f{kit}&a."
-  kit-selected-inventory-not-empty: "&cEmpty your inventory first, then reselect the kit to auto-equip it. Or use &f/loadout&c."
+  # Shown once per session, the first time a player opens /trash.
+  disposal-warning: "&c\u26a0 &7Items left in the bin are &cdestroyed &7when you close it."
   arena-auto-kit: "&aYou arrived without a kit - equipped &f{kit}&a!"
   kit-not-found: "&cKit &f{kit} &cnot found."
   kit-layout-saved: "&aSaved loadout layout for &f{kit}&a."

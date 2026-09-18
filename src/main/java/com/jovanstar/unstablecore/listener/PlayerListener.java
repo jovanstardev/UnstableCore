@@ -4,6 +4,7 @@ import com.jovanstar.unstablecore.UnstableCore;
 import com.jovanstar.unstablecore.gui.KitsGui;
 import com.jovanstar.unstablecore.manager.KitManager;
 import com.jovanstar.unstablecore.manager.SettingsManager;
+import com.jovanstar.unstablecore.model.Kit;
 import com.jovanstar.unstablecore.util.MessageUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -12,16 +13,29 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.InventoryAction;
+import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class PlayerListener implements Listener {
+
+    /** Stable id for the announcer pack, so re-sending replaces it rather than stacking copies. */
+    private static final UUID ANNOUNCER_PACK_ID = UUID.fromString("a9d4f1c2-0e77-4b3a-9c61-5f2e8b0d7a44");
+
+    /**
+     * Last time each player was told off for a blocked spawn drop. Holding ctrl+Q fires the drop
+     * handlers many times per second, so the reminder is rate limited to keep chat readable.
+     */
+    private final Map<UUID, Long> lastDropWarning = new ConcurrentHashMap<>();
 
     private final UnstableCore plugin;
 
@@ -40,6 +54,14 @@ public final class PlayerListener implements Listener {
                     MessageUtil.apply(msg, Map.of("player", player.getName())),
                     plugin.getSettingsManager().filter(SettingsManager.JOIN_LEAVE)
             );
+        }
+
+        // A pending server-wide ender chest wipe is applied on the way in, before the player can
+        // open anything. Offline players cannot be reached any other way - see EnderChestManager.
+        if (plugin.getEnderChestManager() != null
+                && plugin.getEnderChestManager().applyPendingWipe(player)) {
+            MessageUtil.send(player, plugin.getConfig().getString(
+                    "messages.echest-wiped", "&c&l(!) &r&cYour ender chest was cleared by a server-wide reset."));
         }
 
         if (plugin.getConfig().getBoolean("join.spawn-on-join", true)) {
@@ -75,13 +97,10 @@ public final class PlayerListener implements Listener {
         if (plugin.getRewardsManager() != null) {
             plugin.getRewardsManager().handleJoin(player);
         }
-        if (plugin.getDuelManager() != null) {
-            plugin.getDuelManager().applyPendingCrashRestore(player);
-        }
-        // A player who disconnected mid-/spec (rare, but possible) has GameMode.SPECTATOR saved
-        // in their player data - SpectatorManager can't restore it while they're offline, so
-        // undo it here instead of leaving them permanently stuck in spectator mode. Nothing else
-        // in this plugin ever expects a player to legitimately rejoin already in spectator mode.
+        // A player who disconnected mid-spectate (rare, but possible) has GameMode.SPECTATOR
+        // saved in their player data and nothing to restore it while they're offline, so undo it
+        // here instead of leaving them permanently stuck in spectator mode. Nothing else in this
+        // plugin ever expects a player to legitimately rejoin already in spectator mode.
         if (player.getGameMode() == org.bukkit.GameMode.SPECTATOR) {
             player.setGameMode(org.bukkit.GameMode.SURVIVAL);
         }
@@ -91,6 +110,60 @@ public final class PlayerListener implements Listener {
         if (plugin.getLeaderboardManager() != null) {
             plugin.getLeaderboardManager().syncProfile(player);
         }
+        sendAnnouncerPack(player);
+    }
+
+    /**
+     * Sends the announcer resource pack as an <em>additional</em> pack.
+     *
+     * <p>Deliberately not {@code server.properties}: that field holds a single pack, and on a
+     * server where ItemsAdder or SkinVault already serves one, setting it there means one pack
+     * replaces the other and something loses its assets. The UUID overload stacks instead, so the
+     * voice lines layer on top of whatever else is already applied.
+     *
+     * <p>No-op when the url is blank, so servers that would rather serve the pack through
+     * server.properties (or not at all) just leave it empty.
+     */
+    private void sendAnnouncerPack(Player player) {
+        String url = plugin.getConfig().getString("killstreak.announcer.resource-pack.url", "");
+        if (url == null || url.isBlank()) {
+            return;
+        }
+        byte[] hash = parseSha1(plugin.getConfig().getString("killstreak.announcer.resource-pack.sha1", ""));
+        if (hash == null) {
+            plugin.getLogger().warning("killstreak.announcer.resource-pack.sha1 must be 40 hex "
+                    + "characters matching the uploaded zip - announcer pack not sent.");
+            return;
+        }
+        String prompt = plugin.getConfig().getString("killstreak.announcer.resource-pack.prompt", "");
+        boolean required = plugin.getConfig().getBoolean("killstreak.announcer.resource-pack.required", false);
+        try {
+            player.setResourcePack(ANNOUNCER_PACK_ID, url, hash,
+                    prompt == null || prompt.isBlank() ? null : MessageUtil.parse(prompt), required);
+        } catch (Exception e) {
+            plugin.getLogger().warning("Failed to send the announcer resource pack: " + e.getMessage());
+        }
+    }
+
+    /** 40 hex characters -> the 20-byte digest the client verifies the download against. */
+    private static byte[] parseSha1(String hex) {
+        if (hex == null) {
+            return null;
+        }
+        String clean = hex.trim();
+        if (clean.length() != 40) {
+            return null;
+        }
+        byte[] out = new byte[20];
+        for (int i = 0; i < 20; i++) {
+            int hi = Character.digit(clean.charAt(i * 2), 16);
+            int lo = Character.digit(clean.charAt(i * 2 + 1), 16);
+            if (hi < 0 || lo < 0) {
+                return null;
+            }
+            out[i] = (byte) ((hi << 4) | lo);
+        }
+        return out;
     }
 
     private Location resolveJoinSpawn() {
@@ -107,6 +180,80 @@ public final class PlayerListener implements Listener {
         return new Location(world, x, y, z, yaw, pitch);
     }
 
+    private boolean isInSpawnProtection(Location loc) {
+        if (loc == null || loc.getWorld() == null) {
+            return false;
+        }
+        Location spawn = resolveJoinSpawn();
+        if (spawn == null || !spawn.getWorld().equals(loc.getWorld())) {
+            return false;
+        }
+        double radius = plugin.getConfig().getDouble("join.spawn.protect-radius", 25.0);
+        if (radius <= 0) {
+            return false;
+        }
+        double dx = loc.getX() - spawn.getX();
+        double dz = loc.getZ() - spawn.getZ();
+        return (dx * dx) + (dz * dz) <= radius * radius;
+    }
+
+    /** Only OPs/admins may drop items within the spawn protection radius. */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDropAtSpawn(PlayerDropItemEvent event) {
+        Player player = event.getPlayer();
+        if (player.hasPermission("unstablecore.admin")) {
+            return;
+        }
+        if (!isInSpawnProtection(player.getLocation())) {
+            return;
+        }
+        event.setCancelled(true);
+        warnDropBlocked(player);
+    }
+
+    /**
+     * Closes the inventory-screen route around {@link #onDropAtSpawn}.
+     *
+     * <p>{@code PlayerDropItemEvent} only covers throwing an item while no screen is open. Pressing Q
+     * with the inventory (or any container) open, or clicking an item outside the window, travels
+     * through {@link InventoryClickEvent} instead - so without this a player could drop anything at
+     * spawn simply by opening their own inventory first. Runs with {@code ignoreCancelled} so the
+     * plugin's own menus, which already cancel their clicks, neither double-fire nor warn.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onInventoryDropAtSpawn(InventoryClickEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player)) {
+            return;
+        }
+        InventoryAction action = event.getAction();
+        if (action != InventoryAction.DROP_ALL_SLOT
+                && action != InventoryAction.DROP_ONE_SLOT
+                && action != InventoryAction.DROP_ALL_CURSOR
+                && action != InventoryAction.DROP_ONE_CURSOR) {
+            return;
+        }
+        if (player.hasPermission("unstablecore.admin")) {
+            return;
+        }
+        if (!isInSpawnProtection(player.getLocation())) {
+            return;
+        }
+        event.setCancelled(true);
+        warnDropBlocked(player);
+    }
+
+    /** Sends the "no dropping at spawn" reminder, at most once every two seconds per player. */
+    private void warnDropBlocked(Player player) {
+        long now = System.currentTimeMillis();
+        Long last = lastDropWarning.get(player.getUniqueId());
+        if (last != null && now - last < 2000L) {
+            return;
+        }
+        lastDropWarning.put(player.getUniqueId(), now);
+        MessageUtil.send(player, plugin.getConfig().getString(
+                "messages.spawn-drop-blocked", "&c&l(!) &r&cYou can't drop items at spawn."));
+    }
+
     @EventHandler(priority = EventPriority.HIGH)
     public void onQuit(PlayerQuitEvent event) {
         event.quitMessage(null);
@@ -118,26 +265,18 @@ public final class PlayerListener implements Listener {
             );
         }
 
+        lastDropWarning.remove(event.getPlayer().getUniqueId());
         plugin.getAfkZoneManager().clear(event.getPlayer());
         plugin.getArenaManager().clearPlayer(event.getPlayer().getUniqueId());
         if (plugin.getArenaListener() != null) {
             plugin.getArenaListener().clearPlayer(event.getPlayer().getUniqueId());
         }
-        if (plugin.getDuelManager() != null) {
-            // Must run before handleQuitCombatTag - a duel disconnect is a forfeit routed to
-            // duel payout, not an FFA combat-log kill credit (CombatListener itself also checks
-            // isInDuel and no-ops, this ordering just makes the intent explicit).
-            plugin.getDuelManager().handleDisconnect(event.getPlayer());
+        if (plugin.getWorldBorderListener() != null) {
+            plugin.getWorldBorderListener().clearPlayer(event.getPlayer().getUniqueId());
         }
         if (plugin.getCombatListener() != null) {
             plugin.getCombatListener().handleQuitCombatTag(event.getPlayer());
             plugin.getCombatListener().clearPlayer(event.getPlayer().getUniqueId());
-        }
-        if (plugin.getSpectatorManager() != null) {
-            plugin.getSpectatorManager().handleDisconnect(event.getPlayer());
-        }
-        if (plugin.getDuelScoreboardManager() != null) {
-            plugin.getDuelScoreboardManager().handleDisconnect(event.getPlayer());
         }
         if (plugin.getRewardsManager() != null) {
             plugin.getRewardsManager().unload(event.getPlayer().getUniqueId());
@@ -178,23 +317,30 @@ public final class PlayerListener implements Listener {
     }
 
     /**
-     * Re-gears a player on respawn, honouring the normal loadout cooldown.
+     * Re-gears a player on respawn. What they get is set by {@code loadout.respawn-kit}:
      *
-     * <p>This behaviour used to happen as a side effect of the duel respawn hook, which ran for
-     * every respawn on the server and unconditionally cleared the inventory before handing out a
-     * kit. That made dying a strictly better way to obtain a loadout than {@code /loadout} itself
-     * - free, instant, and completely bypassing {@code loadout.cooldown-seconds} - and destroyed
-     * whatever an ordinary player happened to respawn holding. Re-homed here and made explicit:
-     * it only fires when the player really has nothing (so it can never delete items, including
-     * on keepInventory setups), it goes through LoadoutManager#tryGive so the cooldown is both
-     * respected and consumed, and it can be switched off entirely in config.
+     * <ul>
+     *   <li>{@code default} - the free starter kit ({@code kits.default-kit}). Ignores the loadout
+     *       cooldown and does not consume it, because this kit is free to claim anyway.</li>
+     *   <li>{@code none} - nothing; the player respawns empty.</li>
+     *   <li>{@code selected} - the player's own selected kit through
+     *       {@link com.jovanstar.unstablecore.manager.LoadoutManager#tryGive}, cooldown-gated.</li>
+     * </ul>
      *
-     * <p>Runs at MONITOR/one tick later so DuelListener's own duel-respawn restore - which puts
-     * back a real pre-duel inventory and must win - has already been applied.
+     * <p>{@code selected} is not the default because a premium kit is exactly what the cooldown
+     * exists to ration: once it lapses, dying hands the kit straight back, which makes death a
+     * cheaper way to re-gear than waiting. Only ever fires on a completely empty inventory, so it
+     * can never delete items (including on keepInventory setups), and
+     * {@code loadout.give-on-respawn} still switches the whole thing off.
      */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onRespawn(org.bukkit.event.player.PlayerRespawnEvent event) {
         if (!plugin.getConfig().getBoolean("loadout.give-on-respawn", true)) {
+            return;
+        }
+        String configured = plugin.getConfig().getString("loadout.respawn-kit", "default");
+        final String mode = configured == null ? "default" : configured.trim().toLowerCase(Locale.ROOT);
+        if (mode.equals("none")) {
             return;
         }
         Player player = event.getPlayer();
@@ -202,15 +348,20 @@ public final class PlayerListener implements Listener {
             if (!player.isOnline()) {
                 return;
             }
-            if (plugin.getDuelManager() != null
-                    && (plugin.getDuelManager().isInDuel(player.getUniqueId())
-                    || plugin.getDuelManager().isInGrace(player.getUniqueId()))) {
+            if (!KitManager.isInventoryEmpty(player)) {
                 return;
             }
-            if (plugin.getLoadoutManager() == null || !KitManager.isInventoryEmpty(player)) {
+            if (mode.equals("selected")) {
+                if (plugin.getLoadoutManager() != null) {
+                    plugin.getLoadoutManager().tryGive(player, false);
+                }
                 return;
             }
-            plugin.getLoadoutManager().tryGive(player, false);
+            KitManager kits = plugin.getKitManager();
+            Kit starter = kits == null ? null : kits.getDefaultKit();
+            if (starter != null) {
+                kits.applyKit(player, starter);
+            }
         });
     }
 

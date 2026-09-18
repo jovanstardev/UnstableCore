@@ -203,6 +203,15 @@ public final class ArenaManager {
         if (rotateTask != null) {
             rotateTask.cancel();
         }
+        // load() clears the live placed-block set and refills it from the in-memory data.yml, which
+        // holds only what savePlacedBlocks last wrote - and that runs on a five-minute autosave.
+        // Every block placed since then was dropped from tracking while still standing in the
+        // world, so it read as natural terrain afterwards and nobody could break their own cobweb
+        // again. Worse, the next autosave persisted the truncated set, making the loss permanent.
+        // Flushing first makes the reload round-trip lossless.
+        if (placedDirty) {
+            savePlacedBlocks();
+        }
         plugin.getConfigManager().reloadArenas();
         load();
     }
@@ -221,6 +230,13 @@ public final class ArenaManager {
         // data.yml-backed config object is also read/written synchronously elsewhere
         // (e.g. EventManager's timers), and FileConfiguration is not thread-safe.
         if (!placedDirty) {
+            return;
+        }
+        // cancel() cannot interrupt an async task that is already running, so this can still be
+        // mid-flight while onDisable executes - and scheduling onto a disabled plugin throws
+        // IllegalPluginAccessException. onDisable calls shutdown() itself, which saves the same
+        // state synchronously, so skipping here loses nothing.
+        if (!plugin.isEnabled()) {
             return;
         }
         Bukkit.getScheduler().runTask(plugin, () -> {
@@ -362,26 +378,6 @@ public final class ArenaManager {
         return true;
     }
 
-    public boolean setSpawn1(String name, Location loc) {
-        Arena arena = getArena(name);
-        if (arena == null) {
-            return false;
-        }
-        arena.setSpawn1(loc);
-        save();
-        return true;
-    }
-
-    public boolean setSpawn2(String name, Location loc) {
-        Arena arena = getArena(name);
-        if (arena == null) {
-            return false;
-        }
-        arena.setSpawn2(loc);
-        save();
-        return true;
-    }
-
     public void setPermanent(String name, boolean permanent) {
         Arena arena = arenas.get(name.toLowerCase(Locale.ROOT));
         if (arena != null) {
@@ -512,13 +508,6 @@ public final class ArenaManager {
     }
 
     private boolean shouldTransferOnRotate(Player player, Arena from) {
-        if (plugin.getDuelManager() != null) {
-            UUID uuid = player.getUniqueId();
-            if (plugin.getDuelManager().isInDuel(uuid) || plugin.getDuelManager().isInGrace(uuid)) {
-                return false;
-            }
-        }
-
         String tracked = playerArena.get(player.getUniqueId());
 
         if ("newbie".equalsIgnoreCase(tracked)) {
@@ -797,14 +786,6 @@ public final class ArenaManager {
     }
 
     public boolean teleportToArena(Player player, String arenaKey) {
-        if (plugin.getDuelManager() != null) {
-            UUID uuid = player.getUniqueId();
-            if (plugin.getDuelManager().isInDuel(uuid) || plugin.getDuelManager().isInGrace(uuid)) {
-                MessageUtil.send(player, "&cYou cannot join an arena while in a duel.");
-                return false;
-            }
-        }
-
         Arena arena;
         if ("newbie".equalsIgnoreCase(arenaKey)) {
             arena = newbieArena;
@@ -818,6 +799,11 @@ public final class ArenaManager {
 
         Location spot = pickFixedCachedSpot(arena);
         if (spot == null) {
+            // cacheSafeSpots() probes hundreds of block columns and save() rewrites the whole of
+            // arenas.yml, both on the main thread and both reachable from a plain GUI click. An
+            // arena with no usable spot would hit this on every join attempt, so a few players
+            // spamming join could hold the server in a stall loop. Re-cache at most once a minute
+            // per arena and let the normal autosave persist it rather than blocking on a write.
             long now = System.currentTimeMillis();
             Long last = lastSpotRecache.get(arena.getId());
             if (last == null || now - last >= SPOT_RECACHE_COOLDOWN_MS) {
@@ -838,6 +824,13 @@ public final class ArenaManager {
                 return;
             }
             Bukkit.getScheduler().runTask(plugin, () -> {
+                // Quitting between the teleport completing and this task would re-add the arena
+                // tag after quit cleanup removed it, so every "is this player busy in an arena"
+                // check - build protection included - would answer yes for someone who is not
+                // on the server.
+                if (!player.isOnline()) {
+                    return;
+                }
                 playerArena.put(player.getUniqueId(), arena.getId());
                 MessageUtil.sendConfig(player, "arena-teleported", Map.of("map", arena.getDisplayName()));
                 giveRandomKitIfEmpty(player);
@@ -858,21 +851,28 @@ public final class ArenaManager {
         return true;
     }
 
-    /** Safety net: a player entering an arena with a completely empty inventory gets a random unlocked kit. */
+    /**
+     * Safety net: a player entering an arena with a completely empty inventory gets a random
+     * unlocked kit. Must respect *and consume* the /loadout cooldown - otherwise emptying your
+     * inventory and re-entering the arena re-gears you for free, and repeating it re-rolls the
+     * random pick until a premium kit comes up, defeating the whole point of that cooldown.
+     */
     private void giveRandomKitIfEmpty(Player player) {
         KitManager kitManager = plugin.getKitManager();
         if (kitManager == null || !KitManager.isInventoryEmpty(player)) {
             return;
         }
+        LoadoutManager loadoutManager = plugin.getLoadoutManager();
+        if (loadoutManager != null && loadoutManager.remainingMillis(player.getUniqueId()) > 0) {
+            return;
+        }
         Kit kit = kitManager.giveRandomUnlockedKit(player);
         if (kit != null) {
-            // Consuming the cooldown is what actually makes the check above mean anything. It used
-            // to only be *read*, never started, so the "safety net" was really an unlimited free
-            // kit dispenser: drop everything, click the arena join button, get a complete kit,
-            // repeat as fast as you can click - which both trivialises the 30-minute cooldown and
-            // mints unbounded quantities of paid-kit gear that can be handed to other players.
-            if (plugin.getLoadoutManager() != null) {
-                plugin.getLoadoutManager().markUsed(player);
+            // Consuming the cooldown is what makes the check above mean anything: read-only, the
+            // "safety net" is an unlimited free kit dispenser - drop everything, click join, get
+            // a complete kit, repeat - minting unbounded paid-kit gear for other players.
+            if (loadoutManager != null) {
+                loadoutManager.markUsed(player, kit);
             }
             MessageUtil.sendConfig(player, "arena-auto-kit", Map.of("kit", kit.getDisplayName()));
         }
@@ -900,7 +900,7 @@ public final class ArenaManager {
     }
 
     /**
-     * Public entry point for other systems (e.g. duels) that need a single safe teleport spot
+     * Public entry point for other systems that need a single safe teleport spot
      * inside an arena without going through the FFA-specific {@link #teleportToArena} flow
      * (which sends FFA messages/sounds and auto-gives a random kit on empty inventory). Reuses
      * the exact same spot-picking/validation logic FFA rotation relies on.

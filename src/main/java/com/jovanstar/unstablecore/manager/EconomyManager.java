@@ -7,6 +7,8 @@ import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.RegisteredServiceProvider;
 
+import java.util.Locale;
+
 public final class EconomyManager {
 
     private final UnstableCore plugin;
@@ -51,7 +53,7 @@ public final class EconomyManager {
      *
      * <p>Refunds are not income: counting them let a player inflate their earned-coins stat for
      * free by repeatedly triggering a take-then-refund path (e.g. offering a bounty stack that
-     * exceeds the configured cap, or accepting and immediately cancelling a wagered duel) - the
+     * exceeds the configured cap, or a refunded purchase) - the
      * balance nets out to zero every time while the statistic only ever climbs.
      */
     public boolean refund(OfflinePlayer player, double amount) {
@@ -164,15 +166,19 @@ public final class EconomyManager {
         }
     }
 
+    // Both formatters pin Locale.ROOT. String.format without one follows the JVM default locale,
+    // so on a host set to pt_BR (or de_DE, fr_FR, ...) "%,d" grouped with dots and "%.2f" used a
+    // decimal comma: formatCommas literally stopped emitting commas, and the same coin balance
+    // rendered differently depending on where the server happened to be running.
     public static String formatCommas(double amount) {
         long whole = (long) Math.floor(amount);
-        return String.format("%,d", whole);
+        return String.format(Locale.ROOT, "%,d", whole);
     }
 
     public static String format(double amount) {
         if (amount == (long) amount) {
             return String.valueOf((long) amount);
         }
-        return String.format("%.2f", amount);
+        return String.format(Locale.ROOT, "%.2f", amount);
     }
 }

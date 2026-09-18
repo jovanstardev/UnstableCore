@@ -4,6 +4,7 @@ slot: 24
 permission: "unstablecore.kit.clownpierce"
 tier: Rare
 price: 2500
+cooldown: 300
 name-color: "&x&8&3&0&0&0&0"
 contents:
   '0':

@@ -1,6 +1,9 @@
 enabled: true
 region: afk
-world: spawn1
+# Restrict the AFK zone to one world by name, or leave blank for any world. This shipped as
+# "spawn1", a world that does not exist on a fresh install, so the region never matched and the
+# whole AFK reward system silently did nothing until an admin noticed.
+world: ""
 tick-seconds: 5
 reward-interval: 300
 default-reward: 5

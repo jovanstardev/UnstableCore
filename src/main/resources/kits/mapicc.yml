@@ -4,6 +4,7 @@ slot: 21
 permission: "unstablecore.kit.mapicc"
 tier: Uncommon
 price: 700
+cooldown: 180
 name-color: "&x&e&c&0&e&0&e"
 contents:
   '0':

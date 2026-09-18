@@ -207,6 +207,7 @@ messages:
   busy: "&cPlease wait..."
   not-ready: "&cYou can't claim that yet."
   already-claimed: "&cAlready claimed."
+  economy-unavailable: "&cThe economy is unavailable right now - your reward is still waiting, try again shortly."
   daily-claimed: "&aClaimed Day &f{day} &a- &e+{coins} coins&a!"
   milestone-claimed: "&aClaimed &f{days}-day {type} &amilestone - &e+{coins} coins&a!"
   booster-activated: "&6Coin booster activated for &e{hours}h&6!"

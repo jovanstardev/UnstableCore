@@ -3,6 +3,7 @@ package com.jovanstar.unstablecore.manager;
 import com.jovanstar.unstablecore.UnstableCore;
 import com.jovanstar.unstablecore.util.MessageUtil;
 import org.bukkit.Sound;
+import org.bukkit.SoundCategory;
 import org.bukkit.entity.Player;
 
 import java.util.Map;
@@ -10,6 +11,9 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class KillstreakManager {
+
+    private static final java.util.List<Integer> DEFAULT_MILESTONES =
+            java.util.List.of(5, 10, 15, 20, 25, 50, 100);
 
     private final UnstableCore plugin;
     private final Map<UUID, Integer> streaks = new ConcurrentHashMap<>();
@@ -65,12 +69,16 @@ public final class KillstreakManager {
         if (db == null || !db.isConnected()) {
             return;
         }
+        // Skip only players we track nothing for. Testing the VALUES instead meant a tracked
+        // zero was indistinguishable from "no data": after /resetkillstreak on a player with no
+        // deaths, the write was skipped and the old non-zero streak stayed in the database, so a
+        // crash before the next autosave restored a streak the player had already lost.
+        if (!streaks.containsKey(uuid) && !deaths.containsKey(uuid) && !titlesEnabled.containsKey(uuid)) {
+            return;
+        }
         int streak = streaks.getOrDefault(uuid, 0);
         int death = deaths.getOrDefault(uuid, 0);
         boolean titles = titlesEnabled.getOrDefault(uuid, true);
-        if (streak <= 0 && death <= 0 && titles) {
-            return;
-        }
         org.bukkit.Bukkit.getScheduler().runTaskAsynchronously(plugin,
                 () -> db.upsertCombatRow(uuid, streak, death, titles));
     }
@@ -113,6 +121,7 @@ public final class KillstreakManager {
         if (plugin.getLeaderboardManager() != null) {
             plugin.getLeaderboardManager().rememberPlayer(killer);
         }
+        playStreakAnnouncer(killer, streak);
         int titleMinimum = Math.max(1, plugin.getConfig().getInt("killstreak.title-minimum", 2));
         if (streak >= titleMinimum && isTitlesEnabled(killer.getUniqueId())) {
             int seconds = plugin.getConfig().getInt("killstreak.title-seconds", 2);
@@ -134,6 +143,120 @@ public final class KillstreakManager {
         return streak;
     }
 
+    /**
+     * Plays the announcer voice line for a killstreak that just crossed a configured tier.
+     *
+     * <p>Only fires on the {@code killstreak.milestones.values} thresholds, never on every kill,
+     * and picks the highest tier the streak has reached - so 5 announces "mega kill" and 10 and
+     * up announce "monster kill".
+     *
+     * <p>The tier's {@code sound} is a resource-pack key. A client without the pack silently
+     * ignores an unknown key, so the {@code fallback} vanilla sound is played to everyone
+     * regardless and the voice simply layers on top for players who have it. That keeps the
+     * feature working for every player without needing to know who accepted the pack.
+     */
+    public void playStreakAnnouncer(Player killer, int streak) {
+        if (!plugin.getConfig().getBoolean("killstreak.announcer.enabled", true)) {
+            return;
+        }
+        if (!milestoneValues().contains(streak)) {
+            return;
+        }
+        org.bukkit.configuration.ConfigurationSection tiers =
+                plugin.getConfig().getConfigurationSection("killstreak.announcer.tiers");
+        if (tiers == null) {
+            return;
+        }
+        int bestThreshold = -1;
+        String bestKey = null;
+        for (String key : tiers.getKeys(false)) {
+            int threshold;
+            try {
+                threshold = Integer.parseInt(key);
+            } catch (NumberFormatException ignored) {
+                continue;
+            }
+            if (streak >= threshold && threshold > bestThreshold) {
+                bestThreshold = threshold;
+                bestKey = key;
+            }
+        }
+        if (bestKey == null) {
+            return;
+        }
+        org.bukkit.configuration.ConfigurationSection tier = tiers.getConfigurationSection(bestKey);
+        if (tier == null) {
+            return;
+        }
+        String customSound = tier.getString("sound", "");
+        String fallbackName = tier.getString("fallback", "");
+        float volume = (float) tier.getDouble("volume", 1.0);
+        float pitch = (float) tier.getDouble("pitch", 1.0);
+        boolean everyone = tier.getBoolean("broadcast", false);
+
+        SoundCategory category;
+        try {
+            category = SoundCategory.valueOf(
+                    plugin.getConfig().getString("killstreak.announcer.category", "MASTER"));
+        } catch (IllegalArgumentException ignored) {
+            category = SoundCategory.MASTER;
+        }
+        Sound fallback = null;
+        if (!fallbackName.isBlank()) {
+            try {
+                fallback = Sound.valueOf(fallbackName);
+            } catch (IllegalArgumentException ignored) {
+                plugin.getLogger().warning("killstreak.announcer.tiers." + bestKey
+                        + ".fallback is not a valid Sound: " + fallbackName);
+            }
+        }
+
+        if (everyone) {
+            for (Player online : org.bukkit.Bukkit.getOnlinePlayers()) {
+                // Same toggle that already gates the milestone message, so a player who muted
+                // streak alerts does not get the voice line either.
+                if (plugin.getSettingsManager() != null
+                        && !plugin.getSettingsManager().isEnabled(online, SettingsManager.STREAK_ALERTS)) {
+                    continue;
+                }
+                playAnnouncerTo(online, customSound, fallback, category, volume, pitch);
+            }
+            return;
+        }
+        if (plugin.getSettingsManager() == null
+                || plugin.getSettingsManager().isEnabled(killer, SettingsManager.STREAK_ALERTS)) {
+            playAnnouncerTo(killer, customSound, fallback, category, volume, pitch);
+        }
+    }
+
+    private void playAnnouncerTo(Player listener, String customSound, Sound fallback,
+                                 SoundCategory category, float volume, float pitch) {
+        if (listener == null || !listener.isOnline()) {
+            return;
+        }
+        if (fallback != null) {
+            listener.playSound(listener.getLocation(), fallback, category, volume, pitch);
+        }
+        if (customSound != null && !customSound.isBlank()) {
+            // Unknown keys are a no-op client-side, so this is safe without the resource pack.
+            listener.playSound(listener.getLocation(), customSound, category, volume, pitch);
+        }
+    }
+
+    /**
+     * Streak values that count as a milestone, from {@code killstreak.milestones.values}.
+     *
+     * <p>Falls back to the shipped list when that path is absent or empty rather than matching
+     * nothing. An empty list silently disables every milestone effect - the chat callout and the
+     * announcer both - which reads as "the feature is broken" rather than "the config is
+     * incomplete", and a config generated before this section existed hits exactly that.
+     * {@code killstreak.milestones.enabled: false} remains the way to turn milestones off.
+     */
+    private java.util.List<Integer> milestoneValues() {
+        java.util.List<Integer> configured = plugin.getConfig().getIntegerList("killstreak.milestones.values");
+        return configured.isEmpty() ? DEFAULT_MILESTONES : configured;
+    }
+
     public void broadcastMilestone(Player killer, int streak) {
         if (!plugin.getConfig().getBoolean("killstreak.milestones.enabled", true)) {
             return;
@@ -141,8 +264,7 @@ public final class KillstreakManager {
         if (!plugin.getConfig().getBoolean("kill-messages.enabled", true)) {
             return;
         }
-        java.util.List<Integer> milestones = plugin.getConfig().getIntegerList("killstreak.milestones.values");
-        if (milestones.isEmpty() || !milestones.contains(streak)) {
+        if (!milestoneValues().contains(streak)) {
             return;
         }
         String icon = plugin.getConfig().getString("kill-messages.icon", "&c⚔");

@@ -52,6 +52,11 @@ public final class PlaceBountyGui implements InventoryHolder {
         if (size % 9 != 0) {
             size = 54;
         }
+        // Same fixed double-chest layout as the bounty board: CONTENT reaches slot 43 and the
+        // place.*-slot defaults sit at 45-52, so a smaller size throws for every viewer.
+        if (size < 54) {
+            size = 54;
+        }
         List<Player> targets = onlineTargets(filter);
         int perPage = Math.min(CONTENT.length, Math.max(1, cfg.getInt("gui.slots-per-page", CONTENT.length)));
         int pages = Math.max(1, (int) Math.ceil(targets.size() / (double) perPage));

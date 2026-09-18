@@ -4,6 +4,7 @@ slot: 33
 permission: "unstablecore.kit.minutetech"
 tier: Legendary
 price: 5800
+cooldown: 540
 name-color: "&x&4&8&2&3&2&3"
 contents:
   '0':

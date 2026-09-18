@@ -36,6 +36,14 @@ public final class KitManager {
 
     private final UnstableCore plugin;
     private final Map<String, Kit> kits = new LinkedHashMap<>();
+    /**
+     * Largest per-kit cooldown across all loaded kits, recomputed whenever kits are (re)loaded.
+     *
+     * <p>Volatile and precomputed rather than derived by iterating {@link #kits} on demand: the
+     * async autosave asks for this while the main thread may be reloading kits, and that map is a
+     * plain LinkedHashMap - iterating it off-thread risks ConcurrentModificationException.
+     */
+    private volatile int maxKitCooldownSeconds;
     private final Map<UUID, String> selected = new ConcurrentHashMap<>();
     private final Map<UUID, Set<String>> unlocked = new ConcurrentHashMap<>();
     private final Map<UUID, Map<String, ItemStack[]>> layouts = new ConcurrentHashMap<>();
@@ -87,7 +95,7 @@ public final class KitManager {
         }
     }
 
-    
+
     private void migrateLegacyKitsYml() {
         File legacy = new File(plugin.getDataFolder(), "kits.yml");
         if (!legacy.exists()) {
@@ -151,10 +159,12 @@ public final class KitManager {
 
     public void reloadKitsFromConfig() {
         kits.clear();
+        maxKitCooldownSeconds = 0;
         File[] files = kitsFolder.listFiles((dir, name) -> name.toLowerCase(Locale.ROOT).endsWith(".yml"));
         if (files == null) {
             return;
         }
+        int missingCooldown = 0;
         for (File file : files) {
             String fileName = file.getName();
             String id = fileName.substring(0, fileName.length() - 4).toLowerCase(Locale.ROOT);
@@ -166,10 +176,37 @@ public final class KitManager {
             String tier = kitConfig.getString("tier", "Epic");
             double price = kitConfig.getDouble("price", 0);
             String nameColor = kitConfig.getString("name-color", "&d");
+            int kitCooldown = kitConfig.getInt("cooldown", 0);
+            if (!kitConfig.isSet("cooldown")) {
+                missingCooldown++;
+            }
             ItemStack[] contents = readContents(kitConfig.getConfigurationSection("contents"));
             warnAboutReservedSlots(id, contents);
-            kits.put(id, new Kit(id, display, icon, slot, perm, tier, price, nameColor, contents));
+            kits.put(id, new Kit(id, display, icon, slot, perm, tier, price, nameColor, contents,
+                    kitCooldown));
         }
+        // A kit file written before per-kit cooldowns existed has no "cooldown" key, and Bukkit
+        // never overwrites a config that is already on disk. Such a kit silently falls back to the
+        // shared loadout.cooldown-seconds, so an upgraded server shows one identical cooldown on
+        // every kit with nothing in the log to explain it. Say so instead of failing quietly.
+        if (missingCooldown > 0) {
+            plugin.getLogger().warning(missingCooldown + " of " + kits.size()
+                    + " kit files have no 'cooldown' key and fall back to loadout.cooldown-seconds ("
+                    + Math.max(0L, plugin.getConfig().getLong("loadout.cooldown-seconds", 1800L))
+                    + "s). Add 'cooldown: <seconds>' to plugins/UnstableCore/kits/<kit>.yml to give"
+                    + " that kit its own timer.");
+        }
+
+        int max = 0;
+        for (Kit kit : kits.values()) {
+            max = Math.max(max, kit.getCooldownSeconds());
+        }
+        maxKitCooldownSeconds = max;
+    }
+
+    /** Largest per-kit cooldown in seconds, or 0 when no kit overrides the shared cooldown. */
+    public int getMaxKitCooldownSeconds() {
+        return maxKitCooldownSeconds;
     }
 
     /**
@@ -178,9 +215,9 @@ public final class KitManager {
      * alternative is giving players a dye labelled "Save Kit" whenever an older or hand-written
      * kit file happens to have something there.
      *
-     * <p>The editor only ever writes slots 0-51, so this cannot happen through the UI. It can
-     * happen in a hand-edited YAML, where the item was previously dropped in complete silence and
-     * the author had no way to tell why part of their kit never appeared. Say so at load time.
+     * <p>The editor only writes slots 0-51, so the UI cannot produce this. A hand-edited YAML
+     * can, and dropping the item silently leaves the author no way to tell why part of their kit
+     * never appears - so name the kit and slot at load time.
      */
     private void warnAboutReservedSlots(String kitId, ItemStack[] contents) {
         if (contents == null) {
@@ -295,6 +332,9 @@ public final class KitManager {
         kitConfig.set("permission", kit.getPermission());
         kitConfig.set("tier", kit.getTier());
         kitConfig.set("price", kit.getPrice());
+        if (kit.getCooldownSeconds() > 0) {
+            kitConfig.set("cooldown", kit.getCooldownSeconds());
+        }
         kitConfig.set("name-color", kit.getNameColor());
         writeContents(kitConfig.createSection("contents"), kit.getContents());
         try {
@@ -388,7 +428,7 @@ public final class KitManager {
         return out;
     }
 
-    
+
     private static ItemStack readSimpleItem(ConfigurationSection sec) {
         if (sec == null) {
             return null;
@@ -518,7 +558,12 @@ public final class KitManager {
             return true;
         }
         Set<String> set = unlocked.get(player.getUniqueId());
-        if (set != null && set.contains(kit.getId())) {
+        // Every write path - unlock(), tryPurchaseUnlock() and the player-data loader - stores the
+        // id lower-cased, so the lookup has to match. Reading the raw id meant a kit whose id
+        // carried any upper-case character could be paid for and still never register as unlocked,
+        // charging the player for nothing. Today's ids all come from lower-case file names, so this
+        // is a latent trap rather than a live loss - /kit create with mixed case would spring it.
+        if (set != null && set.contains(kit.getId().toLowerCase(Locale.ROOT))) {
             return true;
         }
         return hasKitPermission(player, kit);
@@ -632,6 +677,24 @@ public final class KitManager {
         return true;
     }
 
+    /**
+     * The free fallback kit: {@code kits.default-kit}, or the first starter-tier kit if that id
+     * is missing from the config. Never a paid or rank-locked kit, so it is safe to hand out on
+     * paths that deliberately bypass the loadout cooldown. Null only if no kit qualifies.
+     */
+    public Kit getDefaultKit() {
+        Kit kit = getKit(plugin.getConfig().getString("kits.default-kit", "law"));
+        if (kit != null) {
+            return kit;
+        }
+        for (Kit candidate : kits.values()) {
+            if (isStarter(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
     public void ensureDefaultKit(Player player) {
         if (player == null) {
             return;
@@ -639,16 +702,7 @@ public final class KitManager {
         if (getSelectedKit(player) != null) {
             return;
         }
-        String defaultId = plugin.getConfig().getString("kits.default-kit", "law");
-        Kit kit = getKit(defaultId);
-        if (kit == null) {
-            for (Kit candidate : kits.values()) {
-                if (isStarter(candidate)) {
-                    kit = candidate;
-                    break;
-                }
-            }
-        }
+        Kit kit = getDefaultKit();
         if (kit == null) {
             return;
         }
@@ -842,15 +896,21 @@ public final class KitManager {
                 continue;
             }
             HashMap<Integer, ItemStack> leftover = inv.addItem(stack.clone());
-            for (ItemStack drop : leftover.values()) {
-                player.getWorld().dropItemNaturally(player.getLocation(), drop);
+            if (!leftover.isEmpty()) {
+                // Do not drop the remainder. Kit gear is plugin-issued, so anything left on the
+                // floor at spawn is free material that anyone can pick up, minted again on every
+                // claim. A kit that cannot fit in a player inventory is a configuration error, so
+                // say so once with enough detail to fix it instead of leaking items.
+                plugin.getLogger().warning("Kit '" + kit.getId() + "' does not fit in a player "
+                        + "inventory - slot " + i + " (" + stack.getType() + ") was not given to "
+                        + player.getName() + ". Remove items from the kit or free up a slot.");
             }
         }
         player.updateInventory();
         return true;
     }
 
-    
+
     private static boolean isPreviewOnly(Material type) {
         return type == Material.GRAY_STAINED_GLASS_PANE
                 || type == Material.BLACK_STAINED_GLASS_PANE
@@ -894,7 +954,7 @@ public final class KitManager {
         return out;
     }
 
-    
+
     public static ItemStack[] snapshotStorage(Player player) {
         ItemStack[] out = new ItemStack[Kit.CONTENTS_SIZE];
         PlayerInventory inv = player.getInventory();
@@ -904,18 +964,25 @@ public final class KitManager {
                 out[i] = stack.clone();
             }
         }
-        int idx = 36;
-        ItemStack off = inv.getItemInOffHand();
-        if (off != null && !off.getType().isAir() && idx < Kit.CONTENTS_SIZE) {
-            out[idx++] = off.clone();
-        }
+        // Fixed slots matching Bukkit's own PlayerInventory layout (36-39 armor, 40 offhand),
+        // which is also what applyKit reads back and what the shipped kit files use.
+        //
+        // This used to pack sequentially from 36, putting the offhand at 36 and armor after it.
+        // applyKit finds armor by material name so that part still worked, but it only looks for
+        // an offhand at index 46 then 40 - so an offhand item that was not a shield, totem or
+        // banner fell through to the addItem fallback and, on a full inventory, was dropped on
+        // the floor every single time the kit was claimed.
         ItemStack[] armor = inv.getArmorContents();
         if (armor != null) {
-            for (int a = armor.length - 1; a >= 0 && idx < Kit.CONTENTS_SIZE; a--) {
+            for (int a = 0; a < Math.min(armor.length, 4); a++) {
                 if (armor[a] != null && !armor[a].getType().isAir()) {
-                    out[idx++] = armor[a].clone();
+                    out[36 + a] = armor[a].clone();
                 }
             }
+        }
+        ItemStack off = inv.getItemInOffHand();
+        if (off != null && !off.getType().isAir()) {
+            out[40] = off.clone();
         }
         return out;
     }

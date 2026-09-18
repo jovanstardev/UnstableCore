@@ -4,6 +4,7 @@ slot: 31
 permission: "unstablecore.kit.flamefrags"
 tier: Legendary
 price: 2800
+cooldown: 420
 name-color: "&x&f&f&0&0&0&0"
 contents:
   '0':

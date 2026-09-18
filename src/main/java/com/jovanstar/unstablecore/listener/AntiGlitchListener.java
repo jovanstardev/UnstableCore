@@ -2,6 +2,7 @@ package com.jovanstar.unstablecore.listener;
 
 import com.jovanstar.unstablecore.UnstableCore;
 import com.jovanstar.unstablecore.model.Arena;
+import com.jovanstar.unstablecore.util.MessageUtil;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
@@ -9,6 +10,7 @@ import org.bukkit.block.BlockFace;
 import org.bukkit.entity.AbstractWindCharge;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Item;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -16,6 +18,8 @@ import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.inventory.ItemStack;
+
+import java.util.Map;
 
 public final class AntiGlitchListener implements Listener {
 
@@ -63,18 +67,86 @@ public final class AntiGlitchListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onPearlTeleport(PlayerTeleportEvent event) {
-        if (event.getCause() != PlayerTeleportEvent.TeleportCause.ENDER_PEARL) {
+        PlayerTeleportEvent.TeleportCause cause = event.getCause();
+        if (cause != PlayerTeleportEvent.TeleportCause.ENDER_PEARL
+                && cause != PlayerTeleportEvent.TeleportCause.CHORUS_FRUIT) {
             return;
         }
         Location to = event.getTo();
         if (to == null || to.getWorld() == null) {
             return;
         }
+        // A pearl outlives its thrower being moved to another map (rotation transfer, arena
+        // join), and when it lands it drags them back to wherever it fell -
+        // typically the just-rotated-out map, empty but for them. A pearl never legitimately
+        // crosses worlds (the teleport only does when the *player* changed world mid-flight),
+        // and one landing in an arena may only complete for a player still in that arena.
+        Player player = event.getPlayer();
+        if (!to.getWorld().equals(player.getWorld())) {
+            event.setCancelled(true);
+            MessageUtil.sendConfig(player, "pearl-stale", Map.of());
+            return;
+        }
+        // The pearl entity flies straight through the world border - vanilla only constrains
+        // player movement, not the entity or its landing teleport. Completing this teleport puts
+        // the player outside the border: invisible to most of the server, effectively softlocked,
+        // and free to act where nobody can reach them. Cancel instead of clamping - a clamped
+        // landing on the border edge is exactly the "stand on the border" spot cheats want.
+        if (!to.getWorld().getWorldBorder().isInside(to)) {
+            event.setCancelled(true);
+            MessageUtil.sendConfig(player, "pearl-border", Map.of());
+            return;
+        }
+
+        // The walk-based border push-back (WorldBorderListener) only reacts to PlayerMoveEvent,
+        // which a teleport never fires - so without this, pearling or chorus-fruiting straight
+        // into the buffer zone landed cleanly and skipped the push-back entirely, letting a player
+        // reach the wall in one throw instead of being shoved back on the walk in.
+        WorldBorderListener borderListener = plugin.getWorldBorderListener();
+        if (borderListener != null && borderListener.isEnabled()
+                && !player.hasPermission(WorldBorderListener.BYPASS_PERMISSION)
+                && WorldBorderListener.isWithinBorderBuffer(to, borderListener.getDistance())) {
+            event.setCancelled(true);
+            MessageUtil.sendConfig(player, "pearl-border-buffer", Map.of());
+            return;
+        }
+
+        // Arena containment was previously just a build/break permission tag - nothing stopped
+        // an ender pearl or chorus fruit from carrying a player straight through the boundary,
+        // since both teleport clean through solid blocks instead of colliding with them the way
+        // walking does. A player tracked as inside an arena can't teleport themselves past it.
+        String trackedId = plugin.getArenaManager().getPlayerArena(player.getUniqueId());
+        Arena trackedArena = trackedId == null ? null : plugin.getArenaManager().getArena(trackedId);
+        if (trackedArena != null && !trackedArena.contains(to)) {
+            event.setCancelled(true);
+            String msg = plugin.getConfig().getString(
+                    "messages.arena-boundary-blocked",
+                    "&c&l(!) &r&cYou can't leave the arena boundary like that."
+            );
+            MessageUtil.send(player, msg == null || msg.isBlank()
+                    ? "&c&l(!) &r&cYou can't leave the arena boundary like that." : msg);
+            return;
+        }
+
         if (!plugin.getArenaManager().hasArenasInWorld(to.getWorld().getName())) {
             return;
         }
         Arena arena = plugin.getArenaManager().resolveArenaAt(to);
         if (arena == null) {
+            return;
+        }
+        String tracked = plugin.getArenaManager().getPlayerArena(player.getUniqueId());
+        boolean trackedHere = tracked != null && tracked.equalsIgnoreCase(arena.getId());
+        // "Stale" means the tag actually points somewhere else now - real evidence the player
+        // moved on while this pearl was mid-flight. A null tag just means never tracked in any
+        // arena (e.g. thrown from outside one, near spawn, while wandering); with the old
+        // "!trackedHere" check that untracked-and-not-standing-here case looked identical to
+        // staleness and every one of those pearls was wrongly cancelled with "you were moved to
+        // another map" even though nothing had moved.
+        boolean trackedElsewhere = tracked != null && !trackedHere;
+        if (trackedElsewhere && !arena.contains(player.getLocation())) {
+            event.setCancelled(true);
+            MessageUtil.sendConfig(player, "pearl-stale", Map.of());
             return;
         }
 

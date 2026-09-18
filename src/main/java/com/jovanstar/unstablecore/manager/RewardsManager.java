@@ -69,7 +69,7 @@ public final class RewardsManager {
         }
     }
 
-    
+
     public PlayerRewards peek(UUID uuid) {
         return cache.get(uuid);
     }
@@ -83,11 +83,10 @@ public final class RewardsManager {
     }
 
     /**
-     * Called from PlayerQuitEvent. The write goes off-thread (it used to be a synchronous JDBC
-     * round trip on the main thread for every single disconnect - fine one at a time, a stall
-     * proportional to player count during a mass disconnect or restart), but the cache entry is
-     * kept until that write lands: dropping it first would let a fast reconnect re-read the
-     * pre-save row from the database and re-claim an already-claimed reward.
+     * Called from PlayerQuitEvent. The write goes off-thread - synchronous JDBC here is fine for
+     * one disconnect but stalls proportionally to player count on a mass disconnect or restart.
+     * The cache entry survives until that write lands: evicting first would let a fast reconnect
+     * re-read the pre-save row and claim an already-claimed reward again.
      */
     public void unload(UUID uuid) {
         PlayerRewards data;
@@ -116,7 +115,23 @@ public final class RewardsManager {
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             DatabaseManager db = plugin.getDatabaseManager();
             if (db != null && db.isConnected()) {
-                db.saveRewards(uuid, snapshot);
+                // Write the CURRENT cached state, not the snapshot taken at quit time, and hold the
+                // same per-uuid lock the claim paths take so a claim cannot commit underneath us.
+                //
+                // saveRewards is a blind full-row upsert. This task can sit in the scheduler while
+                // the pool is busy, and the cache is deliberately kept until it lands - so a player
+                // who reconnects and claims in that window would have their fresh last_claim_day,
+                // streak and booster silently reverted to the quit-time values by this write. The
+                // GUI still reads the cache and looks correct, so the reward only reappears on the
+                // next rejoin: a repeatable duplicate claim.
+                //
+                // Holding the lock across the write means a reconnected player's claim waits for
+                // this one row write. That contention is per-uuid and only for a player who quit
+                // moments ago, which is a fair trade for not corrupting claim state.
+                synchronized (lockFor(uuid)) {
+                    PlayerRewards live = cache.get(uuid);
+                    db.saveRewards(uuid, live != null ? live.toRow() : snapshot);
+                }
             }
             Bukkit.getScheduler().runTask(plugin, () -> {
                 // Only evict if they are still gone - a reconnect in the meantime must keep its
@@ -145,7 +160,13 @@ public final class RewardsManager {
                 Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
                     DatabaseManager db = plugin.getDatabaseManager();
                     if (db != null && db.isConnected()) {
-                        db.saveRewards(uuid, snapshot);
+                        // Same hazard as unload(): saveRewards is a blind full-row upsert, so a
+                        // claim committed between capturing this snapshot and the write landing
+                        // would be reverted. Re-read the live cache under the per-uuid lock.
+                        synchronized (lockFor(uuid)) {
+                            PlayerRewards live = cache.get(uuid);
+                            db.saveRewards(uuid, live != null ? live.toRow() : snapshot);
+                        }
                     }
                 });
             }
@@ -336,6 +357,14 @@ public final class RewardsManager {
                 proposed.lastClaimDay = todayStr;
                 proposed.boosterUntil = boosterUntil;
 
+                // Refuse before committing rather than after. tryMarkDailyClaim atomically sets
+                // last_claim_day, so a deposit that fails afterwards leaves the day marked claimed
+                // with nothing paid out - and the player cannot claim it again, ever.
+                if (coins > 0 && !plugin.getEconomyManager().isReady()) {
+                    msg(player, "economy-unavailable", Map.of());
+                    return false;
+                }
+
                 if (!plugin.getDatabaseManager().tryMarkDailyClaim(uuid, proposed.toRow(), todayStr)) {
                     msg(player, "already-claimed", Map.of());
                     PlayerRewards fresh = PlayerRewards.from(plugin.getDatabaseManager().loadRewards(uuid));
@@ -344,8 +373,14 @@ public final class RewardsManager {
                 }
 
                 if (coins > 0 && !plugin.getEconomyManager().deposit(player, coins)) {
+                    // Economy said it was ready and still rejected the deposit. Put the row back
+                    // the way it was so the day stays claimable instead of silently vanishing.
                     plugin.getLogger().warning("Daily reward deposit failed for " + player.getName()
-                            + " day " + day + " (" + coins + " coins). Claim kept.");
+                            + " day " + day + " (" + coins + " coins) - rolling the claim back.");
+                    plugin.getDatabaseManager().saveRewards(uuid, data.toRow());
+                    cache.put(uuid, data);
+                    msg(player, "economy-unavailable", Map.of());
+                    return false;
                 }
 
                 cache.put(uuid, proposed);
@@ -371,7 +406,13 @@ public final class RewardsManager {
         if (claimed.contains(required)) {
             return DayState.CLAIMED;
         }
-        if (progress >= required) {
+        // registerLoginDay clamps monthDays to the calendar length of the month, so a monthly
+        // milestone requiring more days than the month actually has can never be reached: the
+        // shipped 30-day tier is unclaimable every February no matter how perfect attendance is.
+        // Treat "every day this month" as satisfying it. The tier keeps its configured id, so
+        // monthClaimed and the config lookup are unaffected.
+        int effective = weekly ? required : Math.min(required, today().lengthOfMonth());
+        if (progress >= effective) {
             return DayState.CLAIMABLE;
         }
         return DayState.LOCKED;
@@ -414,6 +455,11 @@ public final class RewardsManager {
                     proposed.boosterUntil = base + add;
                 }
 
+                if (coins > 0 && !plugin.getEconomyManager().isReady()) {
+                    msg(player, "economy-unavailable", Map.of());
+                    return false;
+                }
+
                 if (!plugin.getDatabaseManager().tryMarkMilestoneClaim(
                         uuid, proposed.toRow(), weekly, required)) {
                     msg(player, "already-claimed", Map.of());
@@ -423,8 +469,14 @@ public final class RewardsManager {
                 }
 
                 if (coins > 0 && !plugin.getEconomyManager().deposit(player, coins)) {
+                    // Same rollback as claimDaily - a committed milestone with no payout is
+                    // unclaimable forever.
                     plugin.getLogger().warning("Milestone reward deposit failed for " + player.getName()
-                            + " (" + coins + " coins). Claim kept.");
+                            + " (" + coins + " coins) - rolling the claim back.");
+                    plugin.getDatabaseManager().saveRewards(uuid, data.toRow());
+                    cache.put(uuid, data);
+                    msg(player, "economy-unavailable", Map.of());
+                    return false;
                 }
 
                 cache.put(uuid, proposed);

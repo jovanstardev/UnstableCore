@@ -4,6 +4,7 @@ slot: 30
 permission: "unstablecore.kit.jaden_man"
 tier: Epic
 price: 2700
+cooldown: 360
 name-color: "&x&0&0&3&b&f&f"
 contents:
   '0':

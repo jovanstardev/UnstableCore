@@ -4,6 +4,7 @@ slot: 19
 permission: "unstablecore.kit.spoke"
 tier: Common
 price: 500
+cooldown: 360
 name-color: "&x&8&0&0&0&f&f"
 contents:
   '0':

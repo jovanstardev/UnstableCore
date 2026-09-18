@@ -162,7 +162,7 @@ public final class StatsManager {
     }
 
     /**
-     * Name -> account lookup for commands like /stats, /uc economy and /dueladmin.
+     * Name -> account lookup for commands like /stats and /uc economy.
      *
      * <p>Deliberately never walks {@link Bukkit#getOfflinePlayers()}: that call stats and parses
      * every player data file the server has ever written, on the calling thread. Since it was

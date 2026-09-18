@@ -4,6 +4,7 @@ slot: 13
 permission: "unstablecore.kit.wifies"
 tier: Common
 price: 55
+cooldown: 180
 name-color: "&x&d&4&d&4&d&4"
 contents:
   '0':

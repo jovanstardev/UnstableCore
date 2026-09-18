@@ -16,6 +16,8 @@ public final class Kit {
     private String permission;
     private String tier;
     private double price;
+    /** Per-kit claim cooldown in seconds; 0 or less means "use loadout.cooldown-seconds". */
+    private int cooldownSeconds;
     private String nameColor;
     private ItemStack[] contents;
 
@@ -25,6 +27,13 @@ public final class Kit {
 
     public Kit(String id, String displayName, Material icon, int slot, String permission,
                String tier, double price, String nameColor, ItemStack[] contents) {
+        this(id, displayName, icon, slot, permission, tier, price, nameColor, contents, 0);
+    }
+
+    public Kit(String id, String displayName, Material icon, int slot, String permission,
+               String tier, double price, String nameColor, ItemStack[] contents,
+               int cooldownSeconds) {
+        this.cooldownSeconds = Math.max(0, cooldownSeconds);
         this.id = id;
         this.displayName = displayName;
         this.icon = icon;
@@ -82,6 +91,15 @@ public final class Kit {
 
     public double getPrice() {
         return price;
+    }
+
+    /** Seconds this specific kit is locked for after a claim; 0 = fall back to the global value. */
+    public int getCooldownSeconds() {
+        return cooldownSeconds;
+    }
+
+    public void setCooldownSeconds(int cooldownSeconds) {
+        this.cooldownSeconds = Math.max(0, cooldownSeconds);
     }
 
     public void setPrice(double price) {
